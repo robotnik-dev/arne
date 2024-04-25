@@ -7,7 +7,3 @@ fn main() {
         .add_plugins(GeneticAlgorithmPlugin)
         .run();
 }
-
-// idea: using bevys states to change from initiaizing to selection to crossover to mutation
-// because selection needs parralelism and should evaluate all agents at ones as fast as possible
-// And use system sets to run all system at ones when in this particular state

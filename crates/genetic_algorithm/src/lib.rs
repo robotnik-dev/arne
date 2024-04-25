@@ -2,30 +2,294 @@
 // it uses the entity component system pattern to represent the agents and to leverage 
 // the parallelism for evaluating the fitness of each agent
 
-use bevy::prelude::*;
+use bevy::{ecs::query::BatchingStrategy, prelude::*, utils::info};
+use bevy_prng::{ChaCha8Rng, WyRand};
+use rand_core::{RngCore, SeedableRng};
+use bevy_rand::prelude::{EntropyComponent, GlobalEntropy, ForkableRng, EntropyPlugin};
 
 pub struct GeneticAlgorithmPlugin;
 
 impl Plugin for GeneticAlgorithmPlugin {
     fn build(&self, app: &mut App) {
-        // app.init_resource::<MyOtherResource>();
-        // app.add_event::<MyEvent>();
-        app.add_systems(Startup, initialize_population);
-        // app.add_systems(Update, my_system);
+
+        // TODO: remove seed when testing is done
+        let seed: u64 = 235;
+
+        app.add_plugins(EntropyPlugin::<WyRand>::with_seed(seed.to_le_bytes()));
+        app.init_state::<GeneticAlgorithmState>();
+        app.add_systems(Startup, (
+            initialize_population,
+        ));
+        app.add_systems(Update, (
+            fitness_evaluation,
+        )
+            .run_if(in_state(GeneticAlgorithmState::EvaluateFitness)),
+        );
+        app.add_systems(Update, (
+            check_stop_criteria,
+        )
+            .run_if(in_state(GeneticAlgorithmState::CheckStopCriteria)),
+        );
+        app.add_systems(Update, (
+            crossover,
+        )
+            .run_if(in_state(GeneticAlgorithmState::Crossover)),
+        );
+        app.add_systems(Update, (
+            mutation,
+        )
+            .run_if(in_state(GeneticAlgorithmState::Mutation)),
+        );
+        app.add_systems(Update, (
+            phenotype_mapping,
+        )
+            .run_if(in_state(GeneticAlgorithmState::PhenotypeMapping)),
+        );
+        app.add_systems(Update, (
+            selection,
+        )
+            .run_if(in_state(GeneticAlgorithmState::Selection)),
+        );
+        app.add_systems(Update, (
+            clean_up,
+        )
+            .run_if(in_state(GeneticAlgorithmState::EndAgorithm)),
+        );
     }
 }
 
+// GENETIC ALGORITHM SECTION
+
+const POPULATION_SIZE: u32 = 100;
+
+#[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
+enum GeneticAlgorithmState {
+    #[default]
+    EvaluateFitness,
+    CheckStopCriteria,
+    Crossover,
+    Mutation,
+    PhenotypeMapping,
+    // Choose the best agents to be parents for the next generation
+    Selection,
+    EndAgorithm,
+}
+
+/// The AgentBundle is a collection of components that represent an agent.
 #[derive(Bundle)]
 struct AgentBundle {
     // marker
-    agent: Agent
+    agent: Agent,
+    fitness: Fitness,
+    chromosome: Chromosome,
+    generation: Generation,
 }
 
+/// An agent is a potential solution to the problem.
 #[derive(Component)]
 struct Agent;
 
+#[derive(Component)]
+struct Generation(u32);
+
+/// The chromosome of an agent is a collection of genes.
+/// In this case the genes are a collection of Neurons which compose
+/// a neural network.
+#[derive(Component)]
+struct Chromosome {
+    genes: Vec<NeuronBundle>,
+}
+
+impl Chromosome {
+    fn new() -> Chromosome {
+        // we start with a single neuron
+        Chromosome {
+            genes: vec![
+                NeuronBundle {
+                    neuron: Neuron,
+                    activation_function: TANH,
+                    bias: Bias(0.5),
+                    weights: Weights(vec![]),
+                    inputs: Inputs(vec![]),
+                    outputs: Outputs(vec![]),
+                    activation: Activation(0.0),
+                }
+            ]
+        }
+    }
+}
+
+/// The fitness of an agent is a measure of how well it performs.
+#[derive(Component)]
+struct Fitness(f32);
+
+/// Marker Component for all evaluated Agents
+#[derive(Component)]
+struct Evaluated;
+
+// NEURAL NETWORK SECTION
+
+/// tangens hyperbolicus activation function maps the output to the range [-1, 1]
+const TANH: ActivationFunction = ActivationFunction(|x| x.tanh());
+/// ReLU activation function maps the output to the range [0, inf)
+const RELU: ActivationFunction = ActivationFunction(|x| x.max(0.0));
+
+#[derive(Bundle)]
+struct NeuronBundle {
+    // marker
+    neuron: Neuron,
+    activation_function: ActivationFunction,
+    bias: Bias,
+    weights: Weights,
+    inputs: Inputs,
+    outputs: Outputs,
+    activation: Activation,
+}
+
+#[derive(Component)]
+struct Neuron;
+
+#[derive(Component)]
+struct ActivationFunction(fn(f32) -> f32);
+
+#[derive(Component)]
+struct Bias(f32);
+
+/// The weights of the input connections to the neuron.
+/// The weights are used to calculate the activation of the neuron.
+#[derive(Component)]
+struct Weights(Vec<f32>);
+
+/// List of entity IDs that are connected as inputs to the neuron.
+#[derive(Component)]
+struct Inputs(Vec<u32>);
+
+/// List of entity IDs that are connected as outputs to the neuron.
+#[derive(Component)]
+struct Outputs(Vec<u32>);
+
+/// The activation of the neuron, generated by the activation function.
+#[derive(Component)]
+struct Activation(f32);
+
+
 /// At the beginning, a set of solutions,
 /// which is denoted as population, is initialized.
-fn initialize_population() {
-    todo!()
+/// This runs once when the App starts.
+/// When done, the next state is set to Selection.
+fn initialize_population(
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
+    mut commands: Commands,
+    mut rng: ResMut<GlobalEntropy<WyRand>>
+) {
+    info!("Initializing population..");
+    
+    // create the population
+    for _ in 0..POPULATION_SIZE {
+        commands.spawn((AgentBundle {
+            agent: Agent,
+            fitness: Fitness(0.0),
+            chromosome: Chromosome::new(),
+            generation: Generation(1),
+        },
+        rng.fork_rng(),
+        ));
+    }
+    
+    next_state.set(GeneticAlgorithmState::EvaluateFitness);
+}
+
+/// The population is evaluated for fitness.
+/// This system runs for each Agent in the population while in the selection state.
+/// The fitness of each agent is evaluated. (This is a slow operation)
+/// The fitness of each agent is stored in the Fitness component.
+/// The next state is set to Crossover.
+fn fitness_evaluation(
+    mut q_agent: Query<(&mut Fitness, &mut Chromosome, &mut EntropyComponent<WyRand>), With<Agent>>,
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>
+) {
+    // compute fitness
+    q_agent
+        .par_iter_mut()
+        .for_each(|(mut fitness, mut chromosome, mut rng)| {
+            // steps to evaluate fitness:
+            // - train the neural network with training data(operational heavy task)
+            // - use the trained neural network to solve the problem
+            // - evaluate the performance of the neural network
+            // - assign the performance as the fitness of the agent
+            fitness.0 = (rng.next_u32() as f32 / u32::MAX as f32) + 0.05;
+            info!("Fitness: {:?}", fitness.0);
+        });
+
+    next_state.set(GeneticAlgorithmState::CheckStopCriteria);
+}
+
+fn check_stop_criteria(
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
+    q_agent: Query<&Fitness, With<Agent>>,
+) {
+    info!("Checking stop criteria..");
+
+    // things to check:
+    // - maximum number of generations
+    // - reached a plateau
+    // - a solution with satisfactory fitness is found
+    let stop = q_agent
+        .iter()
+        .any(|fitness| {
+            fitness.0 >= 1.0
+        });
+    if stop {
+        let sum = q_agent
+            .iter()
+            .fold(0.0,|acc, e| {
+                acc + e.0
+            });
+        info!("Average fitness: {:?}", sum / POPULATION_SIZE as f32);
+        next_state.set(GeneticAlgorithmState::EndAgorithm);
+    } else {
+        next_state.set(GeneticAlgorithmState::Crossover);
+    }
+}
+
+fn crossover(
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>
+) {
+    info!("Performing crossover..");
+
+    next_state.set(GeneticAlgorithmState::Mutation);
+}
+
+fn mutation(
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>
+) {
+    info!("Performing mutation..");
+
+    next_state.set(GeneticAlgorithmState::PhenotypeMapping);
+}
+
+fn phenotype_mapping(
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>
+) {
+    info!("Performing phenotype mapping..");
+
+    next_state.set(GeneticAlgorithmState::Selection);
+}
+
+fn selection(
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>
+) {
+    info!("Performing selection for the next generation..");
+    
+    next_state.set(GeneticAlgorithmState::EvaluateFitness);
+}
+
+fn clean_up(
+    time: Res<Time>,
+) {
+    info!("Collection data..");
+    info!("Ending algorithm..");
+    info!("Time elapsed {:?}", time.elapsed());
+    // shut the programm down
+    std::process::exit(0);
 }
