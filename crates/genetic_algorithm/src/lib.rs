@@ -2,9 +2,9 @@
 // it uses the entity component system pattern to represent the agents and to leverage 
 // the parallelism for evaluating the fitness of each agent
 
-use bevy::{ecs::query::BatchingStrategy, prelude::*, utils::info};
-use bevy_prng::{ChaCha8Rng, WyRand};
-use rand_core::{RngCore, SeedableRng};
+use bevy::{input::mouse::{MouseScrollUnit, MouseWheel}, prelude::*};
+use bevy_prng::WyRand;
+use rand_core::RngCore;
 use bevy_rand::prelude::{EntropyComponent, GlobalEntropy, ForkableRng, EntropyPlugin};
 
 pub struct GeneticAlgorithmPlugin;
@@ -17,54 +17,55 @@ impl Plugin for GeneticAlgorithmPlugin {
 
         app.add_plugins(EntropyPlugin::<WyRand>::with_seed(seed.to_le_bytes()));
         app.init_state::<GeneticAlgorithmState>();
+        app.insert_resource(BackgroundColorGreyScale(128));
+        // app.add_event::<PopulationInitialized>();
+
         app.add_systems(Startup, (
-            initialize_population,
+            (
+                initialize_population,
+                setup_scene,
+            ).chain(),
         ));
+
         app.add_systems(Update, (
-            fitness_evaluation,
-        )
-            .run_if(in_state(GeneticAlgorithmState::EvaluateFitness)),
-        );
-        app.add_systems(Update, (
-            check_stop_criteria,
-        )
-            .run_if(in_state(GeneticAlgorithmState::CheckStopCriteria)),
-        );
-        app.add_systems(Update, (
-            crossover,
-        )
-            .run_if(in_state(GeneticAlgorithmState::Crossover)),
-        );
-        app.add_systems(Update, (
-            mutation,
-        )
-            .run_if(in_state(GeneticAlgorithmState::Mutation)),
-        );
-        app.add_systems(Update, (
-            phenotype_mapping,
-        )
-            .run_if(in_state(GeneticAlgorithmState::PhenotypeMapping)),
-        );
-        app.add_systems(Update, (
-            selection,
-        )
-            .run_if(in_state(GeneticAlgorithmState::Selection)),
-        );
-        app.add_systems(Update, (
-            clean_up,
-        )
-            .run_if(in_state(GeneticAlgorithmState::EndAgorithm)),
+            rotate_camera,
+            zoom_camera,
+            fitness_evaluation
+                .run_if(in_state(GeneticAlgorithmState::EvaluateFitness)),
+            check_stop_criteria
+                .run_if(in_state(GeneticAlgorithmState::CheckStopCriteria)),
+            crossover
+                .run_if(in_state(GeneticAlgorithmState::Crossover)),
+            mutation
+                .run_if(in_state(GeneticAlgorithmState::Mutation)),
+            phenotype_mapping
+                .run_if(in_state(GeneticAlgorithmState::PhenotypeMapping)),
+            selection
+                .run_if(in_state(GeneticAlgorithmState::Selection)),
+            clean_up
+                .run_if(in_state(GeneticAlgorithmState::EndAgorithm)),
+            )
         );
     }
 }
+
+// UI SECTION
+
 
 // GENETIC ALGORITHM SECTION
 
 const POPULATION_SIZE: u32 = 100;
 
+// #[derive(Event)]
+// struct PopulationInitialized;
+
+#[derive(Resource)]
+struct BackgroundColorGreyScale(u8);
+
 #[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
 enum GeneticAlgorithmState {
     #[default]
+    Startup,
     EvaluateFitness,
     CheckStopCriteria,
     Crossover,
@@ -85,39 +86,25 @@ struct AgentBundle {
     generation: Generation,
 }
 
+#[derive(Component)]
+struct Chromosome {
+    genes: u8
+}
+
+impl Chromosome {
+    fn new(init: u8) -> Self {
+        Chromosome {
+            genes: init
+        }
+    }
+}
+
 /// An agent is a potential solution to the problem.
 #[derive(Component)]
 struct Agent;
 
 #[derive(Component)]
 struct Generation(u32);
-
-/// The chromosome of an agent is a collection of genes.
-/// In this case the genes are a collection of Neurons which compose
-/// a neural network.
-#[derive(Component)]
-struct Chromosome {
-    genes: Vec<NeuronBundle>,
-}
-
-impl Chromosome {
-    fn new() -> Chromosome {
-        // we start with a single neuron
-        Chromosome {
-            genes: vec![
-                NeuronBundle {
-                    neuron: Neuron,
-                    activation_function: TANH,
-                    bias: Bias(0.5),
-                    weights: Weights(vec![]),
-                    inputs: Inputs(vec![]),
-                    outputs: Outputs(vec![]),
-                    activation: Activation(0.0),
-                }
-            ]
-        }
-    }
-}
 
 /// The fitness of an agent is a measure of how well it performs.
 #[derive(Component)]
@@ -173,29 +160,113 @@ struct Outputs(Vec<u32>);
 struct Activation(f32);
 
 
+fn rotate_camera(
+    mut q_camera: Query<&mut Transform, With<Camera>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+) {
+    if let Ok(mut cam_transform) = q_camera.get_single_mut() {
+        if mouse.pressed(MouseButton::Left) {
+            cam_transform.rotate_around(Vec3::ZERO, Quat::from_rotation_y(0.05))
+        }
+        else if mouse.pressed(MouseButton::Right) {
+            cam_transform.rotate_around(Vec3::ZERO, Quat::from_rotation_y(-0.05))
+        }
+    }
+}
+
+fn zoom_camera(
+    mut q_camera: Query<&mut Projection, With<Camera>>,
+    mut ev_wheel: EventReader<MouseWheel>
+) {
+
+    let Projection::Perspective(persp) = q_camera.single_mut().into_inner() else { return };
+    for ev in ev_wheel.read() {
+        match ev.unit {
+            MouseScrollUnit::Line => {
+                persp.fov -= 0.05 * ev.y;
+            }
+            MouseScrollUnit::Pixel => {
+                persp.fov += 1.0 * ev.y;
+            }
+        }
+    }
+}
+
 /// At the beginning, a set of solutions,
 /// which is denoted as population, is initialized.
 /// This runs once when the App starts.
 /// When done, the next state is set to Selection.
 fn initialize_population(
-    mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
     mut commands: Commands,
-    mut rng: ResMut<GlobalEntropy<WyRand>>
+    mut rng: ResMut<GlobalEntropy<WyRand>>,
 ) {
-    info!("Initializing population..");
-    
     // create the population
     for _ in 0..POPULATION_SIZE {
         commands.spawn((AgentBundle {
             agent: Agent,
             fitness: Fitness(0.0),
-            chromosome: Chromosome::new(),
+            // random between 0 and 255
+            chromosome: Chromosome::new(rng.next_u32() as u8 % 255),
             generation: Generation(1),
         },
         rng.fork_rng(),
         ));
     }
-    
+}
+
+fn setup_scene(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    q_agent: Query<&Chromosome, With<Agent>>,
+    bg_color: Res<BackgroundColorGreyScale>,
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
+) {
+    // setup camera
+    commands.spawn(
+        Camera3dBundle {
+            transform: Transform::from_xyz(0.0, 0.0, 20.0).looking_at(Vec3::ZERO, Vec3::Y),
+            camera: Camera {
+                clear_color: ClearColorConfig::Custom(Color::rgb_u8(bg_color.0, bg_color.0, bg_color.0)),
+                
+                ..default()
+            },
+            ..Default::default()
+        }
+    );
+
+    // setup light
+    commands.spawn(
+        PointLightBundle {
+            transform: Transform::from_xyz(4.0, 8.0, 4.0),
+            ..Default::default()
+        }
+    );
+
+    // setup agents
+    q_agent
+        .iter()
+        .enumerate()
+        .for_each(|(idx, chromosome)| {
+            let offset_x = -5.0;
+            let offset_y = -5.0;
+            // spawn x position shoudl be between 1 and 10 and should start
+            // again at 1 when its over 10
+            let spawn_x = 1.0 + (idx as f32 % 10.0) + offset_x;
+            // spawn z position shoudl be zero for the first 10 and 
+            // 1 for the next 10 and so on
+            let spawn_y = (idx as f32 / 10.0).floor() + offset_y;
+            // set an offset for x and y position so that the camera can rotate around the center
+
+            commands.spawn(
+                PbrBundle {
+                    mesh: meshes.add(Cuboid::from_size(Vec3::splat(1.0))),
+                    material: materials.add(Color::rgb_u8(chromosome.genes, chromosome.genes, chromosome.genes)),
+                    transform: Transform::from_xyz(spawn_x, spawn_y, 0.0),
+                    ..default()
+                }
+            );
+        });
     next_state.set(GeneticAlgorithmState::EvaluateFitness);
 }
 
@@ -205,20 +276,27 @@ fn initialize_population(
 /// The fitness of each agent is stored in the Fitness component.
 /// The next state is set to Crossover.
 fn fitness_evaluation(
-    mut q_agent: Query<(&mut Fitness, &mut Chromosome, &mut EntropyComponent<WyRand>), With<Agent>>,
-    mut next_state: ResMut<NextState<GeneticAlgorithmState>>
+    mut q_agent: Query<(&mut Fitness, &Chromosome, &mut EntropyComponent<WyRand>), With<Agent>>,
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
+    bg_color: Res<BackgroundColorGreyScale>,
 ) {
     // compute fitness
     q_agent
         .par_iter_mut()
-        .for_each(|(mut fitness, mut chromosome, mut rng)| {
+        .for_each(|(mut fitness, chromosome, mut rng)| {
             // steps to evaluate fitness:
-            // - train the neural network with training data(operational heavy task)
-            // - use the trained neural network to solve the problem
-            // - evaluate the performance of the neural network
+            // - train the agent with training data(operational heavy task) optional for now.
+            // - use the trained agent to solve the problem
+            // - evaluate the performance of the agent
             // - assign the performance as the fitness of the agent
-            fitness.0 = (rng.next_u32() as f32 / u32::MAX as f32) + 0.05;
-            info!("Fitness: {:?}", fitness.0);
+
+            // The problem to solve is minimizing the error value of a function.
+            // for this test its just a rgb color comparison to a background color.
+            // The less the difference the better the fitness.
+
+            let diff = chromosome.genes.abs_diff(bg_color.0);
+            // normalize the difference to the range [0, 1] and assign as fitness
+            fitness.0 = 1.0 - (diff as f32 / 255.0);
         });
 
     next_state.set(GeneticAlgorithmState::CheckStopCriteria);
@@ -226,7 +304,8 @@ fn fitness_evaluation(
 
 fn check_stop_criteria(
     mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
-    q_agent: Query<&Fitness, With<Agent>>,
+    q_agent: Query<&Chromosome, With<Agent>>,
+    q_generation: Query<&Generation, With<Agent>>,
 ) {
     info!("Checking stop criteria..");
 
@@ -234,18 +313,23 @@ fn check_stop_criteria(
     // - maximum number of generations
     // - reached a plateau
     // - a solution with satisfactory fitness is found
-    let stop = q_agent
+    // let stop = q_agent
+    //     .iter()
+    //     .any(|chromosome| {
+    //         chromosome.genes == 255
+    //     });
+    let stop = q_generation
         .iter()
-        .any(|fitness| {
-            fitness.0 >= 1.0
-        });
+        .any(|generation|
+            generation.0 >= 100
+        );
     if stop {
-        let sum = q_agent
-            .iter()
-            .fold(0.0,|acc, e| {
-                acc + e.0
-            });
-        info!("Average fitness: {:?}", sum / POPULATION_SIZE as f32);
+        // let sum = q_agent
+        //     .iter()
+        //     .fold(0.0,|acc, e| {
+        //         acc + e.0
+        //     });
+        // info!("Average fitness: {:?}", sum / POPULATION_SIZE as f32);
         next_state.set(GeneticAlgorithmState::EndAgorithm);
     } else {
         next_state.set(GeneticAlgorithmState::Crossover);
