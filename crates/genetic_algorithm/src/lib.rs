@@ -68,7 +68,7 @@ impl Plugin for GeneticAlgorithmPlugin {
 
 const POPULATION_SIZE: u32 = 100;
 const MAXIMUM_GENERATIONS: u32 = 100;
-const ANIMATION_SPEED_MULTIPLIER: f32 = 0.5;
+const ANIMATION_SPEED_MULTIPLIER: f32 = 3.0;
 
 // #[derive(Event)]
 // struct PopulationInitialized;
@@ -166,7 +166,10 @@ struct Evaluated;
 
 /// marker component for the offspring of two agents
 #[derive(Component)]
-struct Offspring;
+struct Offspring {
+    chromosome: Chromosome,
+    spawn_pos: Vec3,
+}
 
 // NEURAL NETWORK SECTION
 
@@ -368,14 +371,7 @@ fn check_stop_criteria(
     // - maximum number of generations
     // - reached a plateau
     // - a solution with satisfactory fitness is found
-    let stop = generation.0 >= MAXIMUM_GENERATIONS;
-
-    // print all the chromosome values
-    q_chromosome
-        .iter()
-        .for_each(|chromosome| {
-            info!("Chromosome: {}", chromosome.genes);
-        });
+    let stop = generation.0 >= MAXIMUM_GENERATIONS || q_chromosome.iter().all(|chromosome| chromosome.genes == 255);
 
     if stop {
         info!("Stopping criteria met..");
@@ -414,19 +410,16 @@ fn selection(
 
 fn crossover(
     mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
-    mut q_agent: Query<&mut Chromosome, With<Agent>>,
+    q_agent: Query<&mut Chromosome, With<Agent>>,
     mut commands: Commands,
     grid: Res<Grid>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut generation: ResMut<Generation>,
     mut rng: ResMut<GlobalEntropy<WyRand>>,
 ) {
     info!("Performing crossover..");
 
     let number_of_agents = q_agent.iter().len();
-    let mut agents = q_agent.iter().cloned().collect::<Vec<_>>();
-    let mut other_agents = q_agent.iter().cloned().collect::<Vec<_>>();
+    let mut agents = q_agent.iter().collect::<Vec<_>>();
+    let mut other_agents = q_agent.iter().collect::<Vec<_>>();
     let n = 4;
     let mask = (1 << n) - 1;
     let _ = agents
@@ -434,14 +427,12 @@ fn crossover(
         .take(number_of_agents / 2)
         .zip(other_agents.iter_mut().skip(number_of_agents / 2))
         .enumerate()
-        .for_each(|(index, (a, b))| {
-            let a_genes = a.genes;
-            let b_genes = b.genes;
-            let a_masked_1 = a_genes & mask;
-            let b_masked_1 = b_genes & !mask;
+        .for_each(|(index, (chromosome1, chromosome2))| {
+            let a_masked_1 = chromosome1.genes & mask;
+            let b_masked_1 = chromosome2.genes & !mask;
 
-            let a_masked_2 = a_genes & !mask;
-            let b_masked_2 = b_genes & mask;
+            let a_masked_2 = chromosome1.genes & !mask;
+            let b_masked_2 = chromosome2.genes & mask;
 
             let index_1 = index * 2;
             let index_2 = index * 2 + 1;
@@ -459,15 +450,11 @@ fn crossover(
                     chromosome: Chromosome::new(offspring_1),
                     rng: rng.fork_rng(),
                 },
-                Offspring,
-                PbrBundle {
-                    mesh: meshes.add(Cuboid::from_size(Vec3::splat(1.0))),
-                    material: materials.add(Color::rgb_u8(offspring_1, offspring_1, offspring_1)),
-                    transform: Transform::from_xyz(grid_pos_1.x, grid_pos_1.y,0.0),
-                    ..default()
+                Offspring {
+                    chromosome: Chromosome::new(offspring_1),
+                    spawn_pos: grid_pos_1,
                 },
             ));
-
             commands.spawn((
                 AgentBundle {
                     agent: Agent,
@@ -475,49 +462,61 @@ fn crossover(
                     chromosome: Chromosome::new(offspring_2),
                     rng: rng.fork_rng(),
                 },
-                Offspring,
-                PbrBundle {
-                    mesh: meshes.add(Cuboid::from_size(Vec3::splat(1.0))),
-                    material: materials.add(Color::rgb_u8(offspring_2, offspring_2, offspring_2)),
-                    transform: Transform::from_xyz(grid_pos_2.x, grid_pos_2.y,0.0),
-                    ..default()
+                Offspring {
+                    chromosome: Chromosome::new(offspring_2),
+                    spawn_pos: grid_pos_2,
                 },
             ));
         });
     
-    info!("Crossover done..");
-    generation.0 += 1;
-    info!("Generation: {}", generation.0);
-
     next_state.set(GeneticAlgorithmState::Mutation);
 }
 
 fn mutation(
     mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
-    q_offspring: Query<(Entity, &mut Chromosome), With<Offspring>>,
+    mut q_offspring: Query<(&mut Offspring, &mut Chromosome, &mut EntropyComponent<WyRand>), With<Agent>>,
 ) {
     info!("Performing mutation..");
 
-    // skip for now and go on with the next state
-
-    // at the end, remove the Offspring marker
-    // q_offspring
-    //     .iter()
-    //     .for_each(|(entity, mut chromosome)| {
-    //             let mut rng = WyRand::default();
-    //             let mut genes = chromosome.genes;
-    //             let mask = 1 << (rng.next_u32() % 8);
-    //             genes ^= mask;
-    //             chromosome.genes = genes;
-    //     });
-
+    q_offspring
+        .iter_mut()
+        .for_each(|(mut offspring, mut chromosome, mut rng)| {
+            // a 1 % chance of mutation
+            let should_mutate = rng.next_u32() % 100 == 0;
+            if should_mutate {
+                let mask = 1 << (rng.next_u32() % 8);
+                offspring.chromosome.genes ^= mask;
+                chromosome.genes ^= mask;
+            }
+        });
     next_state.set(GeneticAlgorithmState::PhenotypeMapping);
 }
 
 fn phenotype_mapping(
-    mut next_state: ResMut<NextState<GeneticAlgorithmState>>
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
+    mut generation: ResMut<Generation>,
+    mut commands: Commands,
+    mut q_offspring: Query<(Entity, &mut Offspring), With<Agent>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     info!("Performing phenotype mapping..");
+
+    q_offspring
+        .iter_mut()
+        .for_each(|(entity, offspring)| {
+            commands.entity(entity)
+                .insert(PbrBundle {
+                        mesh: meshes.add(Cuboid::from_size(Vec3::splat(1.0))),
+                        material: materials.add(Color::rgb_u8(offspring.chromosome.genes, offspring.chromosome.genes, offspring.chromosome.genes)),
+                        transform: Transform::from_xyz(offspring.spawn_pos.x, offspring.spawn_pos.y,0.0),
+                        ..default()
+                });
+            commands.entity(entity).remove::<Offspring>();
+        });
+
+    generation.0 += 1;
+    info!("Generation: {}", generation.0);
 
     next_state.set(GeneticAlgorithmState::EvaluateFitness);
 }
