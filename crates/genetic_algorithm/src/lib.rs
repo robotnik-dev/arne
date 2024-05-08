@@ -2,13 +2,13 @@
 // it uses the entity component system pattern to represent the agents and to leverage 
 // the parallelism for evaluating the fitness of each agent
 
-use std::{time::Duration};
+use std::{marker::PhantomData, time::Duration};
 
-use bevy::{input::mouse::{MouseScrollUnit, MouseWheel}, prelude::*, transform::commands};
+use bevy::{ecs::query::QueryData, input::mouse::{MouseScrollUnit, MouseWheel}, prelude::*, sprite::MaterialMesh2dBundle, transform::commands};
 use bevy_prng::WyRand;
 use rand_core::RngCore;
 use bevy_rand::prelude::{EntropyComponent, GlobalEntropy, ForkableRng, EntropyPlugin};
-use bevy_tweening::{lens::TransformPositionLens, *};
+use bevy_tweening::{lens::{TransformPositionLens, TransformScaleLens}, *};
 
 pub struct GeneticAlgorithmPlugin;
 
@@ -24,7 +24,7 @@ impl Plugin for GeneticAlgorithmPlugin {
         app.insert_resource(BackgroundColorGreyScale(255));
         app.insert_resource(Generation(0));
         app.insert_resource(Grid::default());
-        // app.add_event::<PopulationInitialized>();
+        // app.add_event::<AgentOutsourced>();
 
         app.add_systems(Startup, (
             (
@@ -34,8 +34,8 @@ impl Plugin for GeneticAlgorithmPlugin {
         ));
 
         app.add_systems(Update, (
-            rotate_camera,
-            zoom_camera,
+            // rotate_camera,
+            // zoom_camera,
             fitness_evaluation
                 .run_if(in_state(GeneticAlgorithmState::EvaluateFitness)),
             check_stop_criteria
@@ -54,6 +54,8 @@ impl Plugin for GeneticAlgorithmPlugin {
                 .run_if(in_state(GeneticAlgorithmState::Pause)),
             check_animate_transform_done
                 .run_if(in_state(GeneticAlgorithmState::AnimateMovement)),
+            check_animate_despawn_done
+                .run_if(in_state(GeneticAlgorithmState::AnimateDespawn)),
         ));
         app.add_systems(OnEnter(GeneticAlgorithmState::AnimateMovement), (
             animate_agent_transform,
@@ -68,10 +70,15 @@ impl Plugin for GeneticAlgorithmPlugin {
 
 const POPULATION_SIZE: u32 = 100;
 const MAXIMUM_GENERATIONS: u32 = 100;
-const ANIMATION_SPEED_MULTIPLIER: f32 = 3.0;
+const ANIMATION_SPEED_MULTIPLIER: f32 = 1.0;
+const DESPAWN_SPEED_MULTIPLIER: f32 = 1.0;
+const MESH2D_SCALE: f32 = 128.0;
 
+const RNN_SIZE: usize = 5;
+
+/// gets calles when the fitness of an agent is not high enough and he needs to be despawned
 // #[derive(Event)]
-// struct PopulationInitialized;
+// struct AgentOutsourced(Entity);
 
 #[derive(Resource)]
 struct BackgroundColorGreyScale(u8);
@@ -90,7 +97,7 @@ impl Grid {
     fn get_pos_at(&self, index: usize) -> Vec3 {
         let row = 1 + index as u32 % self.rows;
         let col = 1 + index as u32 / self.cols;
-        Vec3::new(row as f32, col as f32, 0.0)
+        Vec3::new(row as f32, col as f32, 0.0) * MESH2D_SCALE
     }
 }
 
@@ -114,6 +121,7 @@ enum GeneticAlgorithmState {
     CheckStopCriteria,
     // Choose the best agents to be parents for the next generation
     AnimateMovement,
+    AnimateDespawn,
     Selection,
     Crossover,
     Mutation,
@@ -129,28 +137,40 @@ struct AgentBundle {
     // marker
     agent: Agent,
     fitness: Fitness,
-    chromosome: Chromosome,
-    rng: EntropyComponent<WyRand>,
+    chromosome: Rnn,
 }
 
-#[derive(Component, Copy, Clone)]
-struct Chromosome {
-    genes: u8,
-}
-
-impl Chromosome {
-    fn new(init: u8) -> Self {
-        Chromosome {
-            genes: init,
+impl Default for AgentBundle {
+    fn default() -> Self {
+        Self {
+            agent: Agent,
+            fitness: Fitness(0.0),
+            chromosome: Rnn::default(),
         }
     }
 }
 
-impl std::fmt::Display for Chromosome {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:08b}", self.genes)
+/// Recurrent neural network. Fixed neuron count.
+#[derive(Component)]
+struct Rnn {
+    neurons: Vec<NeuronBundle>,
+}
+
+impl Default for Rnn {
+    fn default() -> Self {
+        Rnn {
+            neurons: vec![NeuronBundle::default(); RNN_SIZE],
+        }
     }
 }
+
+// impl Rnn {
+//     fn new() -> Self {
+//         Rnn {
+//             neurons: Vec::new(),
+//         }
+//     }
+// }
 
 /// An agent is a potential solution to the problem.
 #[derive(Component)]
@@ -160,14 +180,10 @@ struct Agent;
 #[derive(Component, PartialEq, PartialOrd)]
 struct Fitness(f32);
 
-/// Marker Component for all evaluated Agents
-#[derive(Component)]
-struct Evaluated;
-
 /// marker component for the offspring of two agents
 #[derive(Component)]
 struct Offspring {
-    chromosome: Chromosome,
+    chromosome: Rnn,
     spawn_pos: Vec3,
 }
 
@@ -178,73 +194,53 @@ const TANH: ActivationFunction = ActivationFunction(|x| x.tanh());
 /// ReLU activation function maps the output to the range [0, inf)
 const RELU: ActivationFunction = ActivationFunction(|x| x.max(0.0));
 
-#[derive(Bundle)]
+#[derive(Bundle, Clone)]
 struct NeuronBundle {
-    // marker
     neuron: Neuron,
     activation_function: ActivationFunction,
     bias: Bias,
+    /// The weights of the input connections to the neuron.
+    /// The weights are used to calculate the activation of the neuron.
     weights: Weights,
+    /// List of entity IDs that are connected as inputs to the neuron.
     inputs: Inputs,
+    /// List of entity IDs that are connected as outputs to the neuron.
     outputs: Outputs,
+    /// The activation of the neuron, generated by the activation function.
     activation: Activation,
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Neuron;
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct ActivationFunction(fn(f32) -> f32);
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Bias(f32);
 
-/// The weights of the input connections to the neuron.
-/// The weights are used to calculate the activation of the neuron.
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Weights(Vec<f32>);
 
-/// List of entity IDs that are connected as inputs to the neuron.
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Inputs(Vec<u32>);
 
-/// List of entity IDs that are connected as outputs to the neuron.
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Outputs(Vec<u32>);
 
-/// The activation of the neuron, generated by the activation function.
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Activation(f32);
 
-
-fn rotate_camera(
-    mut q_camera: Query<&mut Transform, With<Camera>>,
-    mouse: Res<ButtonInput<MouseButton>>,
-) {
-    if let Ok(mut cam_transform) = q_camera.get_single_mut() {
-        if mouse.pressed(MouseButton::Left) {
-            cam_transform.rotate_around(Vec3::new(5.0, 5.0, 0.0), Quat::from_rotation_y(0.05))
-        }
-        else if mouse.pressed(MouseButton::Right) {
-            cam_transform.rotate_around(Vec3::new(5.0, 5.0, 0.0), Quat::from_rotation_y(-0.05))
-        }
-    }
-}
-
-fn zoom_camera(
-    mut q_camera: Query<&mut Projection, With<Camera>>,
-    mut ev_wheel: EventReader<MouseWheel>
-) {
-
-    let Projection::Perspective(persp) = q_camera.single_mut().into_inner() else { return };
-    for ev in ev_wheel.read() {
-        match ev.unit {
-            MouseScrollUnit::Line => {
-                persp.fov -= 0.05 * ev.y;
-            }
-            MouseScrollUnit::Pixel => {
-                persp.fov += 1.0 * ev.y;
-            }
+impl Default for NeuronBundle {
+    fn default() -> Self {
+        NeuronBundle {
+            neuron: Neuron,
+            activation_function: TANH,
+            bias: Bias(0.0),
+            weights: Weights(Vec::new()),
+            inputs: Inputs(Vec::new()),
+            outputs: Outputs(Vec::new()),
+            activation: Activation(0.0),
         }
     }
 }
@@ -261,14 +257,9 @@ fn initialize_population(
     // set an offset for x and y position so that the camera can rotate around the center
     // create the population
     for _ in 0..POPULATION_SIZE {
-        let genes = rng.next_u32() as u8 % 255;
-        commands.spawn((AgentBundle {
-            agent: Agent,
-            fitness: Fitness(0.0),
-            // random between 0 and 255
-            chromosome: Chromosome::new(genes),
-            rng: rng.fork_rng(),
-        },
+        commands.spawn((
+            AgentBundle::default(),
+            rng.fork_rng(),
         ));
     }
     generation.0 += 1;
@@ -277,47 +268,35 @@ fn initialize_population(
 fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    q_agent: Query<(Entity, &Chromosome), With<Agent>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    q_agent: Query<(Entity, &Rnn), With<Agent>>,
     bg_color: Res<BackgroundColorGreyScale>,
     mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
     grid: ResMut<Grid>
 ) {
-    // setup camera
-    commands.spawn(
-        Camera3dBundle {
-            transform: Transform::from_xyz(5.0, 5.0, 20.0).looking_at(Vec3::new(5.0, 5.0, 0.0), Vec3::Y),
-            camera: Camera {
-                clear_color: ClearColorConfig::Custom(Color::rgb_u8(bg_color.0, bg_color.0, bg_color.0)),
-                ..default()
-            },
-            ..Default::default()
-        }
-    );
 
-    // setup light
+    // setup camera
+    let mut camera_bundle = Camera2dBundle::default();
+    camera_bundle.transform = Transform::from_xyz(MESH2D_SCALE * 5., MESH2D_SCALE * 5., 0.0);
+    camera_bundle.projection.scale = 2.0;
+    camera_bundle.camera.clear_color = ClearColorConfig::Custom(Color::rgb_u8(bg_color.0, bg_color.0, bg_color.0));
     commands.spawn(
-        PointLightBundle {
-            transform: Transform::from_xyz(4.0, 8.0, 4.0),
-            ..Default::default()
-        }
+        camera_bundle
     );
 
     // attach visual to agents
     q_agent
         .iter()
         .enumerate()
-        .for_each(|(index, (entity, chromosome))| {
-            // grid x position start left at 1.0
-            // grid y position start top at 1.0
+        .for_each(|(index, (entity, rnn))| {
             let grid_x = grid.get_pos_at(index as usize).x;
             let grid_y = grid.get_pos_at(index as usize).y;
             commands.entity(entity)
                 .insert((
-                    PbrBundle {
-                        mesh: meshes.add(Cuboid::from_size(Vec3::splat(1.0))),
-                        material: materials.add(Color::rgb_u8(chromosome.genes, chromosome.genes, chromosome.genes)),
-                        transform: Transform::from_xyz(grid_x, grid_y, 0.0),
+                    MaterialMesh2dBundle {
+                        mesh: meshes.add(Rectangle::from_size(Vec2::splat(1.0))).into(),
+                        material: materials.add(Color::rgb_u8(1, 1, 1)),
+                        transform: Transform::from_xyz(grid_x, grid_y, 0.0).with_scale(Vec3::splat(MESH2D_SCALE)),
                         ..default()
                     },
                 ));
@@ -331,7 +310,7 @@ fn setup_scene(
 /// The fitness of each agent is stored in the Fitness component.
 /// The next state is set to Crossover.
 fn fitness_evaluation(
-    mut q_agent: Query<(&mut Fitness, &Chromosome, &mut EntropyComponent<WyRand>), With<Agent>>,
+    mut q_agent: Query<(&mut Fitness, &Rnn, &mut EntropyComponent<WyRand>), With<Agent>>,
     mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
     bg_color: Res<BackgroundColorGreyScale>,
     // mut grid: ResMut<Grid>
@@ -341,7 +320,7 @@ fn fitness_evaluation(
     // compute fitness
     q_agent
         .par_iter_mut()
-        .for_each(|(mut fitness, chromosome, mut rng)| {
+        .for_each(|(mut fitness, rnn, mut rng)| {
             // steps to evaluate fitness:
             // - train the agent with training data(operational heavy task) optional for now.
             // - use the trained agent to solve the problem
@@ -352,9 +331,9 @@ fn fitness_evaluation(
             // for this test its just a rgb color comparison to a background color.
             // The less the difference the better the fitness.
 
-            let diff = chromosome.genes.abs_diff(bg_color.0);
+            // let diff = chromosome.genes.abs_diff(bg_color.0);
             // normalize the difference to the range [0, 1] and assign as fitness
-            fitness.0 = 255.0 - (diff as f32);
+            // fitness.0 = 255.0 - (diff as f32);
             // info!("Color: {} Fitness: {}", chromosome.genes, fitness.0);
         });
     
@@ -363,7 +342,7 @@ fn fitness_evaluation(
 
 fn check_stop_criteria(
     mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
-    q_chromosome: Query<&Chromosome, With<Agent>>,
+    q_rnn: Query<&Rnn, With<Agent>>,
     generation: Res<Generation>,
 ) {
     info!("Checking stop criteria..");
@@ -371,7 +350,7 @@ fn check_stop_criteria(
     // - maximum number of generations
     // - reached a plateau
     // - a solution with satisfactory fitness is found
-    let stop = generation.0 >= MAXIMUM_GENERATIONS || q_chromosome.iter().all(|chromosome| chromosome.genes == 255);
+    let stop = false; // generation.0 >= MAXIMUM_GENERATIONS || q_rnn.iter().all(|rnn| chromosome.genes == 255);
 
     if stop {
         info!("Stopping criteria met..");
@@ -384,7 +363,7 @@ fn check_stop_criteria(
 
 fn selection(
     mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
-    q_agent: Query<(Entity, &Fitness), With<Agent>>,
+    q_agent: Query<(Entity, &Fitness, &Transform), With<Agent>>,
     mut commands: Commands,
     // mut grid: ResMut<Grid>
 ) {
@@ -401,16 +380,28 @@ fn selection(
         .iter()
         // just despawn the first half of the agents -> change this later?
         .take(POPULATION_SIZE as usize / 2)
-        .for_each(|(entity, _)| {
-            commands.entity(*entity).despawn();
+        .for_each(|(entity, _, transform)| {
+            // attach a tween component to animate shrinking the agent
+            let tween = Tween::new(
+                EaseFunction::QuadraticInOut,
+                Duration::from_secs_f32(1.0 / DESPAWN_SPEED_MULTIPLIER),
+                TransformScaleLens {
+                    start: transform.scale,
+                    end: Vec3::splat(0.0),
+            }).with_completed_event(1);
+            commands.entity(*entity)
+                .insert(
+                    Animator::new(tween)
+                );
+            // commands.entity(*entity).despawn();
         });
 
-    next_state.set(GeneticAlgorithmState::Crossover);
+    next_state.set(GeneticAlgorithmState::AnimateDespawn);
 }
 
 fn crossover(
     mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
-    q_agent: Query<&mut Chromosome, With<Agent>>,
+    q_agent: Query<&mut Rnn, With<Agent>>,
     mut commands: Commands,
     grid: Res<Grid>,
     mut rng: ResMut<GlobalEntropy<WyRand>>,
@@ -427,46 +418,46 @@ fn crossover(
         .take(number_of_agents / 2)
         .zip(other_agents.iter_mut().skip(number_of_agents / 2))
         .enumerate()
-        .for_each(|(index, (chromosome1, chromosome2))| {
-            let a_masked_1 = chromosome1.genes & mask;
-            let b_masked_1 = chromosome2.genes & !mask;
+        .for_each(|(index, (rnn1, rnn2))| {
+            // let a_masked_1 = chromosome1.genes & mask;
+            // let b_masked_1 = chromosome2.genes & !mask;
 
-            let a_masked_2 = chromosome1.genes & !mask;
-            let b_masked_2 = chromosome2.genes & mask;
+            // let a_masked_2 = chromosome1.genes & !mask;
+            // let b_masked_2 = chromosome2.genes & mask;
 
-            let index_1 = index * 2;
-            let index_2 = index * 2 + 1;
+            // let index_1 = index * 2;
+            // let index_2 = index * 2 + 1;
 
-            let offspring_1 = a_masked_1 | b_masked_1;
-            let offspring_2 = a_masked_2 | b_masked_2;
+            // let offspring_1 = a_masked_1 | b_masked_1;
+            // let offspring_2 = a_masked_2 | b_masked_2;
 
-            let grid_pos_1 = grid.get_pos_at(index_1);
-            let grid_pos_2 = grid.get_pos_at(index_2);
+            // let grid_pos_1 = grid.get_pos_at(index_1);
+            // let grid_pos_2 = grid.get_pos_at(index_2);
 
-            commands.spawn((
-                AgentBundle {
-                    agent: Agent,
-                    fitness: Fitness(0.0),
-                    chromosome: Chromosome::new(offspring_1),
-                    rng: rng.fork_rng(),
-                },
-                Offspring {
-                    chromosome: Chromosome::new(offspring_1),
-                    spawn_pos: grid_pos_1,
-                },
-            ));
-            commands.spawn((
-                AgentBundle {
-                    agent: Agent,
-                    fitness: Fitness(0.0),
-                    chromosome: Chromosome::new(offspring_2),
-                    rng: rng.fork_rng(),
-                },
-                Offspring {
-                    chromosome: Chromosome::new(offspring_2),
-                    spawn_pos: grid_pos_2,
-                },
-            ));
+            // commands.spawn((
+            //     AgentBundle {
+            //         agent: Agent,
+            //         fitness: Fitness(0.0),
+            //         chromosome: Chromosome::new(offspring_1),
+            //         rng: rng.fork_rng(),
+            //     },
+            //     Offspring {
+            //         chromosome: Chromosome::new(offspring_1),
+            //         spawn_pos: grid_pos_1,
+            //     },
+            // ));
+            // commands.spawn((
+            //     AgentBundle {
+            //         agent: Agent,
+            //         fitness: Fitness(0.0),
+            //         chromosome: Chromosome::new(offspring_2),
+            //         rng: rng.fork_rng(),
+            //     },
+            //     Offspring {
+            //         chromosome: Chromosome::new(offspring_2),
+            //         spawn_pos: grid_pos_2,
+            //     },
+            // ));
         });
     
     next_state.set(GeneticAlgorithmState::Mutation);
@@ -474,20 +465,20 @@ fn crossover(
 
 fn mutation(
     mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
-    mut q_offspring: Query<(&mut Offspring, &mut Chromosome, &mut EntropyComponent<WyRand>), With<Agent>>,
+    mut q_offspring: Query<(&mut Offspring, &mut Rnn, &mut EntropyComponent<WyRand>), With<Agent>>,
 ) {
     info!("Performing mutation..");
 
     q_offspring
         .iter_mut()
-        .for_each(|(mut offspring, mut chromosome, mut rng)| {
+        .for_each(|(mut offspring, mut rnn, mut rng)| {
             // a 1 % chance of mutation
             let should_mutate = rng.next_u32() % 100 == 0;
-            if should_mutate {
-                let mask = 1 << (rng.next_u32() % 8);
-                offspring.chromosome.genes ^= mask;
-                chromosome.genes ^= mask;
-            }
+            // if should_mutate {
+            //     let mask = 1 << (rng.next_u32() % 8);
+            //     offspring.chromosome.genes ^= mask;
+            //     chromosome.genes ^= mask;
+            // }
         });
     next_state.set(GeneticAlgorithmState::PhenotypeMapping);
 }
@@ -498,7 +489,7 @@ fn phenotype_mapping(
     mut commands: Commands,
     mut q_offspring: Query<(Entity, &mut Offspring), With<Agent>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     info!("Performing phenotype mapping..");
 
@@ -506,10 +497,10 @@ fn phenotype_mapping(
         .iter_mut()
         .for_each(|(entity, offspring)| {
             commands.entity(entity)
-                .insert(PbrBundle {
-                        mesh: meshes.add(Cuboid::from_size(Vec3::splat(1.0))),
-                        material: materials.add(Color::rgb_u8(offspring.chromosome.genes, offspring.chromosome.genes, offspring.chromosome.genes)),
-                        transform: Transform::from_xyz(offspring.spawn_pos.x, offspring.spawn_pos.y,0.0),
+                .insert(MaterialMesh2dBundle {
+                        mesh: meshes.add(Rectangle::from_size(Vec2::splat(1.0))).into(),
+                        material: materials.add(Color::rgb_u8(1, 1, 1)),
+                        transform: Transform::from_xyz(offspring.spawn_pos.x, offspring.spawn_pos.y,0.0).with_scale(Vec3::splat(MESH2D_SCALE)),
                         ..default()
                 });
             commands.entity(entity).remove::<Offspring>();
@@ -583,7 +574,7 @@ fn animate_agent_transform(
 fn check_animate_transform_done(
     mut reader: EventReader<TweenCompleted>,
     mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
-    q_agents: Query<Entity, With<Agent>>,
+    q_agents: Query<(Entity, &Animator<Transform>), With<Agent>>,
     mut commands: Commands
 ) {
     let mut count = 0;
@@ -592,6 +583,22 @@ fn check_animate_transform_done(
         commands.entity(ev.entity).remove::<Animator<Transform>>();
         if q_agents.iter().len() == count {
             next_state.set(GeneticAlgorithmState::Selection);
+        }
+    }
+}
+
+fn check_animate_despawn_done(
+    mut reader: EventReader<TweenCompleted>,
+    mut next_state: ResMut<NextState<GeneticAlgorithmState>>,
+    q_agents: Query<(Entity, &Animator<Transform>), With<Agent>>,
+    mut commands: Commands
+) {
+    let mut count = 0;
+    for ev in reader.read() {
+        count += 1;
+        commands.entity(ev.entity).despawn();
+        if q_agents.iter().len() == count {
+            next_state.set(GeneticAlgorithmState::Crossover);
         }
     }
 }
