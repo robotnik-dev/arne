@@ -7,8 +7,22 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.13.2"
+# bevy = "0.13.2"
+plotters = "0.3.5"
+rayon = "1.1"
+approx = "0.5.1"
+rand = "0.8.5"
+rand_chacha = "0.3.1"
+
 genetic_algorithm = {path = "../crates/genetic_algorithm"}
 neural_network = {path = "../crates/neural_network"}
 image_processing = {path = "../crates/image_processing"}
 utils = {path = "../crates/utils"}
+
+[dependencies.uuid]
+version = "1.8.0"
+features = [
+    "v4",                # Lets you generate random UUIDs
+    "fast-rng",          # Use a faster (but still sufficiently random) RNG
+    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
+]
