@@ -36,35 +36,34 @@ struct SimpleGrayscale(u8);
 
 impl Phenotype for SimpleGrayscale {}
 
-// //TODO: Rename later
-// #[derive(Debug, Clone)]
-// struct RealPhenotype(f32);
+#[derive(Debug, Clone)]
+struct Position {
+    x: f32,
+    y: f32,
+}
 
-// impl Phenotype for RealPhenotype {}
+/// This phenotype/solution to the problem is a line follower.
+/// If the agent/retina(TBD) can stay in each iteration step on the line(the center pixel of the image)
+/// the higher the fitness value will be.
+#[derive(Debug, Clone)]
+struct FollowLine {
+    // store only the difference between the current position and the position
+    // of the last iteration
+    delta_position: Position,
+}
 
-struct Population<G: Genotype, P: Phenotype> {
-    agents: Vec<Agent<G,P>>,
+impl Phenotype for FollowLine {}
+
+struct Population<G: Genotype> {
+    agents: Vec<Agent<G>>,
     generation: u32,
 }
 
-impl std::fmt::Display for Population<RNN, SimpleGrayscale> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Generation: {}", self.generation)?;
-        for agent in &self.agents {
-            writeln!(f, "Agent: {}", agent.genotype)?;
-            writeln!(f, "Fitness: {}", agent.fitness)?;
-            writeln!(f, "Phenotype: {:?}", agent.genotype.map_to_phenotype())?;
-            writeln!(f, "___")?;
-        }
-        Ok(())
-    }
-}
-
-impl Population<RNN, SimpleGrayscale> {
+impl Population<Rnn> {
     fn new(size: usize) -> Self {
         let agents = (0..size)
             .map(|_| Agent::new(NEURON_PER_RNN))
-            .collect::<Vec<Agent<RNN, SimpleGrayscale>>>();
+            .collect();
         Population {
             agents,
             generation: 0,
@@ -72,23 +71,21 @@ impl Population<RNN, SimpleGrayscale> {
     }
 }
 
-struct Agent<G: Genotype, P: Phenotype> {
+struct Agent<G: Genotype> {
     fitness: f64,
     genotype: G,
-    phenotype: P,
 }
 
-impl Clone for Agent<RNN, SimpleGrayscale> {
+impl Clone for Agent<Rnn> {
     fn clone(&self) -> Self {
         Agent {
             fitness: self.fitness,
             genotype: self.genotype.clone(),
-            phenotype: self.phenotype.clone(),
         }
     }
 }
 
-impl AgentEvaluation<SimpleGrayscale> for Agent<RNN, SimpleGrayscale> {
+impl AgentEvaluation<SimpleGrayscale> for Agent<Rnn> {
     fn calculate_fitness(&self, data: SimpleGrayscale) -> f64 {
         let correct_greyscale = data.0 as f64;
         let agent_greyscale = self.genotype.map_to_phenotype().0 as f64;
@@ -113,22 +110,11 @@ impl AgentEvaluation<SimpleGrayscale> for Agent<RNN, SimpleGrayscale> {
     }
 }
 
-// impl Clone for Agent<RNN, RealPhenotype> {
-//     fn clone(&self) -> Self {
-//         Agent {
-//             fitness: 0.,
-//             genotype: self.genotype.clone(),
-//             phenotype: self.phenotype.clone(),
-//         }
-//     }
-// }
-
-impl Agent<RNN, SimpleGrayscale> {
+impl Agent<Rnn> {
     fn new(number_of_neurons: usize) -> Self {
         Agent {
             fitness: 0.0,
-            genotype: RNN::new(number_of_neurons),
-            phenotype: SimpleGrayscale(0),
+            genotype: Rnn::new(number_of_neurons),
         }
     }
 }
@@ -168,18 +154,6 @@ impl ShortTermMemory {
 
     /// function that returns a list of tuples of (timestep, neuron_output) as a vector
     /// for evry snapshot that was already saved so that it can be visualized
-    /// E.g. if we saved two snapshots at timestep 0 and 1, the function will return (asuuming we have 5 neurons)
-    /// [
-    ///     [
-    ///         (1, get_snapshot_at_timestep(1).outputs[0]),
-    ///         (2, get_snapshot_at_timestep(2).outputs[0])
-    ///     ],
-    ///     [
-    ///         (1, get_snapshot_at_timestep(1).outputs[1]),
-    ///         (2, get_snapshot_at_timestep(2).outputs[1])
-    ///     ],
-    ///    [...]
-    /// ]
     fn get_visualization_data(&self) -> Option<Vec<Vec<(u32, f64)>>> {
         let mut data = vec![];
         for idx in 0..self.get_neuron_count() {
@@ -241,31 +215,14 @@ struct SnapShot {
 }
 
 #[derive(Clone)]
-struct RNN {
+struct Rnn {
     neurons: Vec<Neuron>,
     short_term_memory: ShortTermMemory,
 }
 
-impl Genotype for RNN {}
+impl Genotype for Rnn {}
 
-impl std::fmt::Display for RNN {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for neuron in &self.neurons {
-            write!(f, "Neuron {}:", neuron.index)?;
-            write!(f, " self activation: {}", neuron.self_activation)?;
-            write!(f, " bias: {}", neuron.bias)?;
-            writeln!(f, " output: {}", neuron.output)?;
-            writeln!(f, "Input neurons:")?;
-            for (index, weight) in &neuron.input_connections {
-                writeln!(f, " Neuron: {} with input weight {}", index, weight)?;
-            }
-            writeln!(f, "___")?;
-        }
-        Ok(())
-    }
-}
-
-impl GenotypePhenotypeMapping<SimpleGrayscale> for RNN {
+impl GenotypePhenotypeMapping<SimpleGrayscale> for Rnn {
     fn map_to_phenotype(&self) -> SimpleGrayscale {
         let num_neurons = 3;
         let greyscale = self.neurons
@@ -279,27 +236,29 @@ impl GenotypePhenotypeMapping<SimpleGrayscale> for RNN {
     }
 }
 
-impl RNN {
+impl Rnn {
     fn new(neuron_count: usize) -> Self {
         let mut neurons = vec![];
         for i in 0..neuron_count {
-            let neuron = Neuron::new(i);
+            let neuron = Neuron::new(i, neuron_count);
             neurons.push(neuron);
         }
 
         // connect all neurons with each other
+        // with the Xavier initialization
+        let (lower, upper) = (-1.0 / (neuron_count as f64).sqrt(), 1.0 / (neuron_count as f64).sqrt());
         neurons
             .iter_mut()
             .enumerate()
             .for_each(|(index, neuron)| {
                 for i in 0..neuron_count {
                     if i != index {
-                        neuron.input_connections.push((i, thread_rng().gen_range(-1.0..=1.0)));
+                        neuron.input_connections.push((i, thread_rng().gen_range(lower..=upper)));
                     }
                 }
             });
         
-        RNN {
+        Rnn {
             neurons,
             short_term_memory: ShortTermMemory::new(),
         }
@@ -348,14 +307,15 @@ struct Neuron {
 }
 
 impl Neuron {
-    fn new(index: usize) -> Self {
+    fn new(index: usize, neuron_count: usize) -> Self {
+        let (lower, upper) = (-1.0 / (neuron_count as f64).sqrt(), 1.0 / (neuron_count as f64).sqrt());
         Neuron {
             index,
             output: 0.,
             input_connections: vec![],
             bias: thread_rng().gen_range(-1.0..=1.0),
-            // randomize self activation between -1 and 1
-            self_activation: thread_rng().gen_range(-1.0..=1.0),
+            // randomize self activation with the Xavier initialization
+            self_activation: thread_rng().gen_range(lower..=upper),
         }
     }
 }
@@ -412,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_map_to_phenotype_greyscale() {
-        let mut rnn = RNN::new(3);
+        let mut rnn = Rnn::new(3);
         rnn.neurons[0].output = 0.97;
         rnn.neurons[1].output = 0.88;
         rnn.neurons[2].output = 0.39;
@@ -421,7 +381,7 @@ mod tests {
     }
     #[test]
     fn test_map_to_phenotype_greyscale_1() {
-        let mut rnn = RNN::new(3);
+        let mut rnn = Rnn::new(3);
         rnn.neurons[0].output = 0.5;
         rnn.neurons[1].output = 0.5;
         rnn.neurons[2].output = 0.5;
@@ -431,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_map_to_phenotype_greyscale_2() {
-        let mut rnn = RNN::new(3);
+        let mut rnn = Rnn::new(3);
         rnn.neurons[0].output = 0.0;
         rnn.neurons[1].output = 0.0;
         rnn.neurons[2].output = 0.0;
@@ -441,7 +401,7 @@ mod tests {
 
     #[test]
     fn test_map_to_phenotype_greyscale_3() {
-        let mut rnn = RNN::new(3);
+        let mut rnn = Rnn::new(3);
         rnn.neurons[0].output = 1.0;
         rnn.neurons[1].output = 1.0;
         rnn.neurons[2].output = 1.0;
@@ -483,7 +443,7 @@ mod tests {
         use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = RNN::new(2);
+        let mut rnn = Rnn::new(2);
 
         // randomize the weights and self activations with a custom seed and set the bias to 1.0
         rnn.neurons
@@ -516,7 +476,7 @@ mod tests {
         use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = RNN::new(3);
+        let mut rnn = Rnn::new(3);
 
         // randomize the weights and self activations with a custom seed and set the bias to 1.0
         rnn.neurons
@@ -587,7 +547,7 @@ mod tests {
         // after each update create a snapshot
         // check if the snapshots are correct
         
-        let mut rnn = RNN::new(3);
+        let mut rnn = Rnn::new(3);
         rnn.neurons[0].output = 0.97;
         rnn.neurons[1].output = 0.88;
         rnn.neurons[2].output = 0.39;
@@ -611,7 +571,7 @@ mod tests {
         // update the rnn 5 times
         // after each update create a snapshot
         // visualize the rnn
-        let mut rnn = RNN::new(3);
+        let mut rnn = Rnn::new(3);
 
         for i in 1..=5 {
             rnn.update();
