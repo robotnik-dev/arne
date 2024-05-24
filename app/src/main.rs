@@ -234,10 +234,19 @@ impl PartialEq for SnapShot {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Rnn {
     neurons: Vec<Neuron>,
     short_term_memory: ShortTermMemory,
+}
+
+impl PartialEq for Rnn {
+    fn eq(&self, other: &Self) -> bool {
+        self.neurons
+            .iter()
+            .zip(other.neurons.iter())
+            .all(|(a, b)| a == b)
+    }
 }
 
 impl Genotype for Rnn {}
@@ -256,9 +265,30 @@ impl GenotypePhenotypeMapping<SimpleGrayscale> for Rnn {
     }
 }
 
-impl From<petgraph::Graph<usize,f64>> for Rnn {
-    fn from(graph: petgraph::Graph<usize,f64>) -> Self {
-        todo!()
+impl From<petgraph::Graph<(usize,f64),f64>> for Rnn {
+    fn from(graph: petgraph::Graph<(usize,f64),f64>) -> Self {
+        let mut neurons = vec![];
+        for node in graph.node_indices() {
+            let mut neuron = Neuron {
+                index: graph.node_weight(node).unwrap().0,
+                output: 0.0,
+                input_connections: vec![],
+                bias: graph.node_weight(node).unwrap().1,
+                self_activation: *graph.edge_weight(graph.find_edge(node, node).expect("msg")).unwrap(),
+            };
+            for neighbor in graph.neighbors(node) {
+                // skip self connection
+                if neighbor == node {
+                    continue;
+                }
+                neuron.input_connections.push((graph.node_weight(neighbor).unwrap().0, *graph.edge_weight(graph.find_edge(neighbor, node).expect("msg")).unwrap()));
+            }
+            neurons.push(neuron);
+        }
+        Rnn {
+            neurons,
+            short_term_memory: ShortTermMemory::new(),
+        }
     }
 }
 
@@ -314,15 +344,15 @@ impl Rnn {
     }
 }
 
-impl From<Rnn> for petgraph::Graph<usize,f64> {
+impl From<Rnn> for petgraph::Graph<(usize,f64),f64> {
     fn from(rnn: Rnn) -> Self {
         // converting the RNN to a graph
-        let mut graph = petgraph::Graph::<usize, f64>::new();
+        let mut graph = petgraph::Graph::<(usize,f64), f64>::new();
         let mut nodes = vec![];
 
         // creating nodes and adding self activation
         for neuron in &rnn.neurons {
-            let index = graph.add_node(neuron.index);
+            let index = graph.add_node((neuron.index, neuron.bias));
             graph.add_edge(index, index, neuron.self_activation);
             nodes.push(index);
         }
@@ -337,7 +367,7 @@ impl From<Rnn> for petgraph::Graph<usize,f64> {
 }
 
 /// A neuron in a neural network that can have a self-connection
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Neuron {
     // a unique identifier for the neuron
     index: usize,
@@ -352,6 +382,16 @@ struct Neuron {
     /// to represent the memory of the neuron, we append self activation to the input vector
     /// but store it separately
     self_activation: f64,
+}
+
+impl PartialEq for Neuron {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index &&
+        self.output.abs_diff_eq(&other.output, 0.01) &&
+        self.input_connections.iter().all(|con | other.input_connections.iter().find(|other_con| con == *other_con ).is_some()) &&
+        self.bias.abs_diff_eq(&other.bias, 0.01) &&
+        self.self_activation.abs_diff_eq(&other.self_activation, 0.01)
+    }
 }
 
 impl Neuron {
@@ -704,7 +744,7 @@ mod tests {
                 neuron.bias = -0.6;
             });
 
-        let graph = petgraph::Graph::<usize, f64>::from(agent.genotype.clone());
+        let graph = petgraph::Graph::<(usize, f64), f64>::from(agent.genotype.clone());
 
         graph
             .node_indices()
@@ -724,15 +764,17 @@ mod tests {
 
     #[test]
     fn test_from_graph_to_rnn() {
-        let mut graph = petgraph::Graph::<usize, f64>::new();
-        let node1 = graph.add_node(0);
-        let node2 = graph.add_node(1);
-        let node3 = graph.add_node(2);
+        let mut graph = petgraph::Graph::<(usize, f64), f64>::new();
+        let node1 = graph.add_node((0, 1.0));
+        let node2 = graph.add_node((1, -0.5));
+        let node3 = graph.add_node((2, 0.0));
 
+        // self connections
         graph.add_edge(node1, node1, 0.2);
         graph.add_edge(node2, node2, -0.2);
         graph.add_edge(node3, node3, 0.0);
 
+        // connections between neurons
         graph.add_edge(node1, node2, 0.5);
         graph.add_edge(node1, node3, 0.3);
         graph.add_edge(node2, node1, 0.1);
@@ -740,8 +782,32 @@ mod tests {
         graph.add_edge(node3, node1, 0.98);
         graph.add_edge(node3, node2, 0.11);
 
-        println!("{:?}", Dot::new(&graph));
+        let rnn = Rnn::from(graph.clone());
+
+        graph
+            .node_indices()
+            .for_each(|node| {
+                graph
+                    .neighbors(node)
+                    .for_each(|neighbor| {
+                        // get weight from neuron at index "node" from the agent and the neuron at index "neighbor"
+                        if let Some(correct_weight) = rnn.neurons[node.index()].input_connections
+                            .iter()
+                            .find(|(index, _)| *index == neighbor.index()) {
+                                assert_eq!(correct_weight.1, *graph.edge_weight(graph.find_edge(neighbor, node).expect("msg")).unwrap());
+                            }
+                    });
+            });
 
     }
 
+    #[test]
+    fn test_rnn_to_graph_conversion_and_back() {
+        let rnn = Rnn::new(3);
+
+        let graph = petgraph::Graph::<(usize, f64), f64>::from(rnn.clone());
+        let rnn2 = Rnn::from(graph.clone());
+
+        assert_eq!(rnn, rnn2);
+    }
 }
