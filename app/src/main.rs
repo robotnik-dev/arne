@@ -1,7 +1,9 @@
 // use bevy::prelude::*;
 // use genetic_algorithm::GeneticAlgorithmPlugin;
 
+
 use approx::AbsDiffEq;
+use petgraph::data::Build;
 use plotters::prelude::*;
 use rayon::prelude::*;
 use rand::prelude::*;
@@ -88,8 +90,8 @@ impl Clone for Agent<Rnn> {
 impl AgentEvaluation<SimpleGrayscale> for Agent<Rnn> {
     fn calculate_fitness(&self, data: SimpleGrayscale) -> f64 {
         let correct_greyscale = data.0 as f64;
-        let agent_greyscale = self.genotype.map_to_phenotype().0 as f64;
-        1.0 - (correct_greyscale - agent_greyscale).abs() / 255.0
+        let phenotype = self.genotype.map_to_phenotype().0 as f64;
+        1.0 - (correct_greyscale - phenotype).abs() / 255.0
     }
 
     fn evaluate(&mut self, data: SimpleGrayscale, number_of_updates: usize) -> f64 {
@@ -120,7 +122,7 @@ impl Agent<Rnn> {
 }
 
 /// A short term memory that can be used to store the state of the network
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct ShortTermMemory {
     snapshots: Vec<SnapShot>,
 }
@@ -205,13 +207,31 @@ impl ShortTermMemory {
     }
 }
 
+impl PartialEq for ShortTermMemory {
+    fn eq(&self, other: &Self) -> bool {
+        self.snapshots
+            .iter()
+            .zip(other.snapshots.iter())
+            .all(|(a, b)| a == b)
+    }
+}
+
 /// a snapshot of the network at a certain point in time.
 /// This can be used to restore the network to a previous state but its mainly used
 /// to store the outputs of the neurons to visulaize the network
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct SnapShot {
     outputs: Vec<f64>,
     time_step: u32,
+}
+
+impl PartialEq for SnapShot {
+    fn eq(&self, other: &Self) -> bool {
+        self.outputs
+            .iter()
+            .zip(other.outputs.iter())
+            .all(|(a, b)| a.abs_diff_eq(b, 0.01))
+    }
 }
 
 #[derive(Clone)]
@@ -233,6 +253,12 @@ impl GenotypePhenotypeMapping<SimpleGrayscale> for Rnn {
             // take the avarage of the outcome
             .sum::<f64>() / num_neurons as f64;
         SimpleGrayscale(greyscale.round() as u8)
+    }
+}
+
+impl From<petgraph::Graph<usize,f64>> for Rnn {
+    fn from(graph: petgraph::Graph<usize,f64>) -> Self {
+        todo!()
     }
 }
 
@@ -285,6 +311,28 @@ impl Rnn {
                 // apply the activation function to the neuron
                 neuron.output = activation.tanh();
             })
+    }
+}
+
+impl From<Rnn> for petgraph::Graph<usize,f64> {
+    fn from(rnn: Rnn) -> Self {
+        // converting the RNN to a graph
+        let mut graph = petgraph::Graph::<usize, f64>::new();
+        let mut nodes = vec![];
+
+        // creating nodes and adding self activation
+        for neuron in &rnn.neurons {
+            let index = graph.add_node(neuron.index);
+            graph.add_edge(index, index, neuron.self_activation);
+            nodes.push(index);
+        }
+        // adding edges
+        for index in 0..nodes.len() {
+            for (connected_index, weight) in &rnn.neurons[index].input_connections {
+                graph.add_edge(nodes[*connected_index], nodes[index], *weight);
+            }
+        }
+        graph
     }
 }
 
@@ -366,6 +414,7 @@ fn main() -> Result {
 
 #[cfg(test)]
 mod tests {
+    use petgraph::{dot::Dot, visit::NodeRef};
     use rand_chacha::rand_core::CryptoRngCore;
 
     use super::*;
@@ -428,7 +477,6 @@ mod tests {
             });
         agent.genotype.update();
         agent.genotype.update();
-        println!("{}", agent.genotype);
 
         let correct_greyscale = SimpleGrayscale(127);
         let fitness = agent.calculate_fitness(correct_greyscale);
@@ -564,24 +612,135 @@ mod tests {
             assert_eq!(saved_snapshot.outputs[2], 0.39);
         }
     }
-    
-    #[test]
-    fn test_visualize() {
-        // create a new rnn with 3 neurons
-        // update the rnn 5 times
-        // after each update create a snapshot
-        // visualize the rnn
-        let mut rnn = Rnn::new(3);
 
-        for i in 1..=5 {
-            rnn.update();
-            let snapshot = SnapShot {
-                outputs: rnn.neurons.iter().map(|neuron| neuron.output).collect(),
-                time_step: i,
-            };
-            rnn.short_term_memory.add_snapshot(snapshot);
-        }
-        rnn.short_term_memory.visualize("test_output".into()).unwrap();
+    #[test]
+    fn test_snapshot_eq() {
+        let snapshot = SnapShot {
+            outputs: vec![0.97, 0.88, 0.39],
+            time_step: 1,
+        };
+        let snapshot2 = SnapShot {
+            outputs: vec![0.97, 0.88, 0.39],
+            time_step: 1,
+        };
+        assert_eq!(snapshot, snapshot2);
+    }
+
+    #[test]
+    fn test_snapshot_not_eq() {
+        let snapshot = SnapShot {
+            outputs: vec![1.97, 0.88, 0.39],
+            time_step: 1,
+        };
+        let snapshot2 = SnapShot {
+            outputs: vec![0.97, 0.88, 0.39],
+            time_step: 1,
+        };
+        assert_ne!(snapshot, snapshot2);
+    }
+
+    #[test]
+    fn test_short_term_memory_eq() {
+        let stm = ShortTermMemory {
+            snapshots: vec![
+                SnapShot {
+                    outputs: vec![0.97, 0.88222222, 0.39],
+                    time_step: 1,
+                },
+                SnapShot {
+                    outputs: vec![1.97, -0.88, 0.0],
+                    time_step: 2,
+                },
+                SnapShot {
+                    outputs: vec![2.955555557, 0.88, -0.39],
+                    time_step: 3,
+                },
+                SnapShot {
+                    outputs: vec![0.922227, 0.0, 0.39],
+                    time_step: 4,
+                },
+            ],
+        };
+        let stm2 = ShortTermMemory {
+            snapshots: vec![
+                SnapShot {
+                    outputs: vec![0.97, 0.88222222, 0.39],
+                    time_step: 1,
+                },
+                SnapShot {
+                    outputs: vec![1.97, -0.88, 0.0],
+                    time_step: 2,
+                },
+                SnapShot {
+                    outputs: vec![2.955555557, 0.88, -0.39],
+                    time_step: 3,
+                },
+                SnapShot {
+                    outputs: vec![0.922227, 0.0, 0.39],
+                    time_step: 4,
+                },
+            ],
+        };
+
+        assert_eq!(stm, stm2);
+    }
+
+    #[test]
+    fn test_from_rnn_to_graph() {
+        use rand::prelude::*;
+        use rand_chacha::ChaCha8Rng;
+        use utils::round_to_decimal_places;
+
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+
+        let mut agent = Agent::new(3);
+        agent.genotype.neurons
+            .iter_mut()
+            .for_each(|neuron|{
+                neuron.input_connections
+                .iter_mut()
+                .for_each(|(_, weight)| *weight = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2));
+                neuron.self_activation = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2);
+                neuron.bias = -0.6;
+            });
+
+        let graph = petgraph::Graph::<usize, f64>::from(agent.genotype.clone());
+
+        graph
+            .node_indices()
+            .for_each(|node| {
+                graph
+                    .neighbors(node)
+                    .for_each(|neighbor| {
+                        // get weight from neuron at index "node" from the agent and the neuron at index "neighbor"
+                        if let Some(correct_weight) = agent.genotype.neurons[node.index()].input_connections
+                            .iter()
+                            .find(|(index, _)| *index == neighbor.index()) {
+                                assert_eq!(correct_weight.1, *graph.edge_weight(graph.find_edge(neighbor, node).expect("msg")).unwrap());
+                            }
+                    });
+            });
+    }
+
+    #[test]
+    fn test_from_graph_to_rnn() {
+        let mut graph = petgraph::Graph::<usize, f64>::new();
+        let node1 = graph.add_node(0);
+        let node2 = graph.add_node(1);
+        let node3 = graph.add_node(2);
+
+        graph.add_edge(node1, node1, 0.2);
+        graph.add_edge(node2, node2, -0.2);
+        graph.add_edge(node3, node3, 0.0);
+
+        graph.add_edge(node1, node2, 0.5);
+        graph.add_edge(node1, node3, 0.3);
+        graph.add_edge(node2, node1, 0.1);
+        graph.add_edge(node2, node3, 0.55);
+        graph.add_edge(node3, node1, 0.98);
+        graph.add_edge(node3, node2, 0.11);
+
+        println!("{:?}", Dot::new(&graph));
 
     }
 
