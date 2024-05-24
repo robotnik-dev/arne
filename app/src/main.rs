@@ -1,12 +1,8 @@
-// use bevy::prelude::*;
-// use genetic_algorithm::GeneticAlgorithmPlugin;
-
-
 use approx::AbsDiffEq;
-use petgraph::data::Build;
 use plotters::prelude::*;
 use rayon::prelude::*;
 use rand::prelude::*;
+use petgraph::{dot::Dot, Graph};
 
 type Error = Box<dyn std::error::Error>;
 type Result = std::result::Result<(), Error>;
@@ -274,8 +270,8 @@ impl GenotypePhenotypeMapping<SimpleGrayscale> for Rnn {
     }
 }
 
-impl From<petgraph::Graph<(usize,f64),f64>> for Rnn {
-    fn from(graph: petgraph::Graph<(usize,f64),f64>) -> Self {
+impl From<Graph<(usize,f64),f64>> for Rnn {
+    fn from(graph: Graph<(usize,f64),f64>) -> Self {
         let mut neurons = vec![];
         for node in graph.node_indices() {
             let mut neuron = Neuron {
@@ -368,10 +364,10 @@ impl Rnn {
 
 }
 
-impl From<Rnn> for petgraph::Graph<(usize,f64),f64> {
+impl From<Rnn> for Graph<(usize,f64),f64> {
     fn from(rnn: Rnn) -> Self {
         // converting the RNN to a graph
-        let mut graph = petgraph::Graph::<(usize,f64), f64>::new();
+        let mut graph = Graph::<(usize,f64), f64>::new();
         let mut nodes = vec![];
 
         // creating nodes and adding self activation
@@ -477,7 +473,6 @@ fn main() -> Result {
         
         // add the new individuals to the population
         population.agents.extend(first_half.iter().cloned().chain(second_half.iter().cloned()));
-    
     }
     
     println!("Stopped at generation {}", population.generation);
@@ -485,6 +480,9 @@ fn main() -> Result {
     // visualize the best agent
     let best_agent = population.agents.first().unwrap();
     best_agent.genotype.short_term_memory.visualize("best_agent".into())?;
+    let graph = Graph::from(best_agent.genotype.clone());
+    let dot = Dot::new(&graph);
+    println!("{:?}", dot);
 
     Ok(())
 }
@@ -781,7 +779,7 @@ mod tests {
                 neuron.bias = -0.6;
             });
 
-        let graph = petgraph::Graph::<(usize, f64), f64>::from(agent.genotype.clone());
+        let graph = Graph::<(usize, f64), f64>::from(agent.genotype.clone());
 
         graph
             .node_indices()
@@ -801,7 +799,7 @@ mod tests {
 
     #[test]
     fn test_from_graph_to_rnn() {
-        let mut graph = petgraph::Graph::<(usize, f64), f64>::new();
+        let mut graph = Graph::<(usize, f64), f64>::new();
         let node1 = graph.add_node((0, 1.0));
         let node2 = graph.add_node((1, -0.5));
         let node3 = graph.add_node((2, 0.0));
@@ -842,7 +840,7 @@ mod tests {
     fn test_rnn_to_graph_conversion_and_back() {
         let rnn = Rnn::new(3);
 
-        let graph = petgraph::Graph::<(usize, f64), f64>::from(rnn.clone());
+        let graph = Graph::<(usize, f64), f64>::from(rnn.clone());
         let rnn2 = Rnn::from(graph.clone());
 
         assert_eq!(rnn, rnn2);
