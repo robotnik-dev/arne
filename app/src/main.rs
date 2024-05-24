@@ -121,6 +121,15 @@ impl Agent<Rnn> {
     }
 }
 
+impl From<Rnn> for Agent<Rnn> {
+    fn from(rnn: Rnn) -> Self {
+        Agent {
+            fitness: 0.0,
+            genotype: rnn,
+        }
+    }
+}
+
 /// A short term memory that can be used to store the state of the network
 #[derive(Clone, Debug)]
 struct ShortTermMemory {
@@ -340,8 +349,23 @@ impl Rnn {
                 activation += neuron.bias;
                 // apply the activation function to the neuron
                 neuron.output = activation.tanh();
-            })
+            });
     }
+
+    /// generates a new RNN by performing a crossover operation with another RNN, returning two offsprings
+    fn crossover(&self, with: &Rnn) -> (Rnn, Rnn) {
+        todo!()
+    }
+
+    /// possible mutations:
+    /// - mutate weight
+    /// - mutate self activation
+    /// - mutate bias
+    /// - set weight to 0 (which means no connection)
+    fn mutate(&mut self) -> Self {
+        todo!()
+    }
+
 }
 
 impl From<Rnn> for petgraph::Graph<(usize,f64),f64> {
@@ -436,11 +460,24 @@ fn main() -> Result {
         // select the best 50 % individuals of the population and remove the rest
         population.agents.truncate(population.agents.len() / 2);
 
-        // crossover the selected individuals to create new individuals to fill the population
-        // TODO: for now just duplicate the population to fill the population
-        population.agents.extend(population.agents.clone());
+        // crossover the selected individuals to create new individuals
+        let (first_half, second_half): (Vec<_>, Vec<_>) = population.agents
+            .iter()
+            .skip(population.agents.len() / 2)
+            .zip(population.agents.iter().take(population.agents.len() / 2))
+            .map(|(agent, agent2)| agent.genotype.crossover(&agent2.genotype))
+            .map(|(rnn1, rnn2)| (Agent::from(rnn1), Agent::from(rnn2)))
+            // mutate the new individuals
+            .map(|(mut agent1, mut agent2)| {
+                agent1.genotype.mutate();
+                agent2.genotype.mutate();
+                (agent1, agent2)
+            })
+            .unzip();
         
-        // mutate the new individuals (chance of 1% to mutate at all)
+        // add the new individuals to the population
+        population.agents.extend(first_half.iter().cloned().chain(second_half.iter().cloned()));
+    
     }
     
     println!("Stopped at generation {}", population.generation);
