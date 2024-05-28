@@ -7,6 +7,7 @@ use rand_distr::{Distribution, Normal};
 use petgraph::{dot::Dot, Graph};
 use rand_chacha::ChaCha8Rng;
 use lazy_static::lazy_static;
+use utils::round2;
 
 
 type Error = Box<dyn std::error::Error>;
@@ -336,14 +337,17 @@ impl From<Graph<(usize,f64),f64>> for Rnn {
                 output: 0.0,
                 input_connections: vec![],
                 bias: graph.node_weight(node).unwrap().1,
-                self_activation: *graph.edge_weight(graph.find_edge(node, node).expect("msg")).unwrap(),
+                // if cant find self activation edge, set it to 0
+                self_activation: graph.find_edge(node, node).map(|edge| *graph.edge_weight(edge).unwrap()).unwrap_or(0.0),
             };
             for neighbor in graph.neighbors(node) {
                 // skip self connection
                 if neighbor == node {
                     continue;
                 }
-                neuron.input_connections.push((graph.node_weight(neighbor).unwrap().0, *graph.edge_weight(graph.find_edge(neighbor, node).expect("msg")).unwrap()));
+                // if cant find edge, set weight to 0
+                let weight = graph.find_edge(neighbor, node).map(|edge| *graph.edge_weight(edge).unwrap()).unwrap_or(0.0);
+                neuron.input_connections.push((graph.node_weight(neighbor).unwrap().0, weight));
             }
             neurons.push(neuron);
         }
@@ -550,10 +554,10 @@ impl From<Rnn> for Graph<(usize,f64),f64> {
 
         // creating nodes and adding self activation
         for neuron in &rnn.neurons {
-            let index = graph.add_node((neuron.index, utils::round_to_decimal_places(neuron.bias, 2)));
+            let index = graph.add_node((neuron.index, round2(neuron.bias)));
             // only add self activation if it is not 0
-            if neuron.self_activation.abs_diff_eq(&0.0, 0.1) {
-                graph.add_edge(index, index, utils::round_to_decimal_places(neuron.self_activation, 2));
+            if round2(neuron.self_activation) != 0.0 {
+                graph.add_edge(index, index, round2(neuron.self_activation));
             }
             nodes.push(index);
         }
@@ -561,8 +565,8 @@ impl From<Rnn> for Graph<(usize,f64),f64> {
         for index in 0..nodes.len() {
             for (connected_index, weight) in &rnn.neurons[index].input_connections {
                 // only add the edge if the weight is not 0
-                if weight.abs_diff_eq(&0.0, 0.1) {
-                    graph.add_edge(nodes[*connected_index], nodes[index], utils::round_to_decimal_places(*weight, 2));
+                if round2(*weight) != 0.0 {
+                    graph.add_edge(nodes[*connected_index], nodes[index], round2(*weight));
                 }
             }
         }
@@ -591,10 +595,18 @@ struct Neuron {
 impl PartialEq for Neuron {
     fn eq(&self, other: &Self) -> bool {
         self.index == other.index &&
-        self.output.abs_diff_eq(&other.output, 0.01) &&
-        self.input_connections.iter().all(|con | other.input_connections.iter().find(|other_con| con == *other_con ).is_some()) &&
-        self.bias.abs_diff_eq(&other.bias, 0.01) &&
-        self.self_activation.abs_diff_eq(&other.self_activation, 0.01)
+        round2(self.output) == round2(other.output) &&
+        self.input_connections
+            .iter()
+            .all(|con |
+                other.input_connections
+                    .iter()
+                    .find(|other_con|
+                        (con.0, round2(con.1)) == (other_con.0, round2(other_con.1)))
+                    .is_some()
+            ) &&
+        round2(self.bias) == round2(other.bias) &&
+        round2(self.self_activation) == round2(other.self_activation)
     }
 }
 
@@ -715,7 +727,6 @@ mod tests {
     fn test_calculate_fitness_agent() {
         use rand::prelude::*;
         use rand_chacha::ChaCha8Rng;
-        use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut agent = Agent::new(&mut rng, 3);
@@ -724,8 +735,8 @@ mod tests {
             .for_each(|neuron|{
                 neuron.input_connections
                 .iter_mut()
-                .for_each(|(_, weight)| *weight = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2));
-                neuron.self_activation = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2);
+                .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
+                neuron.self_activation = rng.gen_range(-1.0..=1.0);
                 neuron.bias = 1.;
             });
         agent.genotype.update();
@@ -734,14 +745,13 @@ mod tests {
         let correct_greyscale = SimpleGrayscale(127);
         let fitness = agent.calculate_fitness(correct_greyscale);
 
-        assert_eq!(round_to_decimal_places(fitness, 2), 0.81);
+        assert_eq!(round2(fitness), 0.82);
     }
 
     #[test]
     fn test_update_rnn_two_neurons() {
         use rand::prelude::*;
         use rand_chacha::ChaCha8Rng;
-        use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
@@ -752,29 +762,28 @@ mod tests {
             .for_each(|neuron|{
                 neuron.input_connections
                 .iter_mut()
-                .for_each(|(_, weight)| *weight = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2));
-                neuron.self_activation = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2);
+                .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
+                neuron.self_activation = rng.gen_range(-1.0..=1.0);
                 neuron.bias = 1.;
             });
 
         // first iteration
         rnn.update();
 
-        assert_eq!(round_to_decimal_places(rnn.neurons[0].output, 2), 0.76);
-        assert_eq!(round_to_decimal_places(rnn.neurons[1].output, 2), 0.76);
+        assert_eq!(round2(rnn.neurons[0].output), 0.76);
+        assert_eq!(round2(rnn.neurons[1].output), 0.76);
         
         // second iteration
         rnn.update();
 
-        assert_eq!(round_to_decimal_places(rnn.neurons[0].output, 2), 0.4);
-        assert_eq!(round_to_decimal_places(rnn.neurons[1].output, 2), 0.86);
+        assert_eq!(round2(rnn.neurons[0].output), 0.4);
+        assert_eq!(round2(rnn.neurons[1].output), 0.86);
     }
 
     #[test]
     fn test_update_rnn_three_neurons() {
         use rand::prelude::*;
         use rand_chacha::ChaCha8Rng;
-        use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
@@ -785,31 +794,30 @@ mod tests {
             .for_each(|neuron|{
                 neuron.input_connections
                 .iter_mut()
-                .for_each(|(_, weight)| *weight = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2));
-                neuron.self_activation = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2);
+                .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
+                neuron.self_activation = rng.gen_range(-1.0..=1.0);
                 neuron.bias = 1.;
             });
             
         // first iteration
         rnn.update();
 
-        assert_eq!(round_to_decimal_places(rnn.neurons[0].output, 2), 0.76);
-        assert_eq!(round_to_decimal_places(rnn.neurons[1].output, 2), 0.76);
-        assert_eq!(round_to_decimal_places(rnn.neurons[2].output, 2), 0.76);
+        assert_eq!(round2(rnn.neurons[0].output), 0.76);
+        assert_eq!(round2(rnn.neurons[1].output), 0.76);
+        assert_eq!(round2(rnn.neurons[2].output), 0.76);
         
         // second iteration
         rnn.update();
 
-        assert_eq!(round_to_decimal_places(rnn.neurons[0].output, 2), 0.4);
-        assert_eq!(round_to_decimal_places(rnn.neurons[1].output, 2), 0.86);
-        assert_eq!(round_to_decimal_places(rnn.neurons[2].output, 2), 0.79);
+        assert_eq!(round2(rnn.neurons[0].output), 0.4);
+        assert_eq!(round2(rnn.neurons[1].output), 0.86);
+        assert_eq!(round2(rnn.neurons[2].output), 0.79);
     }
 
     #[test]
     fn test_evaluate_agent() {
         use rand::prelude::*;
         use rand_chacha::ChaCha8Rng;
-        use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
 
@@ -822,8 +830,8 @@ mod tests {
             .for_each(|neuron|{
                 neuron.input_connections
                 .iter_mut()
-                .for_each(|(_, weight)| *weight = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2));
-                neuron.self_activation = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2);
+                .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
+                neuron.self_activation = rng.gen_range(-1.0..=1.0);
                 neuron.bias = -0.6;
             });
         agent2.genotype.neurons
@@ -831,8 +839,8 @@ mod tests {
             .for_each(|neuron|{
                 neuron.input_connections
                 .iter_mut()
-                .for_each(|(_, weight)| *weight = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2));
-                neuron.self_activation = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2);
+                .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
+                neuron.self_activation = rng.gen_range(-1.0..=1.0);
                 neuron.bias = 1.;
             });
         
@@ -944,7 +952,6 @@ mod tests {
     fn test_from_rnn_to_graph() {
         use rand::prelude::*;
         use rand_chacha::ChaCha8Rng;
-        use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
 
@@ -954,8 +961,8 @@ mod tests {
             .for_each(|neuron|{
                 neuron.input_connections
                 .iter_mut()
-                .for_each(|(_, weight)| *weight = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2));
-                neuron.self_activation = round_to_decimal_places(rng.gen_range(-1.0..=1.0), 2);
+                .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
+                neuron.self_activation = rng.gen_range(-1.0..=1.0);
                 neuron.bias = -0.6;
             });
 
@@ -971,7 +978,7 @@ mod tests {
                         if let Some(correct_weight) = agent.genotype.neurons[node.index()].input_connections
                             .iter()
                             .find(|(index, _)| *index == neighbor.index()) {
-                                assert_eq!(correct_weight.1, *graph.edge_weight(graph.find_edge(neighbor, node).expect("msg")).unwrap());
+                                assert_eq!(round2(correct_weight.1), round2(*graph.edge_weight(graph.find_edge(neighbor, node).expect("msg")).unwrap()));
                             }
                     });
             });
@@ -1009,7 +1016,7 @@ mod tests {
                         if let Some(correct_weight) = rnn.neurons[node.index()].input_connections
                             .iter()
                             .find(|(index, _)| *index == neighbor.index()) {
-                                assert_eq!(correct_weight.1, *graph.edge_weight(graph.find_edge(neighbor, node).expect("msg")).unwrap());
+                                assert_eq!(round2(correct_weight.1), round2(*graph.edge_weight(graph.find_edge(neighbor, node).expect("msg")).unwrap()));
                             }
                     });
             });
