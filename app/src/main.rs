@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use approx::AbsDiffEq;
 use plotters::prelude::*;
 use rayon::prelude::*;
 use rand::prelude::*;
+use rand_distr::{Distribution, Normal};
 use petgraph::{dot::Dot, Graph};
 use rand_chacha::ChaCha8Rng;
+use lazy_static::lazy_static;
+
 
 type Error = Box<dyn std::error::Error>;
 type Result = std::result::Result<(), Error>;
@@ -13,6 +17,38 @@ const MAX_GENERATIONS: u32 = 1;
 const NEURONS_PER_RNN: usize = 5;
 const NUMBER_OF_RNN_UPDATES: usize = 20;
 const GREYSCALE_TO_MATCH: SimpleGrayscale = SimpleGrayscale(255);
+
+lazy_static! {
+    static ref MUTATION_PROBABILITIES: HashMap<String, f32> = {
+        let mut m = HashMap::new();
+        // global mutation rate which can be changed later
+        m.insert("global_variance".to_string(), 0.2);
+        // setting all incoming weights, self activation and bias to 0
+        m.insert("delete_neuron".to_string(), 0.1);
+        // setting all incoming weights to 0
+        m.insert("delete_weights".to_string(), 0.1);
+        // setting bias to 0
+        m.insert("delete_bias".to_string(), 0.1);
+        // setting self activation to 0
+        m.insert("delete_self_activation".to_string(), 0.1);
+        // randomize the weights self activation and bias
+        m.insert("mutate_neuron".to_string(), 0.2);
+        // randomize all incoming weights
+        m.insert("mutate_weights".to_string(), 0.2);
+        // randomize the bias
+        m.insert("mutate_bias".to_string(), 0.1);
+        // randomize the self activation
+        m.insert("mutate_self_activation".to_string(), 0.1);
+        m
+    };
+}
+
+// Stuff to change and experiment with:
+// - crossover method is uniform, try other methods
+// - selection method is roulette wheel, try other methods
+// - mutation chances
+// - number of neurons in the RNN
+// - Population size
 
 trait Phenotype {}
 
@@ -130,13 +166,13 @@ impl Agent {
         }
     }
 
-    pub fn crossover(&self, with: &Agent) -> Agent {
-        let offspring = self.genotype.crossover(&with.genotype);
+    pub fn crossover(&self, rng: &mut dyn RngCore, with: &Agent) -> Agent {
+        let offspring = self.genotype.crossover_uniform(rng, &with.genotype);
         Agent::from(offspring)
     }
 
-    pub fn mutate(&mut self) {
-        self.genotype.mutate();
+    pub fn mutate(&mut self, rng: &mut dyn RngCore) {
+        self.genotype.mutate(rng);
     }
 }
 
@@ -369,18 +405,139 @@ impl Rnn {
             });
     }
 
-    /// generates a new RNN by performing a crossover operation with another RNN, returning two offsprings
-    fn crossover(&self, with: &Rnn) -> Rnn {
-        todo!()
+    /// generates a new RNN by performing a uniform crossover operation with another RNN, returning new genotype
+    fn crossover_uniform(&self, rng: &mut dyn RngCore, with: &Rnn) -> Rnn {
+        let mut new_rnn = self.clone();
+        for (neuron, other_neuron) in new_rnn.neurons.iter_mut().zip(with.neurons.iter()) {
+            if rng.gen_bool(0.5) {
+                // crossover the self activation
+                neuron.self_activation = other_neuron.self_activation;
+            }
+            if rng.gen_bool(0.5) {
+                // crossover the bias
+                neuron.bias = other_neuron.bias;
+            }
+            // crossover the weights
+            for (i, weight) in neuron.input_connections.iter_mut().enumerate() {
+                if rng.gen_bool(0.5) {
+                    weight.1 = other_neuron.input_connections[i].1;
+                }
+            }
+        }
+        new_rnn
     }
 
-    /// possible mutations:
-    /// - mutate weight
-    /// - mutate self activation
-    /// - mutate bias
-    /// - set weight to 0 (which means no connection)
-    fn mutate(&mut self) -> Self {
-        todo!()
+    fn mutate(&mut self, rng: &mut dyn RngCore) -> Self {
+        // check for each entry in the global MUTATION_PROBABILITIES if the mutation should be applied
+        // then call the corresponding function
+        for (mutation, probability) in MUTATION_PROBABILITIES.iter() {
+            if rng.gen_bool(*probability as f64) {
+                match mutation.as_str() {
+                    "delete_neuron" => self.delete_neuron(rng),
+                    "delete_weights" => self.delete_weights(rng),
+                    "delete_bias" => self.delete_bias(rng),
+                    "delete_self_activation" => self.delete_self_activation(rng),
+                    "mutate_neuron" => self.mutate_neuron(rng),
+                    "mutate_weights" => self.mutate_weights(rng),
+                    "mutate_bias" => self.mutate_bias(rng),
+                    "mutate_self_activation" => self.mutate_self_activation(rng),
+                    _ => (),
+                }
+            }
+        }
+        self.clone()
+    }
+    
+    /// setting all incoming weights, self activation and bias to 0 from a random neuron
+    fn delete_neuron(&mut self, rng: &mut dyn RngCore) {
+        self.neurons
+            .iter_mut()
+            .choose(rng)
+            .map(|neuron| {
+                neuron.input_connections
+                    .iter_mut()
+                    .for_each(|(_, weight)| *weight = 0.0);
+                neuron.self_activation = 0.0;
+                neuron.bias = 0.0;
+            });
+    }
+    
+    /// setting all incoming weights to 0 from a random neuron
+    fn delete_weights(&mut self, rng: &mut dyn RngCore) {
+        self.neurons
+            .iter_mut()
+            .choose(rng)
+            .map(|neuron| {
+                neuron.input_connections
+                    .iter_mut()
+                    .for_each(|(_, weight)| *weight = 0.0);
+            });
+    }
+    
+    /// setting bias to 0 from a random neuron
+    fn delete_bias(&mut self, rng: &mut dyn RngCore) {
+        self.neurons
+            .iter_mut()
+            .choose(rng)
+            .map(|neuron| neuron.bias = 0.0);
+    }
+
+    /// setting self activation to 0 from a random neuron
+    fn delete_self_activation(&mut self, rng: &mut dyn RngCore) {
+        self.neurons
+            .iter_mut()
+            .choose(rng)
+            .map(|neuron| neuron.self_activation = 0.0);
+    }
+
+    /// randomize the weights self activation and bias from a random neuron
+    /// randomize with a normal distribution with mean 0 and variance 0.2
+    fn mutate_neuron(&mut self, rng: &mut dyn RngCore) {
+        let variance = *MUTATION_PROBABILITIES.get("global_variance").unwrap() as f64;
+        self.neurons
+            .iter_mut()
+            .choose(rng)
+            .map(|neuron| {
+                neuron.input_connections
+                    .iter_mut()
+                    .for_each(|(_, weight)| *weight = Normal::new(0.0, variance).unwrap().sample(rng));
+                neuron.self_activation = Normal::new(0.0, variance).unwrap().sample(rng);
+                neuron.bias = Normal::new(0.0, variance).unwrap().sample(rng);
+            });
+    }
+
+    /// randomize all incoming weights from a random neuron
+    /// randomize with a normal distribution with mean 0 and variance 0.2
+    fn mutate_weights(&mut self, rng: &mut dyn RngCore) {
+        let variance = *MUTATION_PROBABILITIES.get("global_variance").unwrap() as f64;
+        self.neurons
+            .iter_mut()
+            .choose(rng)
+            .map(|neuron| {
+                neuron.input_connections
+                    .iter_mut()
+                    .for_each(|(_, weight)| *weight = Normal::new(0.0, variance).unwrap().sample(rng));
+            });
+    }
+
+    /// randomize the bias from a random neuron
+    /// randomize with a normal distribution with mean 0 and variance 0.2
+    fn mutate_bias(&mut self, rng: &mut dyn RngCore) {
+        let variance = *MUTATION_PROBABILITIES.get("global_variance").unwrap() as f64;
+        self.neurons
+            .iter_mut()
+            .choose(rng)
+            .map(|neuron| neuron.bias = Normal::new(0.0, variance).unwrap().sample(rng));
+    }
+
+    /// randomize the self activation from a random neuron
+    /// randomize with a normal distribution with mean 0 and variance 0.2
+    fn mutate_self_activation(&mut self, rng: &mut dyn RngCore) {
+        let variance = *MUTATION_PROBABILITIES.get("global_variance").unwrap() as f64;
+        self.neurons
+            .iter_mut()
+            .choose(rng)
+            .map(|neuron| neuron.self_activation = Normal::new(0.0, variance).unwrap().sample(rng));
     }
 
 }
@@ -477,8 +634,8 @@ fn main() -> Result {
             .map(|_| {
                 let parent1 = population.select_weighted(&mut rng);
                 let parent2 = population.select_weighted(&mut rng);
-                let mut offspring = parent1.crossover(parent2);
-                offspring.mutate();
+                let mut offspring = parent1.crossover(&mut rng, parent2);
+                offspring.mutate(&mut rng);
                 offspring
             })
             .collect::<Vec<Agent>>();
@@ -502,7 +659,6 @@ fn main() -> Result {
 mod tests {
     use petgraph::{dot::Dot, visit::NodeRef};
     use rand_chacha::ChaCha8Rng;
-
 
     use super::*;
 
@@ -864,4 +1020,157 @@ mod tests {
 
         assert_eq!(rnn, rnn2);
     }
+
+    #[test]
+    fn test_crossover_uniform() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut agent = Agent::new(&mut rng, 10);
+        let mut agent2 = Agent::new(&mut rng, 10);
+
+        agent.genotype.neurons
+            .iter_mut()
+            .for_each(|neuron|{
+                neuron.input_connections
+                    .iter_mut()
+                    .for_each(|(_, weight)| *weight = 0.5);
+                neuron.self_activation = 0.1;
+                neuron.bias = 1.;
+            });
+        
+        agent2.genotype.neurons
+            .iter_mut()
+            .for_each(|neuron|{
+                neuron.input_connections
+                    .iter_mut()
+                    .for_each(|(_, weight)| *weight = -0.5);
+                neuron.self_activation = -0.1;
+                neuron.bias = -1.;
+            });
+
+        let offspring = agent.crossover(&mut rng, &agent2);
+        
+        // check if the offspring is different from the parents
+        assert_ne!(agent.genotype, offspring.genotype);
+        assert_ne!(agent2.genotype, offspring.genotype);
+
+        // print the parents and then the offspring as graph
+        let parent1_graph = Graph::from(agent.genotype.clone());
+        let dot1 = Dot::new(&parent1_graph);
+        let parent2_graph = Graph::from(agent2.genotype.clone());
+        let dot2 = Dot::new(&parent2_graph);
+        let offspring_graph = Graph::from(offspring.genotype.clone());
+        let dot3 = Dot::new(&offspring_graph);
+        println!("Parent1 \n {:?}", dot1);
+        println!("Parent2 \n {:?}", dot2);
+        println!("Offspring \n {:?}", dot3);
+
+        // check if the number count of all negative numbers in the offsrping are approximately the saame as the psotive numbers
+        let negative_count = offspring.genotype.neurons
+            .iter()
+            .map(|neuron| neuron.input_connections.iter().filter(|(_, weight)| *weight < 0.0).count())
+            .sum::<usize>();
+        let positive_count = offspring.genotype.neurons
+            .iter()
+            .map(|neuron| neuron.input_connections.iter().filter(|(_, weight)| *weight > 0.0).count())
+            .sum::<usize>();
+        
+        assert_eq!(positive_count, 43);
+        assert_eq!(negative_count, 47);
+    }
+
+
+    #[test]
+    fn test_delete_neuron() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        rnn.delete_neuron(&mut rng);
+
+        assert_eq!(rnn.neurons[0].input_connections.iter().map(|(_, weight)| *weight).sum::<f64>(), 0.0);
+        assert_eq!(rnn.neurons[0].self_activation, 0.0);
+        assert_eq!(rnn.neurons[0].bias, 0.0);
+    }
+
+    #[test]
+    fn test_delete_weights() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        rnn.delete_weights(&mut rng);
+
+        assert_eq!(rnn.neurons[0].input_connections.iter().map(|(_, weight)| *weight).sum::<f64>(), 0.0);
+    }
+
+    #[test]
+    fn test_delete_bias() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        rnn.delete_bias(&mut rng);
+
+        assert_eq!(rnn.neurons[0].bias, 0.0);
+    }
+
+    #[test]
+    fn test_delete_self_activation() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        rnn.delete_self_activation(&mut rng);
+
+        assert_eq!(rnn.neurons[0].self_activation, 0.0);
+    }
+
+    #[test]
+    fn test_mutate_neuron() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let bias = rnn.neurons[0].bias;
+        let self_activation = rnn.neurons[0].self_activation;
+        let weights = rnn.neurons[0].input_connections.iter().map(|(_, weight)| *weight).collect::<Vec<f64>>();
+
+        rnn.mutate_neuron(&mut rng);
+
+        // Check that the properties of the neuron have been changed.
+        assert_ne!(bias, rnn.neurons[0].bias);
+        assert_ne!(self_activation, rnn.neurons[0].self_activation);
+        assert_ne!(weights, rnn.neurons[0].input_connections.iter().map(|(_, weight)| *weight).collect::<Vec<f64>>());
+    }
+
+    #[test]
+    fn test_mutate_weights() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let weights = rnn.neurons[0].input_connections.iter().map(|(_, weight)| *weight).collect::<Vec<f64>>();
+
+        rnn.mutate_weights(&mut rng);
+
+        // Check that the properties of the neuron have been changed.
+        assert_ne!(weights, rnn.neurons[0].input_connections.iter().map(|(_, weight)| *weight).collect::<Vec<f64>>());
+    }
+
+    #[test]
+    fn test_mutate_bias() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let bias = rnn.neurons[0].bias;
+
+        rnn.mutate_bias(&mut rng);
+
+        // Check that the properties of the neuron have been changed.
+        assert_ne!(bias, rnn.neurons[0].bias);
+    }
+
+    #[test]
+    fn test_mutate_self_activation() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let self_activation = rnn.neurons[0].self_activation;
+
+        rnn.mutate_self_activation(&mut rng);
+
+        // Check that the properties of the neuron have been changed.
+        assert_ne!(self_activation, rnn.neurons[0].self_activation);
+    }
+
 }
