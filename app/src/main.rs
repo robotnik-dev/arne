@@ -13,7 +13,7 @@ type Error = Box<dyn std::error::Error>;
 type Result = std::result::Result<(), Error>;
 
 const POPULATION_SIZE: usize = 100;
-const MAX_GENERATIONS: u32 = 1;
+const MAX_GENERATIONS: u32 = 10;
 const NEURONS_PER_RNN: usize = 5;
 const NUMBER_OF_RNN_UPDATES: usize = 20;
 const GREYSCALE_TO_MATCH: SimpleGrayscale = SimpleGrayscale(255);
@@ -550,14 +550,20 @@ impl From<Rnn> for Graph<(usize,f64),f64> {
 
         // creating nodes and adding self activation
         for neuron in &rnn.neurons {
-            let index = graph.add_node((neuron.index, neuron.bias));
-            graph.add_edge(index, index, neuron.self_activation);
+            let index = graph.add_node((neuron.index, utils::round_to_decimal_places(neuron.bias, 2)));
+            // only add self activation if it is not 0
+            if neuron.self_activation.abs_diff_eq(&0.0, 0.1) {
+                graph.add_edge(index, index, utils::round_to_decimal_places(neuron.self_activation, 2));
+            }
             nodes.push(index);
         }
         // adding edges
         for index in 0..nodes.len() {
             for (connected_index, weight) in &rnn.neurons[index].input_connections {
-                graph.add_edge(nodes[*connected_index], nodes[index], *weight);
+                // only add the edge if the weight is not 0
+                if weight.abs_diff_eq(&0.0, 0.1) {
+                    graph.add_edge(nodes[*connected_index], nodes[index], utils::round_to_decimal_places(*weight, 2));
+                }
             }
         }
         graph
@@ -599,7 +605,7 @@ impl Neuron {
             index,
             output: 0.,
             input_connections: vec![],
-            bias: rng.gen_range(-1.0..=1.0),
+            bias: rng.gen_range(lower..=upper),
             // randomize self activation with the Xavier initialization
             self_activation: rng.gen_range(lower..=upper),
         }
