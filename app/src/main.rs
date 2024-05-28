@@ -3,17 +3,16 @@ use plotters::prelude::*;
 use rayon::prelude::*;
 use rand::prelude::*;
 use petgraph::{dot::Dot, Graph};
+use rand_chacha::ChaCha8Rng;
 
 type Error = Box<dyn std::error::Error>;
 type Result = std::result::Result<(), Error>;
 
 const POPULATION_SIZE: usize = 100;
 const MAX_GENERATIONS: u32 = 1;
-const NEURON_PER_RNN: usize = 5;
+const NEURONS_PER_RNN: usize = 5;
 const NUMBER_OF_RNN_UPDATES: usize = 20;
 const GREYSCALE_TO_MATCH: SimpleGrayscale = SimpleGrayscale(255);
-
-trait Genotype {}
 
 trait Phenotype {}
 
@@ -52,29 +51,44 @@ struct FollowLine {
 
 impl Phenotype for FollowLine {}
 
-struct Population<G: Genotype> {
-    agents: Vec<Agent<G>>,
+struct Population {
+    agents: Vec<Agent>,
     generation: u32,
 }
 
-impl Population<Rnn> {
-    fn new(size: usize) -> Self {
+impl Population {
+    fn new(rng: &mut dyn RngCore, size: usize, neurons_per_rnn: usize) -> Self {
         let agents = (0..size)
-            .map(|_| Agent::new(NEURON_PER_RNN))
+            .map(|_| Agent::new(rng, neurons_per_rnn))
             .collect();
         Population {
             agents,
             generation: 0,
         }
     }
+
+    fn evolve(&mut self, new_agents: Vec<Agent>) {
+        self.agents = new_agents;
+        self.generation += 1;
+    }
+
+    /// roulette wheel selection
+    fn select_weighted(&self, rng: &mut dyn RngCore) -> &Agent {
+        self.agents.choose_weighted(rng, |agent| agent.fitness.max(0.000001)).unwrap()
+    }
+
+    /// tournament selection
+    fn select_tournament(&self, rng: &mut dyn RngCore) -> &Agent {
+        todo!()
+    }
 }
 
-struct Agent<G: Genotype> {
+struct Agent {
     fitness: f64,
-    genotype: G,
+    genotype: Rnn,
 }
 
-impl Clone for Agent<Rnn> {
+impl Clone for Agent {
     fn clone(&self) -> Self {
         Agent {
             fitness: self.fitness,
@@ -83,7 +97,7 @@ impl Clone for Agent<Rnn> {
     }
 }
 
-impl AgentEvaluation<SimpleGrayscale> for Agent<Rnn> {
+impl AgentEvaluation<SimpleGrayscale> for Agent {
     fn calculate_fitness(&self, data: SimpleGrayscale) -> f64 {
         let correct_greyscale = data.0 as f64;
         let phenotype = self.genotype.map_to_phenotype().0 as f64;
@@ -108,16 +122,25 @@ impl AgentEvaluation<SimpleGrayscale> for Agent<Rnn> {
     }
 }
 
-impl Agent<Rnn> {
-    fn new(number_of_neurons: usize) -> Self {
+impl Agent {
+    fn new(rng: &mut dyn RngCore, number_of_neurons: usize) -> Self {
         Agent {
             fitness: 0.0,
-            genotype: Rnn::new(number_of_neurons),
+            genotype: Rnn::new(rng, number_of_neurons),
         }
+    }
+
+    pub fn crossover(&self, with: &Agent) -> Agent {
+        let offspring = self.genotype.crossover(&with.genotype);
+        Agent::from(offspring)
+    }
+
+    pub fn mutate(&mut self) {
+        self.genotype.mutate();
     }
 }
 
-impl From<Rnn> for Agent<Rnn> {
+impl From<Rnn> for Agent {
     fn from(rnn: Rnn) -> Self {
         Agent {
             fitness: 0.0,
@@ -254,8 +277,6 @@ impl PartialEq for Rnn {
     }
 }
 
-impl Genotype for Rnn {}
-
 impl GenotypePhenotypeMapping<SimpleGrayscale> for Rnn {
     fn map_to_phenotype(&self) -> SimpleGrayscale {
         let num_neurons = 3;
@@ -298,10 +319,10 @@ impl From<Graph<(usize,f64),f64>> for Rnn {
 }
 
 impl Rnn {
-    fn new(neuron_count: usize) -> Self {
+    fn new(rng: &mut dyn RngCore, neuron_count: usize) -> Self {
         let mut neurons = vec![];
         for i in 0..neuron_count {
-            let neuron = Neuron::new(i, neuron_count);
+            let neuron = Neuron::new(rng, i, neuron_count);
             neurons.push(neuron);
         }
 
@@ -314,7 +335,7 @@ impl Rnn {
             .for_each(|(index, neuron)| {
                 for i in 0..neuron_count {
                     if i != index {
-                        neuron.input_connections.push((i, thread_rng().gen_range(lower..=upper)));
+                        neuron.input_connections.push((i, rng.gen_range(lower..=upper)));
                     }
                 }
             });
@@ -349,7 +370,7 @@ impl Rnn {
     }
 
     /// generates a new RNN by performing a crossover operation with another RNN, returning two offsprings
-    fn crossover(&self, with: &Rnn) -> (Rnn, Rnn) {
+    fn crossover(&self, with: &Rnn) -> Rnn {
         todo!()
     }
 
@@ -415,28 +436,27 @@ impl PartialEq for Neuron {
 }
 
 impl Neuron {
-    fn new(index: usize, neuron_count: usize) -> Self {
+    fn new(rng: &mut dyn RngCore, index: usize, neuron_count: usize) -> Self {
         let (lower, upper) = (-1.0 / (neuron_count as f64).sqrt(), 1.0 / (neuron_count as f64).sqrt());
         Neuron {
             index,
             output: 0.,
             input_connections: vec![],
-            bias: thread_rng().gen_range(-1.0..=1.0),
+            bias: rng.gen_range(-1.0..=1.0),
             // randomize self activation with the Xavier initialization
-            self_activation: thread_rng().gen_range(lower..=upper),
+            self_activation: rng.gen_range(lower..=upper),
         }
     }
 }
 
 fn main() -> Result {
+    let mut rng = ChaCha8Rng::seed_from_u64(2);
+
     // intialize population
-    let mut population = Population::new(POPULATION_SIZE);
+    let mut population = Population::new(&mut rng, POPULATION_SIZE, NEURONS_PER_RNN);
 
     // loop until stop criterial is met
     loop {
-        // increase generation counter
-        population.generation += 1;
-
         // evaluate the fitness of each individual of the population
         population.agents
             .par_iter_mut()
@@ -452,27 +472,18 @@ fn main() -> Result {
         {
             break;
         }
-        
-        // select the best 50 % individuals of the population and remove the rest
-        population.agents.truncate(population.agents.len() / 2);
 
-        // crossover the selected individuals to create new individuals
-        let (first_half, second_half): (Vec<_>, Vec<_>) = population.agents
-            .iter()
-            .skip(population.agents.len() / 2)
-            .zip(population.agents.iter().take(population.agents.len() / 2))
-            .map(|(agent, agent2)| agent.genotype.crossover(&agent2.genotype))
-            .map(|(rnn1, rnn2)| (Agent::from(rnn1), Agent::from(rnn2)))
-            // mutate the new individuals
-            .map(|(mut agent1, mut agent2)| {
-                agent1.genotype.mutate();
-                agent2.genotype.mutate();
-                (agent1, agent2)
+        let new_agents = (0..population.agents.len())
+            .map(|_| {
+                let parent1 = population.select_weighted(&mut rng);
+                let parent2 = population.select_weighted(&mut rng);
+                let mut offspring = parent1.crossover(parent2);
+                offspring.mutate();
+                offspring
             })
-            .unzip();
-        
-        // add the new individuals to the population
-        population.agents.extend(first_half.iter().cloned().chain(second_half.iter().cloned()));
+            .collect::<Vec<Agent>>();
+            
+        population.evolve(new_agents);
     }
     
     println!("Stopped at generation {}", population.generation);
@@ -490,13 +501,15 @@ fn main() -> Result {
 #[cfg(test)]
 mod tests {
     use petgraph::{dot::Dot, visit::NodeRef};
-    use rand_chacha::rand_core::CryptoRngCore;
+    use rand_chacha::ChaCha8Rng;
+
 
     use super::*;
 
     #[test]
     fn test_map_to_phenotype_greyscale() {
-        let mut rnn = Rnn::new(3);
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
         rnn.neurons[0].output = 0.97;
         rnn.neurons[1].output = 0.88;
         rnn.neurons[2].output = 0.39;
@@ -505,7 +518,8 @@ mod tests {
     }
     #[test]
     fn test_map_to_phenotype_greyscale_1() {
-        let mut rnn = Rnn::new(3);
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
         rnn.neurons[0].output = 0.5;
         rnn.neurons[1].output = 0.5;
         rnn.neurons[2].output = 0.5;
@@ -515,7 +529,8 @@ mod tests {
 
     #[test]
     fn test_map_to_phenotype_greyscale_2() {
-        let mut rnn = Rnn::new(3);
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
         rnn.neurons[0].output = 0.0;
         rnn.neurons[1].output = 0.0;
         rnn.neurons[2].output = 0.0;
@@ -525,7 +540,8 @@ mod tests {
 
     #[test]
     fn test_map_to_phenotype_greyscale_3() {
-        let mut rnn = Rnn::new(3);
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
         rnn.neurons[0].output = 1.0;
         rnn.neurons[1].output = 1.0;
         rnn.neurons[2].output = 1.0;
@@ -540,7 +556,7 @@ mod tests {
         use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut agent = Agent::new(3);
+        let mut agent = Agent::new(&mut rng, 3);
         agent.genotype.neurons
             .iter_mut()
             .for_each(|neuron|{
@@ -556,7 +572,7 @@ mod tests {
         let correct_greyscale = SimpleGrayscale(127);
         let fitness = agent.calculate_fitness(correct_greyscale);
 
-        assert_eq!(round_to_decimal_places(fitness, 2), 0.75);
+        assert_eq!(round_to_decimal_places(fitness, 2), 0.81);
     }
 
     #[test]
@@ -566,7 +582,7 @@ mod tests {
         use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
 
         // randomize the weights and self activations with a custom seed and set the bias to 1.0
         rnn.neurons
@@ -588,8 +604,8 @@ mod tests {
         // second iteration
         rnn.update();
 
-        assert_eq!(round_to_decimal_places(rnn.neurons[0].output, 2), 0.93);
-        assert_eq!(round_to_decimal_places(rnn.neurons[1].output, 2), 0.96);
+        assert_eq!(round_to_decimal_places(rnn.neurons[0].output, 2), 0.4);
+        assert_eq!(round_to_decimal_places(rnn.neurons[1].output, 2), 0.86);
     }
 
     #[test]
@@ -599,7 +615,7 @@ mod tests {
         use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(3);
+        let mut rnn = Rnn::new(&mut rng, 3);
 
         // randomize the weights and self activations with a custom seed and set the bias to 1.0
         rnn.neurons
@@ -622,9 +638,9 @@ mod tests {
         // second iteration
         rnn.update();
 
-        assert_eq!(round_to_decimal_places(rnn.neurons[0].output, 2), 0.97);
-        assert_eq!(round_to_decimal_places(rnn.neurons[1].output, 2), 0.88);
-        assert_eq!(round_to_decimal_places(rnn.neurons[2].output, 2), 0.39);
+        assert_eq!(round_to_decimal_places(rnn.neurons[0].output, 2), 0.4);
+        assert_eq!(round_to_decimal_places(rnn.neurons[1].output, 2), 0.86);
+        assert_eq!(round_to_decimal_places(rnn.neurons[2].output, 2), 0.79);
     }
 
     #[test]
@@ -634,8 +650,9 @@ mod tests {
         use utils::round_to_decimal_places;
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut agent = Agent::new(3);
-        let mut agent2 = Agent::new(3);
+
+        let mut agent = Agent::new(&mut rng, 3);
+        let mut agent2 = Agent::new(&mut rng, 3);
 
         // randomize the weights and self activations with a custom seed and set the bias to 1.0
         agent.genotype.neurons
@@ -670,7 +687,8 @@ mod tests {
         // after each update create a snapshot
         // check if the snapshots are correct
         
-        let mut rnn = Rnn::new(3);
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
         rnn.neurons[0].output = 0.97;
         rnn.neurons[1].output = 0.88;
         rnn.neurons[2].output = 0.39;
@@ -768,7 +786,7 @@ mod tests {
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
 
-        let mut agent = Agent::new(3);
+        let mut agent = Agent::new(&mut rng, 3);
         agent.genotype.neurons
             .iter_mut()
             .for_each(|neuron|{
@@ -838,7 +856,8 @@ mod tests {
 
     #[test]
     fn test_rnn_to_graph_conversion_and_back() {
-        let rnn = Rnn::new(3);
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
 
         let graph = Graph::<(usize, f64), f64>::from(rnn.clone());
         let rnn2 = Rnn::from(graph.clone());
