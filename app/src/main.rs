@@ -1,10 +1,10 @@
-use std::{collections::HashMap, fs::{write, DirBuilder, OpenOptions}, io::{self, Read, Write}, path::PathBuf};
+use std::{collections::HashMap, fmt::Debug, fs::OpenOptions, io::{self, Read, Write}};
 use approx::AbsDiffEq;
 use plotters::prelude::*;
 use rayon::prelude::*;
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal};
-use petgraph::{dot::Dot, Graph};
+use petgraph::{dot::Dot, graph, Graph};
 use rand_chacha::ChaCha8Rng;
 use lazy_static::lazy_static;
 use utils::round2;
@@ -17,7 +17,7 @@ type Result = std::result::Result<(), Error>;
 const POPULATION_SIZE: usize = 100;
 const MAX_GENERATIONS: u32 = 10;
 const NEURONS_PER_RNN: usize = 5;
-const NUMBER_OF_RNN_UPDATES: usize = 20;
+const NUMBER_OF_RNN_UPDATES: usize = 40;
 const GREYSCALE_TO_MATCH: SimpleGrayscale = SimpleGrayscale(255);
 
 lazy_static! {
@@ -252,7 +252,7 @@ impl ShortTermMemory {
                 .set_all_label_area_size(20);
             
             let mut chart_context = chart_builder
-                .build_cartesian_2d(1u32..20u32, -1.0f64..1.0f64)?;
+                .build_cartesian_2d(1u32..NUMBER_OF_RNN_UPDATES as u32, -1.0f64..1.0f64)?;
         
             chart_context
                 .configure_mesh()
@@ -304,6 +304,8 @@ impl PartialEq for SnapShot {
 struct Rnn {
     neurons: Vec<Neuron>,
     short_term_memory: ShortTermMemory,
+    /// visual representation of the network
+    graph: Graph<(usize, f64), f64>,
 }
 
 impl PartialEq for Rnn {
@@ -355,6 +357,7 @@ impl From<Graph<(usize,f64),f64>> for Rnn {
         Rnn {
             neurons,
             short_term_memory: ShortTermMemory::new(),
+            graph,
         }
     }
 }
@@ -384,6 +387,7 @@ impl Rnn {
         Rnn {
             neurons,
             short_term_memory: ShortTermMemory::new(),
+            graph: Graph::default(),
         }
     }
 
@@ -444,7 +448,7 @@ impl Rnn {
         new_rnn
     }
 
-    fn mutate(&mut self, rng: &mut dyn RngCore) -> Self {
+    fn mutate(&mut self, rng: &mut dyn RngCore) -> Rnn {
         // check for each entry in the global MUTATION_PROBABILITIES if the mutation should be applied
         // then call the corresponding function
         for (mutation, probability) in MUTATION_PROBABILITIES.iter() {
@@ -510,14 +514,16 @@ impl Rnn {
     /// randomize the weights self activation and bias from a random neuron
     /// randomize with a normal distribution with mean 0 and variance 0.2
     fn mutate_neuron(&mut self, rng: &mut dyn RngCore) {
-        let variance = *MUTATION_PROBABILITIES.get("global_variance").unwrap() as f64;
+        let variance = *MUTATION_PROBABILITIES.get("global_variance").ok_or("Cant read 'global_variance'").unwrap() as f64;
         self.neurons
             .iter_mut()
             .choose(rng)
             .map(|neuron| {
                 neuron.input_connections
                     .iter_mut()
-                    .for_each(|(_, weight)| *weight = Normal::new(0.0, variance).unwrap().sample(rng));
+                    .for_each(|(_, weight)| {
+                        *weight = Normal::new(0.0, variance).unwrap().sample(rng);
+                    });
                 neuron.self_activation = Normal::new(0.0, variance).unwrap().sample(rng);
                 neuron.bias = Normal::new(0.0, variance).unwrap().sample(rng);
             });
@@ -558,29 +564,31 @@ impl Rnn {
     }
 
     /// saves the RNN to a json file at the saves/rnn folder
-    fn to_json(&self) -> Result {
+    fn to_json(&mut self) -> Result {
+        // save Dot in Rnn
+        self.graph = Graph::from(self.clone());
+   
         let json = serde_json::to_string_pretty(self)?;
 
         let mut entries = std::fs::read_dir("saves/rnn")?
             .map(|res| res.map(|e| e.path()))
             .collect::<std::result::Result<Vec<_>, io::Error>>()?;
         entries.sort();
-
         let new_file_name = entries
             .iter()
             .last()
             .map(|path| {
                 let last_file_index = path
                     .to_str()
-                    .unwrap_or("0.json")
+                    .unwrap()
+                    .replace("saves/rnn", "")
                     .replace(".json", "")
+                    .replace("\\", "")
                     .parse::<usize>()
-                    .unwrap_or(0);
-                let new_index = last_file_index + 1;
-                format!("{}.json", new_index)
+                    .unwrap();
+                format!("{}.json", last_file_index + 1)
             })
             .unwrap_or("0.json".to_string());
-        
         let file_path = format!("saves/rnn/{}", new_file_name);
         
         OpenOptions::new()
@@ -712,13 +720,20 @@ fn main() -> Result {
     
     println!("Stopped at generation {}", population.generation);
     
-    // visualize the best agent
-    let best_agent = population.agents.first().unwrap();
+    // visualize the best agent as png image
+    let best_agent = population.agents.first_mut().unwrap();
     best_agent.genotype.short_term_memory.visualize("best_agent".into())?;
+
+    // save visualization as .dot file
     let graph = Graph::from(best_agent.genotype.clone());
     let dot = Dot::new(&graph);
-    println!("{:?}", dot);
+    OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open("images/best_agent.dot")?
+        .write_fmt(format_args!("{:?}\n", dot))?;
 
+    // save as json file in "saves/rnn/"
     best_agent.genotype.to_json()?;
 
     Ok(())
@@ -726,7 +741,8 @@ fn main() -> Result {
 
 #[cfg(test)]
 mod tests {
-    use petgraph::{dot::Dot, visit::NodeRef};
+    use graph::NodeIndex;
+    use petgraph::{dot::Dot, visit::{IntoEdges, NodeRef}};
     use rand_chacha::ChaCha8Rng;
 
     use super::*;
@@ -1142,7 +1158,6 @@ mod tests {
         assert_eq!(negative_count, 47);
     }
 
-
     #[test]
     fn test_delete_neuron() {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
@@ -1242,8 +1257,9 @@ mod tests {
         let file_path = "../test/saves/rnn/test_rnn.json".to_string();
         let rnn = Rnn::from_json(file_path).unwrap();
 
-        assert_eq!(round2(rnn.neurons[1].bias), -0.05);
-        assert_eq!(round2(rnn.neurons[0].output), -0.53);
+        assert_eq!(round2(rnn.neurons[0].output), -0.44);
+        assert_eq!(round2(rnn.neurons[1].bias), -0.22);
+        assert_eq!(rnn.graph.node_count(), 5);
     }
 
 }
