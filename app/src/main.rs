@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fs::{write, DirBuilder, OpenOptions}, io::{self, Read, Write}, path::PathBuf};
 use approx::AbsDiffEq;
 use plotters::prelude::*;
 use rayon::prelude::*;
@@ -8,6 +8,7 @@ use petgraph::{dot::Dot, Graph};
 use rand_chacha::ChaCha8Rng;
 use lazy_static::lazy_static;
 use utils::round2;
+use serde::{Serialize, Deserialize};
 
 
 type Error = Box<dyn std::error::Error>;
@@ -187,7 +188,7 @@ impl From<Rnn> for Agent {
 }
 
 /// A short term memory that can be used to store the state of the network
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ShortTermMemory {
     snapshots: Vec<SnapShot>,
 }
@@ -284,7 +285,7 @@ impl PartialEq for ShortTermMemory {
 /// a snapshot of the network at a certain point in time.
 /// This can be used to restore the network to a previous state but its mainly used
 /// to store the outputs of the neurons to visulaize the network
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct SnapShot {
     outputs: Vec<f64>,
     time_step: u32,
@@ -299,7 +300,7 @@ impl PartialEq for SnapShot {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Rnn {
     neurons: Vec<Neuron>,
     short_term_memory: ShortTermMemory,
@@ -384,6 +385,18 @@ impl Rnn {
             neurons,
             short_term_memory: ShortTermMemory::new(),
         }
+    }
+
+    /// builds a new RNN from a json file located at 'path'
+    fn from_json(path: String) -> std::result::Result<Self, Error> {
+        let mut file = OpenOptions::new()
+            .read(true)
+            .open(path)?;
+        let mut buffer = String::new();
+        file.read_to_string(&mut buffer)?;
+        let rnn: Rnn = serde_json::from_str(buffer.trim())?;
+
+        Ok(rnn)
     }
 
     fn update(&mut self) {
@@ -544,6 +557,42 @@ impl Rnn {
             .map(|neuron| neuron.self_activation = Normal::new(0.0, variance).unwrap().sample(rng));
     }
 
+    /// saves the RNN to a json file at the saves/rnn folder
+    fn to_json(&self) -> Result {
+        let json = serde_json::to_string_pretty(self)?;
+
+        let mut entries = std::fs::read_dir("saves/rnn")?
+            .map(|res| res.map(|e| e.path()))
+            .collect::<std::result::Result<Vec<_>, io::Error>>()?;
+        entries.sort();
+
+        let new_file_name = entries
+            .iter()
+            .last()
+            .map(|path| {
+                let last_file_index = path
+                    .to_str()
+                    .unwrap_or("0.json")
+                    .replace(".json", "")
+                    .parse::<usize>()
+                    .unwrap_or(0);
+                let new_index = last_file_index + 1;
+                format!("{}.json", new_index)
+            })
+            .unwrap_or("0.json".to_string());
+        
+        let file_path = format!("saves/rnn/{}", new_file_name);
+        
+        OpenOptions::new()
+            .create_new(true)
+            .truncate(true)
+            .write(true)
+            .open(file_path)?
+            .write_fmt(format_args!("{}\n", json))?;
+
+        Ok(())
+    }
+
 }
 
 impl From<Rnn> for Graph<(usize,f64),f64> {
@@ -575,7 +624,7 @@ impl From<Rnn> for Graph<(usize,f64),f64> {
 }
 
 /// A neuron in a neural network that can have a self-connection
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Neuron {
     // a unique identifier for the neuron
     index: usize,
@@ -669,6 +718,8 @@ fn main() -> Result {
     let graph = Graph::from(best_agent.genotype.clone());
     let dot = Dot::new(&graph);
     println!("{:?}", dot);
+
+    best_agent.genotype.to_json()?;
 
     Ok(())
 }
@@ -1184,6 +1235,15 @@ mod tests {
 
         // Check that the properties of the neuron have been changed.
         assert_ne!(self_activation, rnn.neurons[0].self_activation);
+    }
+
+    #[test]
+    fn test_build_from_json() {
+        let file_path = "../test/saves/rnn/test_rnn.json".to_string();
+        let rnn = Rnn::from_json(file_path).unwrap();
+
+        assert_eq!(round2(rnn.neurons[1].bias), -0.05);
+        assert_eq!(round2(rnn.neurons[0].output), -0.53);
     }
 
 }

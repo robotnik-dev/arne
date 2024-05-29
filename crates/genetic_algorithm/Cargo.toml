@@ -6,9 +6,3 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# bevy = "0.13.2"
-# rand_core = "0.6.4"
-# bevy_rand = "0.6"
-# bevy_tweening = "0.10"
-# bevy_prng = { version = "0.6", features = ["rand_chacha", "wyrand"] }
-utils = {path="../utils"}
