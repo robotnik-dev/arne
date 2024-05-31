@@ -1433,14 +1433,13 @@ mod tests {
     #[test]
     fn test_retina_movement() {
         let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(17, 13)).unwrap();
+        let mut retina = image.create_retina_at(Position::new(10, 10)).unwrap();
 
         image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
 
-        retina.move_retina_mut(-10, 0).unwrap();
+        retina.move_retina_mut(15, 0).unwrap();
 
         image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
-
     }
 
     #[test]
@@ -1449,11 +1448,7 @@ mod tests {
         let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
         let mut retina = image.create_retina_at(Position::new(17, 13)).unwrap();
 
-        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
-
         retina.move_retina_mut(20, 0).unwrap();
-
-        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
     }
 
     #[test]
@@ -1462,11 +1457,25 @@ mod tests {
         let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
         let mut retina = image.create_retina_at(Position::new(5, 13)).unwrap();
 
-        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
-
         retina.move_retina_mut(-5, 0).unwrap();
+    }
 
-        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
+    #[test]
+    #[should_panic]
+    fn test_invalid_retina_movement_to_the_top() {
+        let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13)).unwrap();
+
+        retina.move_retina_mut(0, -20).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_retina_movement_to_the_bottom() {
+        let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13)).unwrap();
+
+        retina.move_retina_mut(0, 20).unwrap();
     }
 
 }
