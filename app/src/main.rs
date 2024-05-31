@@ -1,5 +1,6 @@
-use std::{collections::HashMap, fmt::Debug, fs::OpenOptions, io::{self, Read, Write}};
+use std::{collections::HashMap, fmt::Debug, fs::OpenOptions, io::{self, Read, Write}, ops::AddAssign};
 use approx::AbsDiffEq;
+use image::{GenericImageView, ImageBuffer, LumaA};
 use plotters::prelude::*;
 use rayon::prelude::*;
 use rand::prelude::*;
@@ -19,6 +20,7 @@ const MAX_GENERATIONS: u32 = 10;
 const NEURONS_PER_RNN: usize = 5;
 const NUMBER_OF_RNN_UPDATES: usize = 40;
 const GREYSCALE_TO_MATCH: SimpleGrayscale = SimpleGrayscale(255);
+const IMAGE_DIMENSIONS: (i32, i32) = (33, 25);
 
 lazy_static! {
     static ref MUTATION_PROBABILITIES: HashMap<String, f32> = {
@@ -52,6 +54,129 @@ lazy_static! {
 // - number of neurons in the RNN
 // - Population size
 
+#[derive(Debug, Clone)]
+struct Position {
+    x: i32,
+    y: i32,
+}
+
+impl Position {
+    fn new(x: i32, y: i32) -> Self {
+        Position {
+            x,
+            y,
+        }
+    }
+}
+
+impl AddAssign for Position {
+    fn add_assign(&mut self, other: Self) {
+        self.x += other.x;
+        self.y += other.y;
+    }
+}
+
+struct Image {
+    data: ImageBuffer<LumaA<u8>, Vec<u8>>
+}
+
+impl Image {
+    fn from_path(path: String) -> std::result::Result<Self, Error> {
+        Ok(
+            Image {
+                data: image::io::Reader::open(path)?.decode()?.into_luma_alpha8()
+            }
+        )
+    }
+
+    /// create a subview into the image with the given position with size 5 x 5
+    /// if the ends of the retina would be outside the image, an index error is returned
+    fn create_retina_at(&self, position: Position) -> std::result::Result<Retina, Error> {
+        let mut mat = nalgebra::Matrix5::from_element(0.0);
+        for i in 0..5 {
+            for j in 0..5 {
+                // when going negative with this operation it means that we try to access a pixel that is outside of the image
+                // so we give back an error
+                if position.x >= IMAGE_DIMENSIONS.0 + 3 || position.y >= IMAGE_DIMENSIONS.1 + 3 || position.x < 3 || position.y < 3 {
+                    return Err("IndexError: position is out of bounds".into());
+                }
+                let x = position.x - 3 + i;
+                let y = position.y - 3 + j;
+                mat[(i as usize, j as usize)] = self.data.get_pixel(x as u32, y as u32).0[0] as f32;
+            }
+        }
+        Ok(
+            Retina {
+                data: mat,
+                center_position: position,
+                delta_position: Position::new(0, 0),
+            }
+        )
+    }
+
+    /// highliting the pixels in the original image that overlap with the border of the retina
+    /// and writes it to the image buffer and then saves it to the path
+    fn show_with_retina_movement_mut(&mut self, retina: &Retina, path: String) -> Result {
+        let mut image = self.data.clone();
+        // change the center pixels alha value to 127
+        image.get_pixel_mut((retina.center_position.x - 1) as u32, (retina.center_position.y - 1) as u32).0[1] = 127;
+
+        // changing the alpha value to 127 for all pixel that touches the border of the retina
+        for i in 0..5 {
+            for j in 0..5 {
+                let x = retina.center_position.x - 3 + i;
+                let y = retina.center_position.y - 3 + j;
+                if i == 0 || i == 4 || j == 0 || j == 4 {
+                    image.get_pixel_mut(x as u32, y as u32).0[1] = 127;
+                }
+            }
+        }
+        image.save(path)?;
+        self.data = image;
+        Ok(())
+    }
+}
+
+struct Retina {
+    // color data stored in a 5 x 5 matrix
+    data: nalgebra::base::Matrix5<f32>,
+    delta_position: Position,
+    // this is only for visualization purpose, the Rnn does not know this information
+    center_position: Position,
+}
+
+impl Retina {
+    /// counting from 0
+    fn get_value(&self, x: usize, y: usize) -> f32 {
+        self.data[(x, y)]
+    }
+
+    fn create_png_at(&self, path: String) -> Result {
+        let mut imgbuf = ImageBuffer::new(5, 5);
+        for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
+            *pixel = LumaA([self.data[(x as usize, y as usize)] as u8, 255]);
+        }
+        imgbuf.save(path)?;
+        Ok(())
+    }
+
+    fn move_retina_mut(&mut self, delta_x: i32, delta_y: i32) -> Result {
+        // check if any of the retina pixels would be outside the image
+        for i in 0..5 {
+            for j in 0..5 {
+                let x = self.center_position.x - 3 + i + delta_x;
+                let y = self.center_position.y - 3 + j + delta_y;
+                if x < 0 || y < 0 || x >= IMAGE_DIMENSIONS.0 || y >= IMAGE_DIMENSIONS.1 {
+                    return Err("IndexError: cant move retina out of the image".into());
+                }
+            }
+        }
+        self.delta_position = Position::new(delta_x, delta_y);
+        self.center_position += self.delta_position.clone();
+        Ok(())
+    }
+}
+
 trait Phenotype {}
 
 trait GenotypePhenotypeMapping<P: Phenotype> {
@@ -71,12 +196,6 @@ struct SimpleGrayscale(u8);
 
 impl Phenotype for SimpleGrayscale {}
 
-#[derive(Debug, Clone)]
-struct Position {
-    x: f32,
-    y: f32,
-}
-
 /// This phenotype/solution to the problem is a line follower.
 /// If the agent/retina(TBD) can stay in each iteration step on the line(the center pixel of the image)
 /// the higher the fitness value will be.
@@ -84,7 +203,7 @@ struct Position {
 struct FollowLine {
     // store only the difference between the current position and the position
     // of the last iteration
-    delta_position: Position,
+    delta_position: nalgebra::Point2<f32>,
 }
 
 impl Phenotype for FollowLine {}
@@ -146,6 +265,11 @@ impl AgentEvaluation<SimpleGrayscale> for Agent {
         let mut local_fitness = 0.0;
         self.genotype.short_term_memory.clear();
         for i in 0..number_of_updates {
+            // get the current position of the network (encoded in the output of some neurons TBD)
+            // getting the current Retina from the image at teh position provided
+            // update all input connections to the retina from each neuron
+
+            // do one update step
             self.genotype.update();
             // creating snapshot of the network at the current time step
             let snapshot = SnapShot {
@@ -743,6 +867,7 @@ fn main() -> Result {
 mod tests {
     use graph::NodeIndex;
     use petgraph::{dot::Dot, visit::{IntoEdges, NodeRef}};
+    use plotters::style::text_anchor::Pos;
     use rand_chacha::ChaCha8Rng;
 
     use super::*;
@@ -1260,6 +1385,88 @@ mod tests {
         assert_eq!(round2(rnn.neurons[0].output), -0.44);
         assert_eq!(round2(rnn.neurons[1].bias), -0.22);
         assert_eq!(rnn.graph.node_count(), 5);
+    }
+
+    #[test]
+    fn test_load_image() {
+        // using a image size of 33x25 px (nearly 4:3)
+        let image: ImageBuffer<LumaA<u8>, Vec<u8>> = image::io::Reader::open("../images/test/test_check.png").unwrap().decode().unwrap().into_luma_alpha8();
+        // white
+        assert_eq!(*image.get_pixel(0, 0), LumaA([255, 255]));
+        // black
+        assert_eq!(*image.get_pixel(3, 0), LumaA([0, 255]));
+        // black
+        assert_eq!(*image.get_pixel(32, 24), LumaA([0, 255]));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_load_image() {
+        let image: ImageBuffer<LumaA<u8>, Vec<u8>> = image::io::Reader::open("../images/test/test_check.png").unwrap().decode().unwrap().into_luma_alpha8();
+        // using a image size of 33x25 px (nearly 4:3) so this should panic
+        let _ = *image.get_pixel(33, 25);
+    }
+
+    #[test]
+    fn test_get_retina() {
+        let image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
+        // using a image size of 33x25 px that the center pixel is at position 16, 12 (countning from 1 not 0)
+
+        let retina = image.create_retina_at(Position::new(17, 13)).unwrap();
+
+        // center value of matrix should be black (counting here from 0)
+        // center pixel is black
+        assert_eq!(retina.get_value(2, 2), 0.);
+        // // these pixel should be white
+        assert_eq!(retina.get_value(0, 2), 255.);
+        assert_eq!(retina.get_value(2, 0), 255.);
+    }
+
+    #[test]
+    fn test_get_retina_out_of_bounds() {
+        let image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
+        // getting the first pixel in the top left corner should give an error
+        let retina = image.create_retina_at(Position::new(1, 1));
+        assert!(retina.is_err());
+    }
+
+    #[test]
+    fn test_retina_movement() {
+        let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(17, 13)).unwrap();
+
+        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
+
+        retina.move_retina_mut(-10, 0).unwrap();
+
+        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
+
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_retina_movement_to_the_right() {
+        let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(17, 13)).unwrap();
+
+        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
+
+        retina.move_retina_mut(20, 0).unwrap();
+
+        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_retina_movement_to_the_left() {
+        let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13)).unwrap();
+
+        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
+
+        retina.move_retina_mut(-5, 0).unwrap();
+
+        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
     }
 
 }
