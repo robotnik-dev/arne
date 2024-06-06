@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, fs::OpenOptions, io::{self, Read, Write}, ops::AddAssign};
 use approx::AbsDiffEq;
-use image::{GenericImageView, ImageBuffer, LumaA};
+use image::{ExtendedColorType, GenericImageView, ImageBuffer, LumaA, PixelWithColorType, Rgba};
+use nalgebra::Matrix5;
 use plotters::prelude::*;
 use rayon::prelude::*;
 use rand::prelude::*;
@@ -20,7 +21,8 @@ const MAX_GENERATIONS: u32 = 10;
 const NEURONS_PER_RNN: usize = 5;
 const NUMBER_OF_RNN_UPDATES: usize = 40;
 const GREYSCALE_TO_MATCH: SimpleGrayscale = SimpleGrayscale(255);
-const IMAGE_DIMENSIONS: (i32, i32) = (33, 25);
+const IMAGE_DIMENSIONS: (u32, u32) = (33, 25);
+const RETINA_SIZE: usize = 5;
 
 lazy_static! {
     static ref MUTATION_PROBABILITIES: HashMap<String, f32> = {
@@ -77,37 +79,88 @@ impl AddAssign for Position {
 }
 
 struct Image {
-    data: ImageBuffer<LumaA<u8>, Vec<u8>>
+    data: ImageBuffer<LumaA<u8>, Vec<u8>>,
+    normalized_data: Vec<f32>
 }
 
 impl Image {
     fn from_path(path: String) -> std::result::Result<Self, Error> {
+        let data = image::io::Reader::open(path)?.decode()?.into_luma_alpha8();
+        let mut normalized_data = vec![];
+        for pixel in data.pixels() {
+            normalized_data.push(pixel.0[0] as f32 / 255.0);
+        }
         Ok(
             Image {
-                data: image::io::Reader::open(path)?.decode()?.into_luma_alpha8()
+                data,
+                normalized_data,
             }
         )
     }
 
-    /// create a subview into the image with the given position with size 5 x 5
+    fn data(&self) -> &Vec<f32> {
+        &self.normalized_data
+    }
+
+    /// wrapper to get only the normalized value of a pixel
+    fn get_pixel(&self, x: u32, y: u32) -> f32 {
+        self.normalized_data[y as usize * self.data.width() as usize + x as usize]
+    }
+
+    // binarizes the image and stores it internally in the normalized_data vector
+    fn binarize(&mut self) {
+        // 1. calculated the mean color of the image
+        // 2. collect dark and white pixels in seperate vector to cacluate the mean of the white and dark pixels respectively
+        // 3. use the mean of the dark pixels to set every dark pixel of the real image to that mean value
+        // 4. do it wth the white pixels the same way
+        let mean_color = self.normalized_data
+            .iter()
+            .sum::<f32>() / self.normalized_data.len() as f32;
+        let (dark_pixels, white_pixels): (Vec<f32>, Vec<f32>) = self.normalized_data
+            .iter()
+            .partition(|pixel| **pixel < mean_color);
+        let dark_binary = dark_pixels
+            .iter()
+            .sum::<f32>() / dark_pixels.len() as f32;
+        let white_binary = white_pixels
+            .iter()
+            .sum::<f32>() / white_pixels.len() as f32;
+
+        for pixel in self.normalized_data.iter_mut() {
+            if *pixel > mean_color {
+                *pixel = dark_binary;
+            } else {
+                *pixel = white_binary;
+            }
+        }
+    }
+
+    /// create a subview into the image with the given position with size
     /// if the ends of the retina would be outside the image, an index error is returned
-    fn create_retina_at(&self, position: Position) -> std::result::Result<Retina, Error> {
-        let mut mat = nalgebra::Matrix5::from_element(0.0);
-        for i in 0..5 {
-            for j in 0..5 {
+    fn create_retina_at(&self, position: Position, size: usize) -> std::result::Result<Retina, Error> {
+        // make sure size is odd number
+        if size % 2 == 0 {
+            return Err("ValueError: size must be an odd number".into());
+        }
+        let mut data = vec![];
+        let offset = size as i32 / 2 + 1;
+        for i in 0..size as i32 {
+            for j in 0..size as i32 {
                 // when going negative with this operation it means that we try to access a pixel that is outside of the image
                 // so we give back an error
-                if position.x >= IMAGE_DIMENSIONS.0 + 3 || position.y >= IMAGE_DIMENSIONS.1 + 3 || position.x < 3 || position.y < 3 {
+                // TODO: "3" shoudl be calcualted from the x and y size
+                if position.x >= IMAGE_DIMENSIONS.0 as i32 + offset || position.y >= IMAGE_DIMENSIONS.1 as i32 + offset || position.x < offset || position.y < offset {
                     return Err("IndexError: position is out of bounds".into());
                 }
-                let x = position.x - 3 + i;
-                let y = position.y - 3 + j;
-                mat[(i as usize, j as usize)] = self.data.get_pixel(x as u32, y as u32).0[0] as f32;
+                let x = position.x - offset + j;
+                let y = position.y - offset + i;
+                data.push(self.get_pixel(x as u32, y as u32));
             }
         }
         Ok(
             Retina {
-                data: mat,
+                data,
+                size,
                 center_position: position,
                 delta_position: Position::new(0, 0),
             }
@@ -121,12 +174,13 @@ impl Image {
         // change the center pixels alha value to 127
         image.get_pixel_mut((retina.center_position.x - 1) as u32, (retina.center_position.y - 1) as u32).0[1] = 127;
 
+        let offset = retina.size as i32 / 2 + 1;
         // changing the alpha value to 127 for all pixel that touches the border of the retina
-        for i in 0..5 {
-            for j in 0..5 {
-                let x = retina.center_position.x - 3 + i;
-                let y = retina.center_position.y - 3 + j;
-                if i == 0 || i == 4 || j == 0 || j == 4 {
+        for i in 0..retina.size as i32 {
+            for j in 0..retina.size as i32 {
+                let x = retina.center_position.x - offset + i;
+                let y = retina.center_position.y - offset + j;
+                if i == 0 || i == retina.size as i32 - 1 || j == 0 || j == retina.size as i32 - 1 {
                     image.get_pixel_mut(x as u32, y as u32).0[1] = 127;
                 }
             }
@@ -135,11 +189,33 @@ impl Image {
         self.data = image;
         Ok(())
     }
+
+    pub fn save_binarized(&mut self, path: String) -> Result {
+        self.binarize();
+        // for each pixel in normalized data vector, transform it back to LumA<u8> and save it to the path
+        let mut buf = self.normalized_data
+            .iter()
+            .map(|pixel| LumaA([(*pixel * 255.0) as u8, 255]))
+            .collect::<Vec<LumaA<u8>>>();
+
+        let mut image: ImageBuffer<LumaA<u8>, Vec<u8>> = ImageBuffer::new(IMAGE_DIMENSIONS.0, IMAGE_DIMENSIONS.1);
+
+        for pixel in image.pixels_mut() {
+            if let Some(p) = buf.pop() {
+                *pixel = p;
+            } else {
+                return Err("IndexError: not enough pixels in buffer".into());
+            }
+        }
+        image.save(path)?;
+        Ok(())
+    }
 }
 
 struct Retina {
-    // color data stored in a 5 x 5 matrix
-    data: nalgebra::base::Matrix5<f32>,
+    // color data stored in a vector
+    data: Vec<f32>,
+    size: usize,
     delta_position: Position,
     // this is only for visualization purpose, the Rnn does not know this information
     center_position: Position,
@@ -147,26 +223,28 @@ struct Retina {
 
 impl Retina {
     /// counting from 0
+    /// TODO: return Result
     fn get_value(&self, x: usize, y: usize) -> f32 {
-        self.data[(x, y)]
+        self.data[y * self.size + x]
     }
 
     fn create_png_at(&self, path: String) -> Result {
-        let mut imgbuf = ImageBuffer::new(5, 5);
+        let mut imgbuf = ImageBuffer::new(self.size as u32, self.size as u32);
         for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
-            *pixel = LumaA([self.data[(x as usize, y as usize)] as u8, 255]);
+            *pixel = LumaA([self.get_value(x as usize, y as usize) as u8, 255]);
         }
         imgbuf.save(path)?;
         Ok(())
     }
 
     fn move_retina_mut(&mut self, delta_x: i32, delta_y: i32) -> Result {
+        let offset = self.size as i32 / 2 + 1;
         // check if any of the retina pixels would be outside the image
-        for i in 0..5 {
-            for j in 0..5 {
-                let x = self.center_position.x - 3 + i + delta_x;
-                let y = self.center_position.y - 3 + j + delta_y;
-                if x < 0 || y < 0 || x >= IMAGE_DIMENSIONS.0 || y >= IMAGE_DIMENSIONS.1 {
+        for i in 0..self.size as i32 {
+            for j in 0..self.size as i32 {
+                let x = self.center_position.x - offset + i + delta_x;
+                let y = self.center_position.y - offset + j + delta_y;
+                if x < 0 || y < 0 || x >= IMAGE_DIMENSIONS.0 as i32 || y >= IMAGE_DIMENSIONS.1 as i32 {
                     return Err("IndexError: cant move retina out of the image".into());
                 }
             }
@@ -359,8 +437,7 @@ impl ShortTermMemory {
         Some(data)
     }
 
-    fn visualize(&self, to_filename: String) -> Result {
-        let path = format!("images/{}.png", to_filename);
+    fn visualize(&self, path: String) -> Result {
         let root = BitMapBackend::new(&path, (1024, 768)).into_drawing_area();
         root.fill(&WHITE)?;
         let visualization_data = self.get_visualization_data().ok_or("IndexError: cant get visualization data")?;
@@ -466,6 +543,7 @@ impl From<Graph<(usize,f64),f64>> for Rnn {
                 bias: graph.node_weight(node).unwrap().1,
                 // if cant find self activation edge, set it to 0
                 self_activation: graph.find_edge(node, node).map(|edge| *graph.edge_weight(edge).unwrap()).unwrap_or(0.0),
+                retina_inputs: vec![],
             };
             for neighbor in graph.neighbors(node) {
                 // skip self connection
@@ -525,6 +603,20 @@ impl Rnn {
         let rnn: Rnn = serde_json::from_str(buffer.trim())?;
 
         Ok(rnn)
+    }
+
+    /// each neruon has a connection to all of the 25 retina pixels and these need to be updated each rnn update step
+    fn update_inputs_from_retina(&mut self, retina: &Retina) {
+        self.neurons
+            .iter_mut()
+            .for_each(|neuron| {
+                neuron.retina_inputs.clear();
+                for i in 0..5 {
+                    for j in 0..5 {
+                        neuron.retina_inputs.push(retina.get_value(i, j));
+                    }
+                }
+            });
     }
 
     fn update(&mut self) {
@@ -687,36 +779,41 @@ impl Rnn {
             .map(|neuron| neuron.self_activation = Normal::new(0.0, variance).unwrap().sample(rng));
     }
 
-    /// saves the RNN to a json file at the saves/rnn folder
-    fn to_json(&mut self) -> Result {
+    /// saves the RNN to a json file at the saves/rnn folder or if a path is provided at the given path
+    fn to_json(&mut self, path: Option<&String>) -> Result {
         // save Dot in Rnn
         self.graph = Graph::from(self.clone());
    
         let json = serde_json::to_string_pretty(self)?;
+        let file_path: String;
 
-        let mut entries = std::fs::read_dir("saves/rnn")?
-            .map(|res| res.map(|e| e.path()))
-            .collect::<std::result::Result<Vec<_>, io::Error>>()?;
-        entries.sort();
-        let new_file_name = entries
-            .iter()
-            .last()
-            .map(|path| {
-                let last_file_index = path
-                    .to_str()
-                    .unwrap()
-                    .replace("saves/rnn", "")
-                    .replace(".json", "")
-                    .replace("\\", "")
-                    .parse::<usize>()
-                    .unwrap();
-                format!("{}.json", last_file_index + 1)
-            })
-            .unwrap_or("0.json".to_string());
-        let file_path = format!("saves/rnn/{}", new_file_name);
+        if let Some(path) = path {
+            file_path = path.clone();
+        } else {
+            let mut entries = std::fs::read_dir("saves/rnn")?
+                .map(|res| res.map(|e| e.path()))
+                .collect::<std::result::Result<Vec<_>, io::Error>>()?;
+            entries.sort();
+            let new_file_name = entries
+                .iter()
+                .last()
+                .map(|path| {
+                    let last_file_index = path
+                        .to_str()
+                        .unwrap()
+                        .replace("saves/rnn", "")
+                        .replace(".json", "")
+                        .replace("\\", "")
+                        .parse::<usize>()
+                        .unwrap();
+                    format!("{}.json", last_file_index + 1)
+                })
+                .unwrap_or("0.json".to_string());
+            file_path = format!("saves/rnn/{}", new_file_name);
+        }
         
         OpenOptions::new()
-            .create_new(true)
+            .create(true)
             .truncate(true)
             .write(true)
             .open(file_path)?
@@ -771,6 +868,7 @@ struct Neuron {
     /// to represent the memory of the neuron, we append self activation to the input vector
     /// but store it separately
     self_activation: f64,
+    retina_inputs: Vec<f32>
 }
 
 impl PartialEq for Neuron {
@@ -801,6 +899,7 @@ impl Neuron {
             bias: rng.gen_range(lower..=upper),
             // randomize self activation with the Xavier initialization
             self_activation: rng.gen_range(lower..=upper),
+            retina_inputs: vec![],
         }
     }
 }
@@ -846,7 +945,7 @@ fn main() -> Result {
     
     // visualize the best agent as png image
     let best_agent = population.agents.first_mut().unwrap();
-    best_agent.genotype.short_term_memory.visualize("best_agent".into())?;
+    best_agent.genotype.short_term_memory.visualize("test/images/agents/best_agent.png".into())?;
 
     // save visualization as .dot file
     let graph = Graph::from(best_agent.genotype.clone());
@@ -854,11 +953,11 @@ fn main() -> Result {
     OpenOptions::new()
         .create(true)
         .write(true)
-        .open("images/best_agent.dot")?
+        .open("test/images/agents/best_agent.dot")?
         .write_fmt(format_args!("{:?}\n", dot))?;
 
     // save as json file in "saves/rnn/"
-    best_agent.genotype.to_json()?;
+    best_agent.genotype.to_json(None)?;
 
     Ok(())
 }
@@ -1379,18 +1478,27 @@ mod tests {
 
     #[test]
     fn test_build_from_json() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        rnn.neurons[0].output = -0.44;
+        rnn.neurons[1].bias = -0.22;
         let file_path = "../test/saves/rnn/test_rnn.json".to_string();
-        let rnn = Rnn::from_json(file_path).unwrap();
 
-        assert_eq!(round2(rnn.neurons[0].output), -0.44);
-        assert_eq!(round2(rnn.neurons[1].bias), -0.22);
-        assert_eq!(rnn.graph.node_count(), 5);
+        // save to disk
+        rnn.to_json(Some(&file_path)).unwrap();
+
+        // load from disk
+        let new_rnn = Rnn::from_json(file_path).unwrap();
+
+        assert_eq!(round2(new_rnn.neurons[0].output), -0.44);
+        assert_eq!(round2(new_rnn.neurons[1].bias), -0.22);
+        assert_eq!(new_rnn.graph.node_count(), 3);
     }
 
     #[test]
     fn test_load_image() {
         // using a image size of 33x25 px (nearly 4:3)
-        let image: ImageBuffer<LumaA<u8>, Vec<u8>> = image::io::Reader::open("../images/test/test_check.png").unwrap().decode().unwrap().into_luma_alpha8();
+        let image: ImageBuffer<LumaA<u8>, Vec<u8>> = image::io::Reader::open("../images/artificial/checkboard.png").unwrap().decode().unwrap().into_luma_alpha8();
         // white
         assert_eq!(*image.get_pixel(0, 0), LumaA([255, 255]));
         // black
@@ -1402,51 +1510,57 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_invalid_load_image() {
-        let image: ImageBuffer<LumaA<u8>, Vec<u8>> = image::io::Reader::open("../images/test/test_check.png").unwrap().decode().unwrap().into_luma_alpha8();
+        let image: ImageBuffer<LumaA<u8>, Vec<u8>> = image::io::Reader::open("../images/artificial/checkboard.png").unwrap().decode().unwrap().into_luma_alpha8();
         // using a image size of 33x25 px (nearly 4:3) so this should panic
         let _ = *image.get_pixel(33, 25);
     }
 
     #[test]
     fn test_get_retina() {
-        let image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
+        let mut image = Image::from_path("../images/artificial/checkboard.png".to_string()).unwrap();
+
         // using a image size of 33x25 px that the center pixel is at position 16, 12 (countning from 1 not 0)
+        let retina = image.create_retina_at(Position::new(5, 5), RETINA_SIZE).unwrap();
 
-        let retina = image.create_retina_at(Position::new(17, 13)).unwrap();
+        retina.create_png_at("../test/images/only_retina.png".to_string()).unwrap();
+        image.show_with_retina_movement_mut(&retina, "../test/images/with_retina_movement.png".to_string()).unwrap();
 
-        // center value of matrix should be black (counting here from 0)
-        // center pixel is black
-        assert_eq!(retina.get_value(2, 2), 0.);
-        // // these pixel should be white
-        assert_eq!(retina.get_value(0, 2), 255.);
-        assert_eq!(retina.get_value(2, 0), 255.);
+        assert_eq!(retina.data[12], retina.get_value(2, 2));
+        assert_eq!(retina.data[0], retina.get_value(0, 0));
+        assert_eq!(retina.data[4], retina.get_value(4, 0));
+
+        // all corners are white
+        assert_eq!(retina.get_value(0, 0), 1.);
+        assert_eq!(retina.get_value(0, 4), 1.);
+        assert_eq!(retina.get_value(4, 0), 1.);
+        assert_eq!(retina.get_value(4, 4), 1.);
     }
 
     #[test]
     fn test_get_retina_out_of_bounds() {
-        let image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
+        let image = Image::from_path("../images/artificial/checkboard.png".to_string()).unwrap();
         // getting the first pixel in the top left corner should give an error
-        let retina = image.create_retina_at(Position::new(1, 1));
+        let retina = image.create_retina_at(Position::new(1, 1), RETINA_SIZE);
         assert!(retina.is_err());
     }
 
     #[test]
     fn test_retina_movement() {
-        let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(10, 10)).unwrap();
+        let mut image = Image::from_path("../images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(10, 10), RETINA_SIZE).unwrap();
 
-        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
+        image.show_with_retina_movement_mut(&retina, "../test/images/with_retina_movement.png".to_string()).unwrap();
 
         retina.move_retina_mut(15, 0).unwrap();
 
-        image.show_with_retina_movement_mut(&retina, "../images/test/test_retina_movement.png".to_string()).unwrap();
+        image.show_with_retina_movement_mut(&retina, "../test/images/with_retina_movement.png".to_string()).unwrap();
     }
 
     #[test]
     #[should_panic]
     fn test_invalid_retina_movement_to_the_right() {
-        let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(17, 13)).unwrap();
+        let image = Image::from_path("../images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(17, 13), RETINA_SIZE).unwrap();
 
         retina.move_retina_mut(20, 0).unwrap();
     }
@@ -1454,8 +1568,8 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_invalid_retina_movement_to_the_left() {
-        let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(5, 13)).unwrap();
+        let image = Image::from_path("../images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13), RETINA_SIZE).unwrap();
 
         retina.move_retina_mut(-5, 0).unwrap();
     }
@@ -1463,8 +1577,8 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_invalid_retina_movement_to_the_top() {
-        let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(5, 13)).unwrap();
+        let image = Image::from_path("../images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13), RETINA_SIZE).unwrap();
 
         retina.move_retina_mut(0, -20).unwrap();
     }
@@ -1472,10 +1586,30 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_invalid_retina_movement_to_the_bottom() {
-        let mut image = Image::from_path("../images/test/test_check.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(5, 13)).unwrap();
+        let image = Image::from_path("../images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13), RETINA_SIZE).unwrap();
 
         retina.move_retina_mut(0, 20).unwrap();
+    }
+
+    #[test]
+    fn test_update_from_retina_inputs() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let image = Image::from_path("../images/artificial/checkboard.png".to_string()).unwrap();
+        let retina = image.create_retina_at(Position::new(10, 10), RETINA_SIZE).unwrap();
+
+        rnn.update_inputs_from_retina(&retina);
+
+        assert_eq!(round2(rnn.neurons[0].retina_inputs[0] as f64), 1.0);
+        assert_eq!(round2(rnn.neurons[0].retina_inputs[4] as f64), 0.0);
+        assert_eq!(round2(rnn.neurons[0].retina_inputs[24] as f64), 1.0);
+    }
+
+    #[test]
+    fn test_binarize_image() {
+        let mut image = Image::from_path("../images/artificial/gradient.png".to_string()).unwrap();
+        image.save_binarized("../test/images/binarized.png".to_string()).unwrap();
     }
 
 }
