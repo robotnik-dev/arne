@@ -19,11 +19,6 @@ serde = {version = "1.0", features = ["derive"]}
 nalgebra = "0.32.5"
 image = "0.25.1"
 
-genetic_algorithm = {path = "../crates/genetic_algorithm"}
-neural_network = {path = "../crates/neural_network"}
-image_processing = {path = "../crates/image_processing"}
-utils = {path = "../crates/utils"}
-
 [dependencies.petgraph]
 version = "0.6.5"
 features = ["serde-1"]

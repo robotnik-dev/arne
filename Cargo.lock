@@ -66,12 +66,9 @@ name = "arne"
 version = "0.1.0"
 dependencies = [
  "approx",
- "genetic_algorithm",
  "image 0.25.1",
- "image_processing",
  "lazy_static",
  "nalgebra",
- "neural_network",
  "petgraph",
  "plotters",
  "rand",
@@ -80,7 +77,6 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "utils",
 ]
 
 [[package]]
@@ -489,10 +485,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "genetic_algorithm"
-version = "0.1.0"
-
-[[package]]
 name = "getrandom"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -614,10 +606,6 @@ dependencies = [
  "byteorder-lite",
  "thiserror",
 ]
-
-[[package]]
-name = "image_processing"
-version = "0.1.0"
 
 [[package]]
 name = "imgref"
@@ -833,10 +821,6 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
-
-[[package]]
-name = "neural_network"
-version = "0.1.0"
 
 [[package]]
 name = "new_debug_unreachable"
@@ -1473,10 +1457,6 @@ name = "unicode-ident"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
-
-[[package]]
-name = "utils"
-version = "0.1.0"
 
 [[package]]
 name = "v_frame"
