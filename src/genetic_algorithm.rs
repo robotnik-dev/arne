@@ -208,3 +208,173 @@ impl From<Rnn> for Agent {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use petgraph::{dot::Dot, Graph};
+    use rand_chacha::ChaCha8Rng;
+
+    use super::*;
+
+    #[test]
+    fn test_crossover_uniform() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut agent = Agent::new(&mut rng, 10);
+        let mut agent2 = Agent::new(&mut rng, 10);
+
+        agent
+            .genotype_mut()
+            .neurons_mut()
+            .iter_mut()
+            .for_each(|neuron|{
+                neuron
+                    .input_connections_mut()
+                    .iter_mut()
+                    .for_each(|(_, weight)| *weight = 0.5);
+                neuron.set_self_activation(0.1);
+                neuron.set_bias(1.);
+            });
+        
+        agent2
+            .genotype_mut()
+            .neurons_mut()
+            .iter_mut()
+            .for_each(|neuron|{
+                neuron
+                    .input_connections_mut()
+                    .iter_mut()
+                    .for_each(|(_, weight)| *weight = -0.5);
+                neuron.set_self_activation(-0.1);
+                neuron.set_bias(-1.);
+            });
+
+        let offspring = agent.crossover(&mut rng, &agent2);
+        
+        // check if the offspring is different from the parents
+        assert_ne!(agent.genotype(), offspring.genotype());
+        assert_ne!(agent2.genotype(), offspring.genotype());
+
+        // print the parents and then the offspring as graph
+        let parent1_graph = Graph::from(agent.genotype.clone());
+        let dot1 = Dot::new(&parent1_graph);
+        let parent2_graph = Graph::from(agent2.genotype.clone());
+        let dot2 = Dot::new(&parent2_graph);
+        let offspring_graph = Graph::from(offspring.genotype.clone());
+        let dot3 = Dot::new(&offspring_graph);
+        println!("Parent1 \n {:?}", dot1);
+        println!("Parent2 \n {:?}", dot2);
+        println!("Offspring \n {:?}", dot3);
+
+        // check if the number count of all negative numbers in the offsrping are approximately the saame as the psotive numbers
+        let negative_count = offspring
+            .genotype()
+            .neurons()
+            .iter()
+            .map(|neuron| neuron.input_connections().iter().filter(|(_, weight)| *weight < 0.0).count())
+            .sum::<usize>();
+        let positive_count = offspring
+            .genotype()
+            .neurons()
+            .iter()
+            .map(|neuron| neuron.input_connections().iter().filter(|(_, weight)| *weight > 0.0).count())
+            .sum::<usize>();
+        
+        assert_eq!(positive_count, 43);
+        assert_eq!(negative_count, 47);
+    }
+
+    #[test]
+    fn test_delete_neuron() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        rnn.delete_neuron(&mut rng);
+
+        assert_eq!(rnn.neurons()[0].input_connections().iter().map(|(_, weight)| *weight).sum::<f64>(), 0.0);
+        assert_eq!(rnn.neurons()[0].self_activation(), 0.0);
+        assert_eq!(rnn.neurons()[0].bias(), 0.0);
+    }
+
+    #[test]
+    fn test_delete_weights() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        rnn.delete_weights(&mut rng);
+
+        assert_eq!(rnn.neurons()[0].input_connections().iter().map(|(_, weight)| *weight).sum::<f64>(), 0.0);
+    }
+
+    #[test]
+    fn test_delete_bias() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        rnn.delete_bias(&mut rng);
+
+        assert_eq!(rnn.neurons()[0].bias(), 0.0);
+    }
+
+    #[test]
+    fn test_delete_self_activation() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        rnn.delete_self_activation(&mut rng);
+
+        assert_eq!(rnn.neurons()[0].self_activation(), 0.0);
+    }
+
+    #[test]
+    fn test_mutate_neuron() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let bias = rnn.neurons()[0].bias();
+        let self_activation = rnn.neurons()[0].self_activation();
+        let weights = rnn.neurons()[0].input_connections().iter().map(|(_, weight)| *weight).collect::<Vec<f64>>();
+
+        rnn.mutate_neuron(&mut rng);
+
+        // Check that the properties of the neuron have been changed.
+        assert_ne!(bias, rnn.neurons()[0].bias());
+        assert_ne!(self_activation, rnn.neurons()[0].self_activation());
+        assert_ne!(weights, rnn.neurons()[0].input_connections().iter().map(|(_, weight)| *weight).collect::<Vec<f64>>());
+    }
+
+    #[test]
+    fn test_mutate_weights() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let weights = rnn.neurons()[0].input_connections().iter().map(|(_, weight)| *weight).collect::<Vec<f64>>();
+
+        rnn.mutate_weights(&mut rng);
+
+        // Check that the properties of the neuron have been changed.
+        assert_ne!(weights, rnn.neurons()[0].input_connections().iter().map(|(_, weight)| *weight).collect::<Vec<f64>>());
+    }
+
+    #[test]
+    fn test_mutate_bias() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let bias = rnn.neurons()[0].bias();
+
+        rnn.mutate_bias(&mut rng);
+
+        // Check that the properties of the neuron have been changed.
+        assert_ne!(bias, rnn.neurons()[0].bias());
+    }
+
+    #[test]
+    fn test_mutate_self_activation() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let self_activation = rnn.neurons()[0].self_activation();
+
+        rnn.mutate_self_activation(&mut rng);
+
+        // Check that the properties of the neuron have been changed.
+        assert_ne!(self_activation, rnn.neurons()[0].self_activation());
+    }
+}

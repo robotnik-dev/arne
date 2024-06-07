@@ -4,6 +4,7 @@ use image::{ImageBuffer, LumaA};
 use crate::Result;
 use crate::Error;
 
+
 pub const IMAGE_DIMENSIONS: (u32, u32) = (33, 25);
 pub const RETINA_SIZE: usize = 5;
 
@@ -212,4 +213,132 @@ impl Retina {
         self.center_position += self.delta_position.clone();
         Ok(())
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use crate::round2;
+    use crate::Rnn;
+    use super::*;
+
+    #[test]
+    fn test_load_image() {
+        // using a image size of 33x25 px (nearly 4:3)
+        let image: ImageBuffer<LumaA<u8>, Vec<u8>> = image::io::Reader::open("images/artificial/checkboard.png").unwrap().decode().unwrap().into_luma_alpha8();
+        // white
+        assert_eq!(*image.get_pixel(0, 0), LumaA([255, 255]));
+        // black
+        assert_eq!(*image.get_pixel(3, 0), LumaA([0, 255]));
+        // black
+        assert_eq!(*image.get_pixel(32, 24), LumaA([0, 255]));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_load_image() {
+        let image: ImageBuffer<LumaA<u8>, Vec<u8>> = image::io::Reader::open("images/artificial/checkboard.png").unwrap().decode().unwrap().into_luma_alpha8();
+        // using a image size of 33x25 px (nearly 4:3) so this should panic
+        let _ = *image.get_pixel(33, 25);
+    }
+
+    #[test]
+    fn test_get_retina() {
+        let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+
+        // using a image size of 33x25 px that the center pixel is at position 16, 12 (countning from 1 not 0)
+        let retina = image.create_retina_at(Position::new(5, 5), RETINA_SIZE).unwrap();
+
+        retina.create_png_at("test/images/only_retina.png".to_string()).unwrap();
+        image.show_with_retina_movement_mut(&retina, "test/images/with_retina_movement.png".to_string()).unwrap();
+
+        assert_eq!(retina.data[12], retina.get_value(2, 2));
+        assert_eq!(retina.data[0], retina.get_value(0, 0));
+        assert_eq!(retina.data[4], retina.get_value(4, 0));
+
+        // all corners are white
+        assert_eq!(retina.get_value(0, 0), 1.);
+        assert_eq!(retina.get_value(0, 4), 1.);
+        assert_eq!(retina.get_value(4, 0), 1.);
+        assert_eq!(retina.get_value(4, 4), 1.);
+    }
+
+    #[test]
+    fn test_get_retina_out_of_bounds() {
+        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        // getting the first pixel in the top left corner should give an error
+        let retina = image.create_retina_at(Position::new(1, 1), RETINA_SIZE);
+        assert!(retina.is_err());
+    }
+
+    #[test]
+    fn test_retina_movement() {
+        let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(10, 10), RETINA_SIZE).unwrap();
+
+        image.show_with_retina_movement_mut(&retina, "test/images/with_retina_movement.png".to_string()).unwrap();
+
+        retina.move_mut(15, 0).unwrap();
+
+        image.show_with_retina_movement_mut(&retina, "test/images/with_retina_movement.png".to_string()).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_retina_movement_to_the_right() {
+        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(17, 13), RETINA_SIZE).unwrap();
+
+        retina.move_mut(20, 0).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_retina_movement_to_the_left() {
+        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13), RETINA_SIZE).unwrap();
+
+        retina.move_mut(-5, 0).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_retina_movement_to_the_top() {
+        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13), RETINA_SIZE).unwrap();
+
+        retina.move_mut(0, -20).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_retina_movement_to_the_bottom() {
+        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13), RETINA_SIZE).unwrap();
+
+        retina.move_mut(0, 20).unwrap();
+    }
+
+    #[test]
+    fn test_update_from_retina_inputs() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let retina = image.create_retina_at(Position::new(10, 10), RETINA_SIZE).unwrap();
+
+        rnn.update_inputs_from_retina(&retina);
+
+        assert_eq!(round2(rnn.neurons()[0].retina_inputs()[0] as f64), 1.0);
+        assert_eq!(round2(rnn.neurons()[0].retina_inputs()[4] as f64), 0.0);
+        assert_eq!(round2(rnn.neurons()[0].retina_inputs()[24] as f64), 1.0);
+    }
+
+    #[test]
+    fn test_binarize_image() {
+        let mut image = Image::from_path("images/artificial/gradient.png".to_string()).unwrap();
+        image.save_binarized("test/images/binarized.png".to_string()).unwrap();
+    }
+
 }

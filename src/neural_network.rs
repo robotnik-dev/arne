@@ -136,6 +136,22 @@ impl SnapShot {
             time_step,
         }
     }
+
+    pub fn outputs(&self) -> &Vec<f64> {
+        &self.outputs
+    }
+
+    pub fn outputs_mut(&mut self) -> &mut Vec<f64> {
+        &mut self.outputs
+    }
+
+    pub fn time_step(&self) -> u32 {
+        self.time_step
+    }
+
+    pub fn time_step_mut(&mut self) -> &mut u32 {
+        &mut self.time_step
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -243,6 +259,10 @@ impl Rnn {
 
     pub fn neurons(&self) -> &Vec<Neuron> {
         &self.neurons
+    }
+
+    pub fn neurons_mut(&mut self) -> &mut Vec<Neuron> {
+        &mut self.neurons
     }
 
     /// each neruon has a connection to all of the 25 retina pixels and these need to be updated each rnn update step
@@ -545,5 +565,330 @@ impl Neuron {
 
     pub fn output(&self) -> f64 {
         self.output
+    }
+
+    pub fn set_output(&mut self, output: f64) {
+        self.output = output;
+    }
+
+    pub fn input_connections(&self) -> &Vec<(usize, f64)> {
+        &self.input_connections
+    }
+
+    pub fn input_connections_mut(&mut self) -> &mut Vec<(usize, f64)> {
+        &mut self.input_connections
+    }
+
+    pub fn self_activation(&self) -> f64 {
+        self.self_activation
+    }
+
+    pub fn set_self_activation(&mut self, self_activation: f64) {
+        self.self_activation = self_activation;
+    }
+
+    pub fn bias(&self) -> f64 {
+        self.bias
+    }
+
+    pub fn set_bias(&mut self, bias: f64) {
+        self.bias = bias;
+    }
+
+    pub fn retina_inputs(&self) -> &Vec<f32> {
+        &self.retina_inputs
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use rand_chacha::ChaCha8Rng;
+    use crate::genetic_algorithm::Agent;
+    use super::*;
+
+    #[test]
+    fn test_update_rnn_two_neurons() {
+        use rand::prelude::*;
+        use rand_chacha::ChaCha8Rng;
+
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        // randomize the weights and self activations with a custom seed and set the bias to 1.0
+        rnn.neurons_mut()
+            .iter_mut()
+            .for_each(|neuron|{
+                neuron
+                    .input_connections_mut()
+                    .iter_mut()
+                    .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
+                neuron.set_self_activation(rng.gen_range(-1.0..=1.0));
+                neuron.set_bias(1.);
+            });
+
+        // first iteration
+        rnn.update();
+
+        assert_eq!(round2(rnn.neurons()[0].output), 0.76);
+        assert_eq!(round2(rnn.neurons()[1].output), 0.76);
+        
+        // second iteration
+        rnn.update();
+
+        assert_eq!(round2(rnn.neurons()[0].output), 0.4);
+        assert_eq!(round2(rnn.neurons()[1].output), 0.86);
+    }
+
+    #[test]
+    fn test_update_rnn_three_neurons() {
+        use rand::prelude::*;
+        use rand_chacha::ChaCha8Rng;
+
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        // randomize the weights and self activations with a custom seed and set the bias to 1.0
+        rnn.neurons_mut()
+            .iter_mut()
+            .for_each(|neuron|{
+                neuron
+                    .input_connections_mut()
+                    .iter_mut()
+                    .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
+                neuron.set_self_activation(rng.gen_range(-1.0..=1.0));
+                neuron.set_bias(1.);
+            });
+            
+        // first iteration
+        rnn.update();
+
+        assert_eq!(round2(rnn.neurons()[0].output), 0.76);
+        assert_eq!(round2(rnn.neurons()[1].output), 0.76);
+        assert_eq!(round2(rnn.neurons()[2].output), 0.76);
+        
+        // second iteration
+        rnn.update();
+
+        assert_eq!(round2(rnn.neurons()[0].output), 0.4);
+        assert_eq!(round2(rnn.neurons()[1].output), 0.86);
+        assert_eq!(round2(rnn.neurons()[2].output), 0.79);
+    }
+
+    // #[test]
+    // fn test_evaluate_agent() {
+    //     todo!()
+    // }
+
+    #[test]
+    fn test_create_snapshots() {
+        // create a new rnn with 3 neurons
+        // update the rnn 5 times
+        // after each update create a snapshot
+        // check if the snapshots are correct
+        
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        rnn.neurons_mut()[0].output = 0.97;
+        rnn.neurons_mut()[1].output = 0.88;
+        rnn.neurons_mut()[2].output = 0.39;
+        
+        for i in 0..1 {
+            rnn.short_term_memory.add_snapshot(rnn.neurons().iter().map(|neuron| neuron.output()).collect(), i);
+            let saved_snapshot = rnn.short_term_memory.get_snapshot_at_timestep(i).unwrap();
+            assert_eq!(saved_snapshot.outputs()[0], 0.97);
+            assert_eq!(saved_snapshot.outputs()[1], 0.88);
+            assert_eq!(saved_snapshot.outputs()[2], 0.39);
+        }
+    }
+
+    #[test]
+    fn test_snapshot_eq() {
+        let snapshot = SnapShot {
+            outputs: vec![0.97, 0.88, 0.39],
+            time_step: 1,
+        };
+        let snapshot2 = SnapShot {
+            outputs: vec![0.97, 0.88, 0.39],
+            time_step: 1,
+        };
+        assert_eq!(snapshot, snapshot2);
+    }
+
+    #[test]
+    fn test_snapshot_not_eq() {
+        let snapshot = SnapShot {
+            outputs: vec![1.97, 0.88, 0.39],
+            time_step: 1,
+        };
+        let snapshot2 = SnapShot {
+            outputs: vec![0.97, 0.88, 0.39],
+            time_step: 1,
+        };
+        assert_ne!(snapshot, snapshot2);
+    }
+
+    #[test]
+    fn test_short_term_memory_eq() {
+        let stm = ShortTermMemory {
+            snapshots: vec![
+                SnapShot {
+                    outputs: vec![0.97, 0.88222222, 0.39],
+                    time_step: 1,
+                },
+                SnapShot {
+                    outputs: vec![1.97, -0.88, 0.0],
+                    time_step: 2,
+                },
+                SnapShot {
+                    outputs: vec![2.955555557, 0.88, -0.39],
+                    time_step: 3,
+                },
+                SnapShot {
+                    outputs: vec![0.922227, 0.0, 0.39],
+                    time_step: 4,
+                },
+            ],
+        };
+        let stm2 = ShortTermMemory {
+            snapshots: vec![
+                SnapShot {
+                    outputs: vec![0.97, 0.88222222, 0.39],
+                    time_step: 1,
+                },
+                SnapShot {
+                    outputs: vec![1.97, -0.88, 0.0],
+                    time_step: 2,
+                },
+                SnapShot {
+                    outputs: vec![2.955555557, 0.88, -0.39],
+                    time_step: 3,
+                },
+                SnapShot {
+                    outputs: vec![0.922227, 0.0, 0.39],
+                    time_step: 4,
+                },
+            ],
+        };
+
+        assert_eq!(stm, stm2);
+    }
+
+    #[test]
+    fn test_from_rnn_to_graph() {
+        use rand::prelude::*;
+        use rand_chacha::ChaCha8Rng;
+
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+
+        let mut agent = Agent::new(&mut rng, 3);
+        agent
+            .genotype_mut()
+            .neurons_mut()
+            .iter_mut()
+            .for_each(|neuron|{
+                neuron.input_connections
+                .iter_mut()
+                .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
+                neuron.set_self_activation(rng.gen_range(-1.0..=1.0));
+                neuron.set_bias(-0.6);
+            });
+
+        let graph = Graph::<(usize, f64), f64>::from(agent.genotype().clone());
+
+        graph
+            .node_indices()
+            .for_each(|node| {
+                graph
+                    .neighbors(node)
+                    .for_each(|neighbor| {
+                        // get weight from neuron at index "node" from the agent and the neuron at index "neighbor"
+                        if let Some(correct_weight) = agent.genotype().neurons()[node.index()].input_connections()
+                            .iter()
+                            .find(|(index, _)| *index == neighbor.index()) {
+                                assert_eq!(round2(correct_weight.1), round2(*graph.edge_weight(graph.find_edge(neighbor, node).expect("msg")).unwrap()));
+                            }
+                    });
+            });
+    }
+
+    #[test]
+    fn test_from_graph_to_rnn() {
+        let mut graph = Graph::<(usize, f64), f64>::new();
+        let node1 = graph.add_node((0, 1.0));
+        let node2 = graph.add_node((1, -0.5));
+        let node3 = graph.add_node((2, 0.0));
+
+        // self connections
+        graph.add_edge(node1, node1, 0.2);
+        graph.add_edge(node2, node2, -0.2);
+        graph.add_edge(node3, node3, 0.0);
+
+        // connections between neurons
+        graph.add_edge(node1, node2, 0.5);
+        graph.add_edge(node1, node3, 0.3);
+        graph.add_edge(node2, node1, 0.1);
+        graph.add_edge(node2, node3, 0.55);
+        graph.add_edge(node3, node1, 0.98);
+        graph.add_edge(node3, node2, 0.11);
+
+        let rnn = Rnn::from(graph.clone());
+
+        graph
+            .node_indices()
+            .for_each(|node| {
+                graph
+                    .neighbors(node)
+                    .for_each(|neighbor| {
+                        // get weight from neuron at index "node" from the agent and the neuron at index "neighbor"
+                        if let Some(correct_weight) = rnn.neurons[node.index()].input_connections
+                            .iter()
+                            .find(|(index, _)| *index == neighbor.index()) {
+                                assert_eq!(round2(correct_weight.1), round2(*graph.edge_weight(graph.find_edge(neighbor, node).expect("msg")).unwrap()));
+                            }
+                    });
+            });
+    }
+
+    #[test]
+    fn test_rnn_to_graph_conversion_and_back() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+
+        let graph = Graph::<(usize, f64), f64>::from(rnn.clone());
+        let rnn2 = Rnn::from(graph.clone());
+
+        assert_eq!(rnn, rnn2);
+    }
+
+    #[test]
+    fn test_mutate_self_activation() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let self_activation = rnn.neurons()[0].self_activation();
+
+        rnn.mutate_self_activation(&mut rng);
+
+        // Check that the properties of the neuron have been changed.
+        assert_ne!(self_activation, rnn.neurons()[0].self_activation());
+    }
+
+    #[test]
+    fn test_build_from_json() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        rnn.neurons_mut()[0].set_output(-0.44);
+        rnn.neurons_mut()[1].set_bias(-0.22);
+        let file_path = "test/saves/rnn/test_rnn.json".to_string();
+
+        // save to disk
+        rnn.to_json(Some(&file_path)).unwrap();
+
+        // load from disk
+        let new_rnn = Rnn::from_json(file_path).unwrap();
+
+        assert_eq!(round2(new_rnn.neurons()[0].output()), -0.44);
+        assert_eq!(round2(new_rnn.neurons()[1].bias()), -0.22);
+        assert_eq!(new_rnn.graph.node_count(), 3);
     }
 }
