@@ -3,10 +3,10 @@ use rand::prelude::*;
 use lazy_static::lazy_static;
 
 use crate::neural_network::Rnn;
+use crate::image_processing::{Image, Position, RETINA_SIZE};
 
 pub const POPULATION_SIZE: usize = 100;
 pub const MAX_GENERATIONS: u32 = 10;
-pub const GREYSCALE_TO_MATCH: SimpleGrayscale = SimpleGrayscale(255);
 lazy_static! {
     pub static ref MUTATION_PROBABILITIES: HashMap<String, f32> = {
         let mut m = HashMap::new();
@@ -35,50 +35,74 @@ lazy_static! {
 
 trait Phenotype {}
 
-#[derive(Debug, Clone)]
-pub struct SimpleGrayscale(u8);
-
-impl Phenotype for SimpleGrayscale {}
-
-impl GenotypePhenotypeMapping<SimpleGrayscale> for Rnn {
-    fn map_to_phenotype(&self) -> SimpleGrayscale {
-        let num_neurons = 3;
-        let greyscale = self
-            .neurons()
-            .iter()
-            .skip(self.neurons().len() - num_neurons)
-            // output of 0 should be 0 and output of 1 should be 255
-            .map(|neuron| (neuron.output() * 255.0) as f64)
-            // take the avarage of the outcome
-            .sum::<f64>() / num_neurons as f64;
-        SimpleGrayscale(greyscale.round() as u8)
-    }
-}
-
-/// This phenotype/solution to the problem is a line follower.
-/// If the agent/retina(TBD) can stay in each iteration step on the line(the center pixel of the image)
-/// the higher the fitness value will be.
-#[derive(Debug, Clone)]
-struct FollowLine {
-    // store only the difference between the current position and the position
-    // of the last iteration
-    delta_position: nalgebra::Point2<f32>,
-}
-
-impl Phenotype for FollowLine {}
-
 trait GenotypePhenotypeMapping<P: Phenotype> {
     fn map_to_phenotype(&self) -> P;
 }
 
 pub trait AgentEvaluation<T> {
     /// normalized fitness value between 0 and 1
-    fn calculate_fitness(&self, data: T) -> f64;
+    fn calculate_fitness(&self, data: &mut T) -> f64;
 
     /// evaluate the agent with the given preferred output
-    fn evaluate(&mut self, data: T, number_of_updates: usize) -> f64;
+    fn evaluate(&mut self, data: &mut T, number_of_updates: usize) -> f64;
 }
 
+/// This phenotype/solution to the problem is a line follower.
+/// If the agent/retina(TBD) can stay in each iteration step on the line(the center pixel of the image)
+/// the higher the fitness value will be.
+#[derive(Debug, Clone)]
+pub struct FollowLine;
+
+impl Phenotype for FollowLine {}
+
+impl GenotypePhenotypeMapping<FollowLine> for Rnn {
+    fn map_to_phenotype(&self) -> FollowLine {
+        // let num_neurons = 3;
+        // let greyscale = self
+        //     .neurons()
+        //     .iter()
+        //     .skip(self.neurons().len() - num_neurons)
+        //     // output of 0 should be 0 and output of 1 should be 255
+        //     .map(|neuron| (neuron.output() * 255.0) as f64)
+        //     // take the avarage of the outcome
+        //     .sum::<f64>() / num_neurons as f64;
+        // SimpleGrayscale(greyscale.round() as u8)
+        todo!()
+    }
+}
+
+impl AgentEvaluation<Image> for Agent {
+    fn calculate_fitness(&self, image: &mut Image) -> f64 {
+        // let correct_greyscale = data.0 as f64;
+        // let phenotype = self.genotype.map_to_phenotype().0 as f64;
+        // 1.0 - (correct_greyscale - phenotype).abs() / 255.0
+        todo!()
+    }
+
+    fn evaluate(&mut self, image: &mut Image, number_of_updates: usize) -> f64 {
+        let mut local_fitness = 0.0;
+        self.genotype_mut().short_term_memory_mut().clear();
+        // create a retina at a specific position (top left of image)
+        let mut retina = image.create_retina_at(Position::new(RETINA_SIZE as i32, RETINA_SIZE as i32), RETINA_SIZE).unwrap();
+
+        for i in 0..number_of_updates {
+            // calculate the next delta position of the retina, encoded in the neurons
+            let delta = self.genotype().next_delta_position();
+            // move the retina to the next position
+            retina.move_mut(&delta);
+            // update all input connections to the retina from each neuron
+            self.genotype_mut().update_inputs_from_retina(&retina);
+            // do one update step
+            self.genotype.update();
+            // creating snapshot of the network at the current time step
+            let outputs = self.genotype.neurons().iter().map(|neuron| neuron.output()).collect::<Vec<f64>>();
+            self.genotype_mut().add_snapshot(outputs, (i + 1) as u32);
+            // calculate the fitness of the agent
+            local_fitness += self.calculate_fitness(image);
+        }
+        local_fitness / number_of_updates as f64
+    }
+}
 
 pub struct Population {
     agents: Vec<Agent>,
@@ -136,33 +160,6 @@ impl Clone for Agent {
             fitness: self.fitness,
             genotype: self.genotype.clone(),
         }
-    }
-}
-
-impl AgentEvaluation<SimpleGrayscale> for Agent {
-    fn calculate_fitness(&self, data: SimpleGrayscale) -> f64 {
-        let correct_greyscale = data.0 as f64;
-        let phenotype = self.genotype.map_to_phenotype().0 as f64;
-        1.0 - (correct_greyscale - phenotype).abs() / 255.0
-    }
-
-    fn evaluate(&mut self, data: SimpleGrayscale, number_of_updates: usize) -> f64 {
-        let mut local_fitness = 0.0;
-        self.genotype_mut().short_term_memory_mut().clear();
-        for i in 0..number_of_updates {
-            // get the current position of the network (encoded in the output of some neurons TBD)
-            // getting the current Retina from the image at teh position provided
-            // update all input connections to the retina from each neuron
-
-            // do one update step
-            self.genotype.update();
-            // creating snapshot of the network at the current time step
-            let outputs = self.genotype.neurons().iter().map(|neuron| neuron.output()).collect::<Vec<f64>>();
-            self.genotype_mut().add_snapshot(outputs, (i + 1) as u32);
-            // CLONING here is okay because its only a u8, but for other implementations it might be a problem
-            local_fitness += self.calculate_fitness(data.clone());
-        }
-        local_fitness / number_of_updates as f64
     }
 }
 

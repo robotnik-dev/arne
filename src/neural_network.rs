@@ -6,7 +6,7 @@ use rand_distr::{Distribution, Normal};
 use petgraph::Graph;
 use serde::{Serialize, Deserialize};
 
-use crate::Result;
+use crate::{image_processing::Position, Result};
 use crate::Error;
 use crate::utils::round2;
 use crate::image_processing::Retina;
@@ -265,15 +265,20 @@ impl Rnn {
         &mut self.neurons
     }
 
+    pub fn next_delta_position(&self) -> Position {
+        todo!()
+    }
+
     /// each neruon has a connection to all of the 25 retina pixels and these need to be updated each rnn update step
     pub fn update_inputs_from_retina(&mut self, retina: &Retina) {
-        self.neurons
+        self
+            .neurons_mut()
             .iter_mut()
             .for_each(|neuron| {
-                neuron.retina_inputs.clear();
-                for i in 0..5 {
-                    for j in 0..5 {
-                        neuron.retina_inputs.push(retina.get_value(i, j));
+                neuron.retina_inputs_mut().clear();
+                for i in 0..retina.size() {
+                    for j in 0..retina.size() {
+                        neuron.add_retina_input(retina.get_value(i, j));
                     }
                 }
             });
@@ -598,6 +603,15 @@ impl Neuron {
     pub fn retina_inputs(&self) -> &Vec<f32> {
         &self.retina_inputs
     }
+
+    pub fn retina_inputs_mut(&mut self) -> &mut Vec<f32> {
+        &mut self.retina_inputs
+    }
+
+    pub fn add_retina_input(&mut self, input: f32) {
+        self.retina_inputs.push(input);
+    }
+
 }
 
 
