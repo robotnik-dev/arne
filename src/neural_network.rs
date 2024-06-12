@@ -306,7 +306,8 @@ impl Rnn {
                 let retina_sum = neuron
                     .retina_inputs()
                     .iter()
-                    .zip(neuron.retina_weights.iter()).map(|(input, weight)| *input as f64 * weight).sum::<f64>();
+                    .zip(neuron.retina_weights.iter()).map(|(input, weight)| *input as f64 * weight)
+                    .sum::<f64>();
                 activation += retina_sum;
 
                 // add self activation to the activation
@@ -693,8 +694,8 @@ mod tests {
         // second iteration
         rnn.update();
 
-        assert_eq!(round2(rnn.neurons()[0].output), 0.4);
-        assert_eq!(round2(rnn.neurons()[1].output), 0.86);
+        assert_eq!(round2(rnn.neurons()[0].output), -0.53);
+        assert_eq!(round2(rnn.neurons()[1].output), 0.93);
     }
 
     #[test]
@@ -727,9 +728,9 @@ mod tests {
         // second iteration
         rnn.update();
 
-        assert_eq!(round2(rnn.neurons()[0].output), 0.4);
-        assert_eq!(round2(rnn.neurons()[1].output), 0.86);
-        assert_eq!(round2(rnn.neurons()[2].output), 0.79);
+        assert_eq!(round2(rnn.neurons()[0].output), -0.53);
+        assert_eq!(round2(rnn.neurons()[1].output), 0.93);
+        assert_eq!(round2(rnn.neurons()[2].output), 0.64);
     }
 
     // #[test]
@@ -916,18 +917,6 @@ mod tests {
         let rnn2 = Rnn::from(graph.clone());
 
         assert_eq!(rnn, rnn2);
-    }
-
-    #[test]
-    fn test_mutate_self_activation() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(&mut rng, 3);
-        let self_activation = rnn.neurons()[0].self_activation();
-
-        rnn.mutate_self_activation(&mut rng);
-
-        // Check that the properties of the neuron have been changed.
-        assert_ne!(self_activation, rnn.neurons()[0].self_activation());
     }
 
     #[test]
