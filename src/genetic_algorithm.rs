@@ -1,106 +1,68 @@
-use std::{collections::HashMap, fmt::Debug};
 use rand::prelude::*;
-use lazy_static::lazy_static;
 
+use crate::{Error, Retina, CONFIG};
 use crate::neural_network::Rnn;
-use crate::image_processing::{Image, Position, RETINA_SIZE};
+use crate::image_processing::{Image, Position};
 
-pub const POPULATION_SIZE: usize = 100;
-pub const MAX_GENERATIONS: u32 = 10;
-lazy_static! {
-    pub static ref MUTATION_PROBABILITIES: HashMap<String, f32> = {
-        let mut m = HashMap::new();
-        // global mutation rate which can be changed later
-        m.insert("global_variance".to_string(), 0.2);
-        // setting all incoming weights, self activation and bias to 0
-        m.insert("delete_neuron".to_string(), 0.1);
-        // setting all incoming weights to 0
-        m.insert("delete_weights".to_string(), 0.1);
-        // setting bias to 0
-        m.insert("delete_bias".to_string(), 0.1);
-        // setting self activation to 0
-        m.insert("delete_self_activation".to_string(), 0.1);
-        // randomize the weights self activation and bias
-        m.insert("mutate_neuron".to_string(), 0.2);
-        // randomize all incoming weights
-        m.insert("mutate_weights".to_string(), 0.2);
-        // randomize the bias
-        m.insert("mutate_bias".to_string(), 0.1);
-        // randomize the self activation
-        m.insert("mutate_self_activation".to_string(), 0.1);
-        m
-    };
+
+/// The actual mapping between the genotype and the phenotype.
+/// Need to be implemented for each invdividual marker type like FollowLine
+trait FitnessCalculation<T> {
+    fn calculate_fitness(&self, retina: &Retina) -> f64;
+}
+    
+pub trait AgentEvaluation {
+    fn evaluate(&mut self, image: &mut Image, number_of_updates: usize) -> std::result::Result<f64, Error>;
 }
 
-
-trait Phenotype {}
-
-trait GenotypePhenotypeMapping<P: Phenotype> {
-    fn map_to_phenotype(&self) -> P;
-}
-
-pub trait AgentEvaluation<T> {
-    /// normalized fitness value between 0 and 1
-    fn calculate_fitness(&self, data: &mut T) -> f64;
-
-    /// evaluate the agent with the given preferred output
-    fn evaluate(&mut self, data: &mut T, number_of_updates: usize) -> f64;
-}
-
-/// This phenotype/solution to the problem is a line follower.
+/// Marker type. This phenotype/solution to the problem is a line follower.
 /// If the agent/retina(TBD) can stay in each iteration step on the line(the center pixel of the image)
 /// the higher the fitness value will be.
-#[derive(Debug, Clone)]
-pub struct FollowLine;
+struct FollowLine;
 
-impl Phenotype for FollowLine {}
-
-impl GenotypePhenotypeMapping<FollowLine> for Rnn {
-    fn map_to_phenotype(&self) -> FollowLine {
-        // let num_neurons = 3;
-        // let greyscale = self
-        //     .neurons()
-        //     .iter()
-        //     .skip(self.neurons().len() - num_neurons)
-        //     // output of 0 should be 0 and output of 1 should be 255
-        //     .map(|neuron| (neuron.output() * 255.0) as f64)
-        //     // take the avarage of the outcome
-        //     .sum::<f64>() / num_neurons as f64;
-        // SimpleGrayscale(greyscale.round() as u8)
-        todo!()
+impl FitnessCalculation<FollowLine> for Agent {
+    fn calculate_fitness(&self, retina: &Retina) -> f64 {
+        // the higher te difference between the center pixel to 1.0(white) the higher the fitness
+        // means a dark pixel in the center is good
+        1.0 - retina.get_value(2, 2) as f64
     }
 }
 
-impl AgentEvaluation<Image> for Agent {
-    fn calculate_fitness(&self, image: &mut Image) -> f64 {
-        // let correct_greyscale = data.0 as f64;
-        // let phenotype = self.genotype.map_to_phenotype().0 as f64;
-        // 1.0 - (correct_greyscale - phenotype).abs() / 255.0
-        todo!()
-    }
-
-    fn evaluate(&mut self, image: &mut Image, number_of_updates: usize) -> f64 {
+impl AgentEvaluation for Agent {
+    fn evaluate(&mut self, image: &mut Image, number_of_updates: usize) -> std::result::Result<f64, Error> {
         let mut local_fitness = 0.0;
         self.genotype_mut().short_term_memory_mut().clear();
         // create a retina at a specific position (top left of image)
-        let mut retina = image.create_retina_at(Position::new(RETINA_SIZE as i32, RETINA_SIZE as i32), RETINA_SIZE).unwrap();
+        let mut retina = image.create_retina_at(Position::new(
+            CONFIG.image_processing.retina_size as i32,
+            CONFIG.image_processing.retina_size as i32 as i32),
+            CONFIG.image_processing.retina_size as usize)?;
 
         for i in 0..number_of_updates {
             // calculate the next delta position of the retina, encoded in the neurons
             let delta = self.genotype().next_delta_position();
+
             // move the retina to the next position
             retina.move_mut(&delta);
+
             // update all input connections to the retina from each neuron
             self.genotype_mut().update_inputs_from_retina(&retina);
+
             // do one update step
             self.genotype.update();
+
+            // save as png in a folder with retina movement. For each agent a new folder is created
+            // TODO
+            
             // creating snapshot of the network at the current time step
             let outputs = self.genotype.neurons().iter().map(|neuron| neuron.output()).collect::<Vec<f64>>();
-            self.genotype_mut().add_snapshot(outputs, (i + 1) as u32);
+            let time_step = (i + 1) as u32;
+            self.genotype_mut().add_snapshot(outputs, time_step);
+
             // calculate the fitness of the agent
-            local_fitness += self.calculate_fitness(image);
+            local_fitness += self.calculate_fitness(&retina);
         }
-        local_fitness / number_of_updates as f64
+        Ok(local_fitness / number_of_updates as f64)
     }
 }
 

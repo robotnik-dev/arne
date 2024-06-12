@@ -18,6 +18,8 @@ serde_json = "1.0"
 serde = {version = "1.0", features = ["derive"]}
 nalgebra = "0.32.5"
 image = "0.25.1"
+imageproc = "0.25.0"
+static-toml = "1.2.0"
 
 [dependencies.petgraph]
 version = "0.6.5"

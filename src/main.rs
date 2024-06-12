@@ -3,6 +3,7 @@ use rayon::prelude::*;
 use rand::prelude::*;
 use petgraph::{dot::Dot, Graph};
 use rand_chacha::ChaCha8Rng;
+use static_toml::static_toml;
 
 mod utils;
 pub use utils::round2;
@@ -11,17 +12,22 @@ mod image_processing;
 pub use image_processing::{Retina, ImageReader};
 
 mod neural_network;
-pub use neural_network::{Rnn, SnapShot, ShortTermMemory, NEURONS_PER_RNN, NUMBER_OF_RNN_UPDATES};
+pub use neural_network::{Rnn, SnapShot, ShortTermMemory};
 
 mod genetic_algorithm;
-pub use genetic_algorithm::{Agent, Population, POPULATION_SIZE, MAX_GENERATIONS, AgentEvaluation, FollowLine};
+pub use genetic_algorithm::{Agent, Population, AgentEvaluation};
 
 type Error = Box<dyn std::error::Error>;
 type Result = std::result::Result<(), Error>;
 
-const PATH_TO_TRAINING_DATASET: &str = "test/images/dataset";
+
+static_toml! {
+    pub static CONFIG = include_toml!("config.toml");
+}
 
 // Stuff to change and experiment with:
+// - number of generations
+// - TODO: change global variance over time (decrease)
 // - crossover method is uniform, try other methods
 // - selection method is roulette wheel, try other methods
 // - mutation chances
@@ -32,10 +38,12 @@ fn main() -> Result {
     let mut rng = ChaCha8Rng::seed_from_u64(2);
 
     // intialize population
-    let mut population = Population::new(&mut rng, POPULATION_SIZE, NEURONS_PER_RNN);
-    
+    let mut population = Population::new(
+        &mut rng,
+        CONFIG.genetic_algorithm.population_size as usize,
+        CONFIG.neural_network.neurons_per_network as usize);
     // create an reader to buffer training dataset
-    let image_reader = ImageReader::from_path(PATH_TO_TRAINING_DATASET.to_string())?;
+    let image_reader = ImageReader::from_path(CONFIG.image_processing.path_to_training_data.to_string())?;
 
     // loop until stop criterial is met
     loop {
@@ -49,7 +57,9 @@ fn main() -> Result {
                 .agents_mut()
                 .par_iter_mut()
                 .for_each(|agent| {
-                    let fitness = agent.evaluate(&mut image.clone(), NUMBER_OF_RNN_UPDATES);
+                    let fitness = agent
+                        .evaluate(&mut image.clone(), CONFIG.neural_network.number_of_network_updates as usize)
+                        .unwrap();
                     agent.set_fitness(fitness);
                 });
             // sort the population by fitness
@@ -71,7 +81,7 @@ fn main() -> Result {
         }
                 
         // check stop criteria
-        if population.generation() >= MAX_GENERATIONS
+        if population.generation() >= CONFIG.genetic_algorithm.max_generations as u32
         {
             break;
         }

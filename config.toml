@@ -1,0 +1,29 @@
+[image_processing]
+path_to_training_data = "images/training"
+path_to_test_data = "images/test"
+path_to_agents_dir= "images/agents"
+image_width = 33
+image_height = 25
+retina_size = 5
+retina_highlight_alpha = 100
+
+[neural_network]
+neurons_per_network = 2
+number_of_network_updates = 40
+movement_scale = 4.0
+
+[genetic_algorithm]
+population_size = 100
+max_generations = 1000
+
+[genetic_algorithm.mutation_rates]
+variance = 0.2
+mean = 0.0
+delete_neuron = 0.1
+delete_weights = 0.1
+delete_bias = 0.1
+delete_self_activation = 0.1
+mutate_neuron = 0.2
+mutate_weights = 0.2
+mutate_bias = 0.1
+mutate_self_activation = 0.1

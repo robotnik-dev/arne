@@ -1,13 +1,9 @@
 use std::ops::Add;
 use std::{fmt::Debug, ops::AddAssign};
-use image::{ImageBuffer, LumaA};
+use image::{ImageBuffer, LumaA, Rgba};
 use nalgebra::clamp;
 
-use crate::Result;
-use crate::Error;
-
-pub const IMAGE_DIMENSIONS: (u32, u32) = (33, 25);
-pub const RETINA_SIZE: usize = 5;
+use crate::{Error, Result, CONFIG};
 
 pub struct ImageReader {
     images: Vec<Image>,
@@ -39,7 +35,7 @@ impl ImageReader {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Position {
     x: i32,
     y: i32,
@@ -103,6 +99,42 @@ impl Image {
         self.normalized_data[y as usize * self.data.width() as usize + x as usize]
     }
 
+    fn to_rgba(&self) -> std::result::Result<ImageBuffer<Rgba<u8>, Vec<u8>>, Error> {
+        let mut buf = self.normalized_data
+            .iter()
+            .map(|pixel| Rgba([(*pixel * 255.0) as u8, (*pixel * 255.0) as u8, (*pixel * 255.0) as u8, 255]))
+            .collect::<Vec<Rgba<u8>>>();
+        let mut image: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(CONFIG.image_processing.image_width as u32, CONFIG.image_processing.image_height as u32);
+        
+        buf.reverse();
+        for pixel in image.pixels_mut() {
+            if let Some(p) = buf.pop() {
+                *pixel = p;
+            } else {
+                return Err("IndexError: not enough pixels in buffer".into());
+            }
+        }
+        Ok(image)
+    }
+
+    fn to_lumaa(&self) -> std::result::Result<ImageBuffer<LumaA<u8>, Vec<u8>>, Error> {
+        let mut buf = self.normalized_data
+            .iter()
+            .map(|pixel| LumaA([(*pixel * 255.0) as u8, 255]))
+            .collect::<Vec<LumaA<u8>>>();
+        let mut image: ImageBuffer<LumaA<u8>, Vec<u8>> = ImageBuffer::new(CONFIG.image_processing.image_width as u32, CONFIG.image_processing.image_height as u32);
+        
+        buf.reverse();
+        for pixel in image.pixels_mut() {
+            if let Some(p) = buf.pop() {
+                *pixel = p;
+            } else {
+                return Err("IndexError: not enough pixels in buffer".into());
+            }
+        }
+        Ok(image)
+    }
+
     /// create a subview into the image with the given position with size
     /// if the ends of the retina would be outside the image, an index error is returned
     pub fn create_retina_at(&self, position: Position, size: usize) -> std::result::Result<Retina, Error> {
@@ -116,7 +148,7 @@ impl Image {
             for j in 0..size as i32 {
                 // when going negative with this operation it means that we try to access a pixel that is outside of the image
                 // so we give back an error
-                if position.x >= IMAGE_DIMENSIONS.0 as i32 + offset || position.y >= IMAGE_DIMENSIONS.1 as i32 + offset || position.x < offset || position.y < offset {
+                if position.x >= CONFIG.image_processing.image_width as u32 as i32 + offset || position.y >= CONFIG.image_processing.image_height as u32 as i32 + offset || position.x < offset || position.y < offset {
                     return Err("IndexError: position is out of bounds".into());
                 }
                 let x = position.x - offset + j;
@@ -136,25 +168,58 @@ impl Image {
 
     /// highliting the pixels in the original image that overlap with the border of the retina
     /// and writes it to the image buffer and then saves it to the path
-    pub fn show_with_retina_movement_mut(&mut self, retina: &Retina, path: String) -> Result {
+    pub fn save_with_retina_mut(&mut self, retina: &Retina, path: String) -> Result {
         let mut image = self.data.clone();
+
         // change the center pixels alha value to 127
-        image.get_pixel_mut((retina.center_position.x - 1) as u32, (retina.center_position.y - 1) as u32).0[1] = 127;
+        image.get_pixel_mut((retina.center_position.x - 1) as u32, (retina.center_position.y - 1) as u32).0[1] = CONFIG.image_processing.retina_highlight_alpha as u8;
 
         let offset = retina.size as i32 / 2 + 1;
         // changing the alpha value to 127 for all pixel that touches the border of the retina
         for i in 0..retina.size as i32 {
             for j in 0..retina.size as i32 {
                 // clamp here because when going negative it turn into a buffer overflow
-                let x = clamp(retina.center_position.x - offset + i, 0, IMAGE_DIMENSIONS.0 as i32 - 1);
-                let y = clamp(retina.center_position.y - offset + j, 0, IMAGE_DIMENSIONS.1 as i32 - 1);
+                let x = clamp(retina.center_position.x - offset + i, 0, CONFIG.image_processing.image_width as u32 as i32 - 1);
+                let y = clamp(retina.center_position.y - offset + j, 0, CONFIG.image_processing.image_height as u32 as i32 - 1);
                 if i == 0 || i == retina.size as i32 - 1 || j == 0 || j == retina.size as i32 - 1 {
-                    image.get_pixel_mut(x as u32, y as u32).0[1] = 127;
+                    image.get_pixel_mut(x as u32, y as u32).0[1] = CONFIG.image_processing.retina_highlight_alpha as u8;
+                }
+            }
+        }
+        // draw a line from the center of the retina to the new position
+        // if retina.get_delta_position() != Position::new(0, 0) {
+        //     draw_antialiased_line_segment_mut(
+        //         &mut image,
+        //         (retina.center_position.x - retina.delta_position.x - 1, retina.center_position.y - retina.delta_position.y - 1),
+        //         (retina.center_position.x - 1, retina.center_position.y - 1),
+        //         LumaA([0, 127]),
+        //         |left, right, left_weight| interpolate(left, right, left_weight))
+        // }
+        image.save(&path)?;
+        self.data = image;
+        Ok(())
+    }
+
+    /// saves the image to the path but does not change the internal data.
+    /// Good for showing only the latest retina position
+    pub fn save_with_retina(&self, retina: &Retina, path: String) -> Result {
+        let mut image = self.data.clone();
+        // change the center pixels alha value to 127
+        image.get_pixel_mut((retina.center_position.x - 1) as u32, (retina.center_position.y - 1) as u32).0[1] = CONFIG.image_processing.retina_highlight_alpha as u8;
+
+        let offset = retina.size as i32 / 2 + 1;
+        // changing the alpha value to 127 for all pixel that touches the border of the retina
+        for i in 0..retina.size as i32 {
+            for j in 0..retina.size as i32 {
+                // clamp here because when going negative it turn into a buffer overflow
+                let x = clamp(retina.center_position.x - offset + i, 0, CONFIG.image_processing.image_width as u32 as i32 - 1);
+                let y = clamp(retina.center_position.y - offset + j, 0, CONFIG.image_processing.image_height as u32 as i32 - 1);
+                if i == 0 || i == retina.size as i32 - 1 || j == 0 || j == retina.size as i32 - 1 {
+                    image.get_pixel_mut(x as u32, y as u32).0[1] = CONFIG.image_processing.retina_highlight_alpha as u8;
                 }
             }
         }
         image.save(path)?;
-        self.data = image;
         Ok(())
     }
 
@@ -164,7 +229,7 @@ impl Image {
             .iter()
             .map(|pixel| LumaA([(*pixel * 255.0) as u8, 255]))
             .collect::<Vec<LumaA<u8>>>();
-        let mut image: ImageBuffer<LumaA<u8>, Vec<u8>> = ImageBuffer::new(IMAGE_DIMENSIONS.0, IMAGE_DIMENSIONS.1);
+        let mut image: ImageBuffer<LumaA<u8>, Vec<u8>> = ImageBuffer::new(CONFIG.image_processing.image_width as u32, CONFIG.image_processing.image_height as u32);
         
         buf.reverse();
         for pixel in image.pixels_mut() {
@@ -254,12 +319,12 @@ impl Retina {
         for i in 0..self.size as i32 {
             for j in 0..self.size as i32 {
                 let x = self.center_position.x - offset + i + delta.x;
-                let diff_x = clamp(x, 0, IMAGE_DIMENSIONS.0 as i32 - 1) - x;
+                let diff_x = clamp(x, 0, CONFIG.image_processing.image_width as u32 as i32 - 1) - x;
                 if diff_x.abs() > highest_diff_x.abs() {
                     highest_diff_x = diff_x;
                 }
                 let y = self.center_position.y - offset + j + delta.y;
-                let diff_y = clamp(y, 0, IMAGE_DIMENSIONS.1 as i32 - 1) - y;
+                let diff_y = clamp(y, 0, CONFIG.image_processing.image_height as u32 as i32 - 1) - y;
                 if diff_y.abs() > highest_diff_y.abs() {
                     highest_diff_y = diff_y;
                 }
@@ -306,10 +371,10 @@ mod tests {
         let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
 
         // using a image size of 33x25 px that the center pixel is at position 16, 12 (countning from 1 not 0)
-        let retina = image.create_retina_at(Position::new(5, 5), RETINA_SIZE).unwrap();
+        let retina = image.create_retina_at(Position::new(5, 5), CONFIG.image_processing.retina_size as usize).unwrap();
 
         retina.create_png_at("test/images/only_retina.png".to_string()).unwrap();
-        image.show_with_retina_movement_mut(&retina, "test/images/with_retina_movement.png".to_string()).unwrap();
+        image.save_with_retina(&retina, "test/images/with_retina_movement.png".to_string()).unwrap();
 
         assert_eq!(retina.data[12], retina.get_value(2, 2));
         assert_eq!(retina.data[0], retina.get_value(0, 0));
@@ -326,46 +391,46 @@ mod tests {
     fn test_get_retina_out_of_bounds() {
         let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
         // getting the first pixel in the top left corner should give an error
-        let retina = image.create_retina_at(Position::new(1, 1), RETINA_SIZE);
+        let retina = image.create_retina_at(Position::new(1, 1), CONFIG.image_processing.retina_size as usize);
         assert!(retina.is_err());
     }
 
     #[test]
     fn test_invalid_retina_movement_to_the_right() {
         let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(20, 13), RETINA_SIZE).unwrap();
+        let mut retina = image.create_retina_at(Position::new(20, 13), CONFIG.image_processing.retina_size as usize).unwrap();
 
         retina.move_mut(&Position::new(50, 0));
 
-        assert_eq!(retina.get_center_position().x, (IMAGE_DIMENSIONS.0 as i32 - 1) - (RETINA_SIZE as i32 / 2) + 1);
+        assert_eq!(retina.get_center_position().x, (CONFIG.image_processing.image_width as u32 as i32 - 1) - (CONFIG.image_processing.retina_size as usize as i32 / 2) + 1);
     }
 
     #[test]
     fn test_invalid_retina_movement_to_the_left() {
         let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(5, 13), RETINA_SIZE).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13), CONFIG.image_processing.retina_size as usize).unwrap();
 
         retina.move_mut(&Position::new(-50, 0));
 
-        assert_eq!(retina.get_center_position().x, (RETINA_SIZE as i32 / 2) + 1);
+        assert_eq!(retina.get_center_position().x, (CONFIG.image_processing.retina_size as usize as i32 / 2) + 1);
     }
 
     #[test]
     fn test_invalid_retina_movement_to_the_top() {
         let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(5, 13), RETINA_SIZE).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13), CONFIG.image_processing.retina_size as usize).unwrap();
 
         retina.move_mut(&Position::new(0, -60));
-        assert_eq!(retina.get_center_position().y, (RETINA_SIZE as i32 / 2) + 1);
+        assert_eq!(retina.get_center_position().y, (CONFIG.image_processing.retina_size as usize as i32 / 2) + 1);
     }
 
     #[test]
     fn test_invalid_retina_movement_to_the_bottom() {
         let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(5, 13), RETINA_SIZE).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 13), CONFIG.image_processing.retina_size as usize).unwrap();
 
         retina.move_mut(&Position::new(0, 80));
-        assert_eq!(retina.get_center_position().y, IMAGE_DIMENSIONS.1 as i32 - 1 - (RETINA_SIZE as i32 / 2) + 1);
+        assert_eq!(retina.get_center_position().y, CONFIG.image_processing.image_height as u32 as i32 - 1 - (CONFIG.image_processing.retina_size as usize as i32 / 2) + 1);
     }
 
     #[test]
@@ -373,8 +438,8 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
         let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-        let retina = image.create_retina_at(Position::new(10, 10), RETINA_SIZE).unwrap();
-        image.show_with_retina_movement_mut(&retina, "test/images/with_retina_movement.png".to_string()).unwrap();
+        let retina: Retina = image.create_retina_at(Position::new(10, 10), CONFIG.image_processing.retina_size as usize).unwrap();
+        image.save_with_retina(&retina, "test/images/with_retina_movement.png".to_string()).unwrap();
         retina.create_png_at("test/images/retina.png".to_string()).unwrap();
 
         rnn.update_inputs_from_retina(&retina);
@@ -407,6 +472,30 @@ mod tests {
     fn test_invalid_load_images() {
         let images = ImageReader::from_path("images/artificial".to_string()).unwrap();
         images.get_image(3).unwrap();
+    }
+
+    #[test]
+    fn test_retina_movement() {
+        let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 5), CONFIG.image_processing.retina_size as usize).unwrap();
+        retina.move_mut(&Position::new(1, 1));
+        assert_eq!(retina.get_center_position().x, 6);
+        assert_eq!(retina.get_center_position().y, 6);
+        retina.move_mut(&Position::new(1, 1));
+        assert_eq!(retina.get_center_position().x, 7);
+        assert_eq!(retina.get_center_position().y, 7);
+        retina.move_mut(&Position::new(-1, -1));
+        assert_eq!(retina.get_center_position().x, 6);
+        assert_eq!(retina.get_center_position().y, 6);
+    }
+
+    #[test]
+    fn test_display_retina_movement() {
+        let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 5), CONFIG.image_processing.retina_size as usize).unwrap();
+        image.save_with_retina_mut(&retina, "test/images/retina_movement.png".to_string()).unwrap();
+        retina.move_mut(&Position::new(10, 1));
+        image.save_with_retina_mut(&retina, "test/images/retina_movement.png".to_string()).unwrap();
     }
 
 }
