@@ -212,7 +212,8 @@ impl Rnn {
 
         // connect all neurons with each other
         // with the Xavier initialization
-        let (lower, upper) = (-1.0 / (neuron_count as f64).sqrt(), 1.0 / (neuron_count as f64).sqrt());
+        // let (lower, upper) = (-1.0 / (neuron_count as f64).sqrt(), 1.0 / (neuron_count as f64).sqrt());
+        let (lower, upper) = (CONFIG.neural_network.weight_bounds.neuron_lower, CONFIG.neural_network.weight_bounds.neuron_upper);
         neurons
             .iter_mut()
             .enumerate()
@@ -594,19 +595,23 @@ impl PartialEq for Neuron {
 }
 
 impl Neuron {
-    pub fn new(rng: &mut dyn RngCore, index: usize, neuron_count: usize) -> Self {
-        let (lower, upper) = (-1.0 / (neuron_count as f64).sqrt(), 1.0 / (neuron_count as f64).sqrt());
+    pub fn new(rng: &mut dyn RngCore, index: usize, _neuron_count: usize) -> Self {
+        
         // genrate random weights for the retina weights
+        let (retina_lower, retina_upper) = (CONFIG.neural_network.weight_bounds.neuron_lower, CONFIG.neural_network.weight_bounds.neuron_upper);
         let retina_weights = (0..CONFIG.image_processing.retina_size*CONFIG.image_processing.retina_size)
-            .map(|_| rng.gen_range(lower..=upper))
+            .map(|_| rng.gen_range(retina_lower..=retina_upper))
             .collect::<Vec<f64>>();
+
+        // let (lower, upper) = (-1.0 / (neuron_count as f64).sqrt(), 1.0 / (neuron_count as f64).sqrt());
+        let (neuron_lower, neuron_upper) = (CONFIG.neural_network.weight_bounds.neuron_lower, CONFIG.neural_network.weight_bounds.neuron_upper);
         Neuron {
             index,
             output: 0.,
             input_connections: vec![],
-            bias: rng.gen_range(lower..=upper),
+            bias: rng.gen_range(neuron_lower..=neuron_upper),
             // randomize self activation with the Xavier initialization
-            self_activation: rng.gen_range(lower..=upper),
+            self_activation: rng.gen_range(neuron_lower..=neuron_upper),
             retina_inputs: vec![],
             retina_weights
         }
@@ -672,7 +677,6 @@ mod tests {
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
-
         // randomize the weights and self activations with a custom seed and set the bias to 1.0
         rnn.neurons_mut()
             .iter_mut()
@@ -680,8 +684,8 @@ mod tests {
                 neuron
                     .input_connections_mut()
                     .iter_mut()
-                    .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
-                neuron.set_self_activation(rng.gen_range(-1.0..=1.0));
+                    .for_each(|(_, weight)| *weight = rng.gen_range(CONFIG.neural_network.weight_bounds.neuron_lower..=CONFIG.neural_network.weight_bounds.neuron_upper));
+                neuron.set_self_activation(rng.gen_range(CONFIG.neural_network.weight_bounds.neuron_lower..=CONFIG.neural_network.weight_bounds.neuron_upper));
                 neuron.set_bias(1.);
             });
 
@@ -713,8 +717,8 @@ mod tests {
                 neuron
                     .input_connections_mut()
                     .iter_mut()
-                    .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
-                neuron.set_self_activation(rng.gen_range(-1.0..=1.0));
+                    .for_each(|(_, weight)| *weight = rng.gen_range(CONFIG.neural_network.weight_bounds.neuron_lower..=CONFIG.neural_network.weight_bounds.neuron_upper));
+                neuron.set_self_activation(rng.gen_range(CONFIG.neural_network.weight_bounds.neuron_lower..=CONFIG.neural_network.weight_bounds.neuron_upper));
                 neuron.set_bias(1.);
             });
             
@@ -847,8 +851,8 @@ mod tests {
             .for_each(|neuron|{
                 neuron.input_connections
                 .iter_mut()
-                .for_each(|(_, weight)| *weight = rng.gen_range(-1.0..=1.0));
-                neuron.set_self_activation(rng.gen_range(-1.0..=1.0));
+                .for_each(|(_, weight)| *weight = rng.gen_range(CONFIG.neural_network.weight_bounds.neuron_lower..=CONFIG.neural_network.weight_bounds.neuron_upper));
+                neuron.set_self_activation(rng.gen_range(CONFIG.neural_network.weight_bounds.neuron_lower..=CONFIG.neural_network.weight_bounds.neuron_upper));
                 neuron.set_bias(-0.6);
             });
 

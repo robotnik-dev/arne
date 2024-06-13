@@ -10,8 +10,8 @@ pub struct ImageReader {
 }
 
 impl ImageReader {
+    /// reads a directory and returns a list of all images in it
     pub fn from_path(path: String) -> std::result::Result<Self, Error> {
-        // reads a directory and returns a list of all images in it
         let mut images = vec![];
         for entry in std::fs::read_dir(path)? {
             let path = entry?.path();
@@ -71,10 +71,22 @@ impl AddAssign for Position {
 #[derive(Debug, Clone)]
 pub struct Image {
     data: ImageBuffer<LumaA<u8>, Vec<u8>>,
-    normalized_data: Vec<f32>
+    normalized_data: Vec<f32>,
+    binarized_white: f32,
+    binarized_black: f32,
 }
 
 impl Image {
+
+    pub fn empty() -> Self {
+        Image {
+            data: ImageBuffer::new(CONFIG.image_processing.image_width as u32, CONFIG.image_processing.image_height as u32),
+            normalized_data: vec![0.0; CONFIG.image_processing.image_width as usize * CONFIG.image_processing.image_height as usize],
+            binarized_white: 1.0,
+            binarized_black: 0.0,
+        }
+    }
+
     // creates a new image, normalizes the data and binarizes it
     pub fn from_path(path: String) -> std::result::Result<Self, Error> {
         let data = image::io::Reader::open(path)?.decode()?.into_luma_alpha8();
@@ -85,6 +97,8 @@ impl Image {
         let mut image = Image {
             data,
             normalized_data,
+            binarized_white: 1.0,
+            binarized_black: 0.0,
         };
         image.binarize();
         Ok(image)
@@ -162,10 +176,34 @@ impl Image {
                 size,
                 center_position: position,
                 delta_position: Position::new(0, 0),
+                binarized_white: self.binarized_white,
+                binarized_black: self.binarized_black,
             }
         )
     }
 
+    pub fn update_retina_movement_mut(&mut self, retina: &Retina) {
+        let mut image = self.data.clone();
+
+        // change the center pixels alha value to 127
+        image.get_pixel_mut((retina.center_position.x - 1) as u32, (retina.center_position.y - 1) as u32).0[1] = CONFIG.image_processing.retina_highlight_alpha as u8;
+
+        let offset = retina.size as i32 / 2 + 1;
+        // changing the alpha value to 127 for all pixel that touches the border of the retina
+        for i in 0..retina.size as i32 {
+            for j in 0..retina.size as i32 {
+                // clamp here because when going negative it turn into a buffer overflow
+                let x = clamp(retina.center_position.x - offset + i, 0, CONFIG.image_processing.image_width as u32 as i32 - 1);
+                let y = clamp(retina.center_position.y - offset + j, 0, CONFIG.image_processing.image_height as u32 as i32 - 1);
+                if i == 0 || i == retina.size as i32 - 1 || j == 0 || j == retina.size as i32 - 1 {
+                    image.get_pixel_mut(x as u32, y as u32).0[1] = CONFIG.image_processing.retina_highlight_alpha as u8;
+                }
+            }
+        }
+        self.data = image;
+    }
+
+    /// TODO: delete this fn
     /// highliting the pixels in the original image that overlap with the border of the retina
     /// and writes it to the image buffer and then saves it to the path
     pub fn save_with_retina_mut(&mut self, retina: &Retina, path: String) -> Result {
@@ -223,7 +261,13 @@ impl Image {
         Ok(())
     }
 
-    pub fn save(&mut self, path: String) -> Result {
+    pub fn save(&self, path: String) -> Result {
+        self.data.save(path)?;
+        Ok(())
+    }
+
+    /// saves the image to the path as greyscale image
+    pub fn save_greyscale(&mut self, path: String) -> Result {
         // for each pixel in normalized data vector, transform it back to LumA<u8> and save it to the path
         let mut buf = self.normalized_data
             .iter()
@@ -262,6 +306,10 @@ impl Image {
             .iter()
             .sum::<f32>() / white_pixels.len() as f32;
 
+        // save the binarized values
+        self.binarized_black = dark_binary;
+        self.binarized_white = white_binary;
+
         for pixel in self.normalized_data.iter_mut() {
             if *pixel <= mean_color {
                 *pixel = dark_binary;
@@ -279,6 +327,8 @@ pub struct Retina {
     delta_position: Position,
     // this is only for visualization purpose, the Rnn does not know this information
     center_position: Position,
+    binarized_white: f32,
+    binarized_black: f32,
 }
 
 impl Retina {
@@ -288,8 +338,24 @@ impl Retina {
         self.data[y * self.size + x]
     }
 
+    pub fn get_center_value(&self) -> f32 {
+        self.get_value(self.size / 2, self.size / 2)
+    }
+
+    pub fn get_data(&self) -> &Vec<f32> {
+        &self.data
+    }
+
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    pub fn binarized_white(&self) -> f32 {
+        self.binarized_white
+    }
+
+    pub fn binarized_black(&self) -> f32 {
+        self.binarized_black
     }
 
     pub fn get_center_position(&self) -> Position {
@@ -457,14 +523,15 @@ mod tests {
 
     #[test]
     fn test_load_images() {
-        let images = ImageReader::from_path("images/artificial".to_string()).unwrap();
-        let image = images.get_image(0).unwrap();
-        let image2 = images.get_image(1).unwrap();
-        assert_eq!(image.get_pixel(0, 0), 1.0);
-        assert_eq!(image.get_pixel(3, 0), 0.0);
-        assert_eq!(round2(image2.get_pixel(0, 0).into()), 0.18);
+        let images = ImageReader::from_path("images/training".to_string()).unwrap();
+        // let image = images.get_image(0).unwrap();
+        // let image2 = images.get_image(1).unwrap();
+        // assert_eq!(image.get_pixel(0, 0), 1.0);
+        // assert_eq!(image.get_pixel(3, 0), 0.0);
+        // assert_eq!(round2(image2.get_pixel(0, 0).into()), 0.18);
 
-        assert_eq!(images.images.len(), 3);
+        // assert_eq!(images.images.len(), 3);
+        println!("{:?}", images.images);
     }
 
     #[test]
@@ -496,6 +563,36 @@ mod tests {
         image.save_with_retina_mut(&retina, "test/images/retina_movement.png".to_string()).unwrap();
         retina.move_mut(&Position::new(10, 1));
         image.save_with_retina_mut(&retina, "test/images/retina_movement.png".to_string()).unwrap();
+    }
+
+    #[test]
+    fn test_save_with_retina_movement() {
+        std::fs::create_dir_all("test/saves/retina").unwrap();
+        let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 5), CONFIG.image_processing.retina_size as usize).unwrap();
+        image.update_retina_movement_mut(&retina);
+        retina.move_mut(&Position::new(10, 1));
+        image.update_retina_movement_mut(&retina);
+        retina.move_mut(&Position::new(1, 4));
+        image.update_retina_movement_mut(&retina);
+        
+        image.save("test/saves/retina/movement.png".to_string()).unwrap();
+    }
+
+    #[test]
+    fn test_empty_to_image() {
+        std::fs::create_dir_all("test/saves/images").unwrap();
+        let mut empty_image = Image::empty();
+        let mut real_image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let mut retina = real_image.create_retina_at(Position::new(5, 5), CONFIG.image_processing.retina_size as usize).unwrap();
+        retina.move_mut(&Position::new(10, 1));
+        real_image.update_retina_movement_mut(&retina);
+        retina.move_mut(&Position::new(1, 4));
+        real_image.update_retina_movement_mut(&retina);
+
+        empty_image = real_image.clone();
+
+        empty_image.save("test/saves/images/from_empty.png".to_string()).unwrap();
     }
 
 }

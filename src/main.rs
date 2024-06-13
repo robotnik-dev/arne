@@ -15,7 +15,7 @@ mod neural_network;
 pub use neural_network::{Rnn, SnapShot, ShortTermMemory};
 
 mod genetic_algorithm;
-pub use genetic_algorithm::{Agent, Population, AgentEvaluation};
+pub use genetic_algorithm::{Agent, Population, AgentEvaluation, SelectionMethod};
 
 type Error = Box<dyn std::error::Error>;
 type Result = std::result::Result<(), Error>;
@@ -35,7 +35,12 @@ static_toml! {
 // - Population size
 
 fn main() -> Result {
-    let mut rng = ChaCha8Rng::seed_from_u64(2);
+
+    // creating all necessary directories
+    std::fs::create_dir_all("test/best_agents")?;
+
+    // let mut rng = ChaCha8Rng::seed_from_u64(4);
+    let mut rng = ChaCha8Rng::from_entropy();
 
     // intialize population
     let mut population = Population::new(
@@ -43,15 +48,13 @@ fn main() -> Result {
         CONFIG.genetic_algorithm.population_size as usize,
         CONFIG.neural_network.neurons_per_network as usize);
     // create an reader to buffer training dataset
-    let image_reader = ImageReader::from_path(CONFIG.image_processing.path_to_training_data.to_string())?;
-
+    let image_reader = ImageReader::from_path("images/training".to_string())?;
     // loop until stop criterial is met
     loop {
         // for each image in the dataset
         for index in 0..image_reader.images().len() {
             // load image
             let image = image_reader.get_image(index)?;
-
             // evaluate the fitness of each individual of the population
             population
                 .agents_mut()
@@ -68,8 +71,7 @@ fn main() -> Result {
             // select, crossover and mutate
             let new_agents = (0..population.agents().len())
                     .map(|_| {
-                        let parent1 = population.select_weighted(&mut rng);
-                        let parent2 = population.select_weighted(&mut rng);
+                        let (parent1, parent2) = population.select(&mut rng, SelectionMethod::Tournament);
                         let mut offspring = parent1.crossover(&mut rng, parent2);
                         offspring.mutate(&mut rng);
                         offspring
@@ -86,25 +88,40 @@ fn main() -> Result {
             break;
         }
     }
+    // sort the population by fitness
+    // population.agents_mut().sort_by(|a, b|a.fitness().partial_cmp(&b.fitness()).unwrap());
 
-    println!("Stopped at generation {}", population.generation());
-    
-    // visualize the best agent as png image
-    let best_agent = population.agents_mut().first_mut().unwrap();
-    best_agent.genotype().short_term_memory().visualize("test/images/agents/best_agent.png".into())?;
+    // the best 30 agents should be saved with:
+    // - their fitness
+    // - the rnn as json file
+    // - the rnn as png image
+    // - the rnn as dot file
+    // - the movement of the retina over time TODO
+    population
+        .agents_mut()
+        .par_iter_mut()
+        .enumerate()
+        .inspect(|(index, agent)| {
+            println!("agent {} fitness: {}", index, agent.fitness());
+        })
+        .take(30)
+        .for_each(|(index, agent)| {
+            println!("generating files for agent {} ...", index);
+            // create a new directory for every agent with the index as name if the directory does not exist
+            std::fs::create_dir_all(format!("test/best_agents/{}", index)).unwrap();
+            
+            agent.genotype().short_term_memory().visualize(format!("test/best_agents/{}/rnn_updates.png", index)).unwrap();
+            agent.genotype_mut().to_json(Some(&format!("test/best_agents/{}/rnn.json", index))).unwrap();
+            agent.image.save(format!("test/best_agents/{}/retina_movement.png", index)).unwrap();
 
-    // save visualization as .dot file
-    let graph = Graph::from(best_agent.genotype().clone());
-    let dot = Dot::new(&graph);
-    OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open("test/images/agents/best_agent.dot")?
-        .write_fmt(format_args!("{:?}\n", dot))?;
-
-    // save as json file in "saves/rnn/"
-    best_agent.genotype_mut().to_json(Some(&"test/saves/rnn/best_agent.json".to_string()))?;
-
+            let graph = Graph::from(agent.genotype().clone());
+            let dot = Dot::new(&graph);
+            OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(format!("test/best_agents/{}/viz.dot", index)).unwrap()
+                .write_fmt(format_args!("{:?}\n", dot)).unwrap();
+        });
     Ok(())
 }

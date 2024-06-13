@@ -4,17 +4,24 @@ path_to_test_data = "images/test"
 path_to_agents_dir= "images/agents"
 image_width = 33
 image_height = 25
-retina_size = 5
+retina_size = 7
 retina_highlight_alpha = 100
 
 [neural_network]
-neurons_per_network = 2
+neurons_per_network = 4
 number_of_network_updates = 40
 movement_scale = 4.0
 
+[neural_network.weight_bounds]
+neuron_lower = -10.0
+neuron_upper = 10.0
+retina_lower = -5.0
+retina_upper = 5.0
+
 [genetic_algorithm]
 population_size = 100
-max_generations = 1000
+max_generations = 200
+tournament_size = 5
 
 [genetic_algorithm.mutation_rates]
 variance = 0.2

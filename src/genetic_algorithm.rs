@@ -4,6 +4,10 @@ use crate::{Error, Retina, CONFIG};
 use crate::neural_network::Rnn;
 use crate::image_processing::{Image, Position};
 
+pub enum SelectionMethod {
+    Tournament,
+    Weighted,
+}
 
 /// The actual mapping between the genotype and the phenotype.
 /// Need to be implemented for each invdividual marker type like FollowLine
@@ -22,9 +26,12 @@ struct FollowLine;
 
 impl FitnessCalculation<FollowLine> for Agent {
     fn calculate_fitness(&self, retina: &Retina) -> f64 {
-        // the higher te difference between the center pixel to 1.0(white) the higher the fitness
-        // means a dark pixel in the center is good
-        1.0 - retina.get_value(2, 2) as f64
+        // the higher the difference between the center pixel to 1.0(white) the higher the fitness
+        // and if the majority of the retina is dark, the fitness will be higher.
+        // calculate the mean of all the retina values
+        // let mean = retina.get_data().iter().sum::<u8>() as f64 / retina.get_data().len() as f64;
+        // print!("{} ", retina.get_center_value());
+        1.0 - (retina.binarized_white() - retina.get_center_value()) as f64
     }
 }
 
@@ -33,10 +40,14 @@ impl AgentEvaluation for Agent {
         let mut local_fitness = 0.0;
         self.genotype_mut().short_term_memory_mut().clear();
         // create a retina at a specific position (top left of image)
+        let offset = CONFIG.image_processing.retina_size as i32 / 2 + 1;
         let mut retina = image.create_retina_at(Position::new(
-            CONFIG.image_processing.retina_size as i32,
-            CONFIG.image_processing.retina_size as i32 as i32),
+            offset,
+            offset),
             CONFIG.image_processing.retina_size as usize)?;
+        
+        // first location of the retina
+        image.update_retina_movement_mut(&retina);
 
         for i in 0..number_of_updates {
             // calculate the next delta position of the retina, encoded in the neurons
@@ -51,8 +62,8 @@ impl AgentEvaluation for Agent {
             // do one update step
             self.genotype.update();
 
-            // save as png in a folder with retina movement. For each agent a new folder is created
-            // TODO
+            // save retina movement in buffer
+            image.update_retina_movement_mut(&retina);
             
             // creating snapshot of the network at the current time step
             let outputs = self.genotype.neurons().iter().map(|neuron| neuron.output()).collect::<Vec<f64>>();
@@ -62,6 +73,7 @@ impl AgentEvaluation for Agent {
             // calculate the fitness of the agent
             local_fitness += self.calculate_fitness(&retina);
         }
+        self.image = image.clone();
         Ok(local_fitness / number_of_updates as f64)
     }
 }
@@ -99,14 +111,28 @@ impl Population {
         self.generation += 1;
     }
 
-    /// roulette wheel selection
-    pub fn select_weighted(&self, rng: &mut dyn RngCore) -> &Agent {
-        self.agents.choose_weighted(rng, |agent| agent.fitness.max(0.000001)).unwrap()
+    pub fn select(&self, rng: &mut dyn RngCore, method: SelectionMethod) -> (&Agent, &Agent) {
+        match method {
+            SelectionMethod::Tournament => self.select_tournament(rng),
+            SelectionMethod::Weighted => self.select_weighted(rng),
+        }
     }
 
-    /// tournament selection
-    fn select_tournament(&self, rng: &mut dyn RngCore) -> &Agent {
-        todo!()
+    fn select_tournament(&self, rng: &mut dyn RngCore) -> (&Agent, &Agent) {
+        let tournament_size = CONFIG.genetic_algorithm.tournament_size as usize;
+        let mut tournament = Vec::with_capacity(tournament_size);
+        for _ in 0..tournament_size {
+            tournament.push(self.agents.choose(rng).unwrap());
+        }
+        tournament.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap());
+        (tournament[0], tournament[1])
+    }
+
+    fn select_weighted(&self, rng: &mut dyn RngCore) -> (&Agent, &Agent) {
+        (
+            self.agents.choose_weighted(rng, |agent| agent.fitness.max(0.000001)).unwrap(),
+            self.agents.choose_weighted(rng, |agent| agent.fitness.max(0.000001)).unwrap()
+        )
     }
 }
 
@@ -114,6 +140,8 @@ impl Population {
 pub struct Agent {
     fitness: f64,
     genotype: Rnn,
+    // for evaluation purposes, we store the final image with the retina movement here
+    pub image: Image,
 }
 
 impl Clone for Agent {
@@ -121,6 +149,7 @@ impl Clone for Agent {
         Agent {
             fitness: self.fitness,
             genotype: self.genotype.clone(),
+            image: self.image.clone(),
         }
     }
 }
@@ -130,6 +159,7 @@ impl Agent {
         Agent {
             fitness: 0.0,
             genotype: Rnn::new(rng, number_of_neurons),
+            image: Image::empty(),
         }
     }
 
@@ -150,24 +180,16 @@ impl Agent {
     }
 
     pub fn crossover(&self, rng: &mut dyn RngCore, with: &Agent) -> Agent {
-        let offspring = self.genotype.crossover_uniform(rng, &with.genotype);
-        Agent::from(offspring)
+        let offspring_genotype = self.genotype.crossover_uniform(rng, &with.genotype);
+        let mut new_agent = self.clone();
+        new_agent.genotype = offspring_genotype;
+        new_agent
     }
 
     pub fn mutate(&mut self, rng: &mut dyn RngCore) {
         self.genotype.mutate(rng);
     }
 }
-
-impl From<Rnn> for Agent {
-    fn from(rnn: Rnn) -> Self {
-        Agent {
-            fitness: 0.0,
-            genotype: rnn,
-        }
-    }
-}
-
 
 #[cfg(test)]
 mod tests {
