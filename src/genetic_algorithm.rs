@@ -1,8 +1,40 @@
-use rand::prelude::*;
+use std::fs::OpenOptions;
+use std::io::Write;
 
-use crate::{Error, Retina, CONFIG};
-use crate::neural_network::Rnn;
+use rand::prelude::*;
+use serde::{Deserialize, Serialize};
+
 use crate::image_processing::{Image, Position};
+use crate::neural_network::Rnn;
+use crate::{Error, Retina, CONFIG};
+
+/// statisteics per Agent to store some data relevant for human evaluation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Statistics {
+    pub deleted_neurons: u32,
+    pub deleted_weights: u32,
+    pub deleted_biases: u32,
+    pub deleted_self_activations: u32,
+    pub mutated_neurons: u32,
+    pub mutated_weights: u32,
+    pub mutated_biases: u32,
+    pub mutated_self_activations: u32,
+}
+
+impl Statistics {
+    pub fn new() -> Self {
+        Statistics {
+            deleted_neurons: 0,
+            deleted_weights: 0,
+            deleted_biases: 0,
+            deleted_self_activations: 0,
+            mutated_neurons: 0,
+            mutated_weights: 0,
+            mutated_biases: 0,
+            mutated_self_activations: 0,
+        }
+    }
+}
 
 pub enum SelectionMethod {
     Tournament,
@@ -14,9 +46,13 @@ pub enum SelectionMethod {
 trait FitnessCalculation<T> {
     fn calculate_fitness(&self, retina: &Retina) -> f64;
 }
-    
+
 pub trait AgentEvaluation {
-    fn evaluate(&mut self, image: &mut Image, number_of_updates: usize) -> std::result::Result<f64, Error>;
+    fn evaluate(
+        &mut self,
+        image: &mut Image,
+        number_of_updates: usize,
+    ) -> std::result::Result<f64, Error>;
 }
 
 /// Marker type. This phenotype/solution to the problem is a line follower.
@@ -31,21 +67,27 @@ impl FitnessCalculation<FollowLine> for Agent {
         // calculate the mean of all the retina values
         // let mean = retina.get_data().iter().sum::<u8>() as f64 / retina.get_data().len() as f64;
         // print!("{} ", retina.get_center_value());
+        // println!("center value: {} ", retina.get_center_value());
+        // println!("binarized white: {} ", retina.binarized_white());
         1.0 - (retina.binarized_white() - retina.get_center_value()) as f64
     }
 }
 
 impl AgentEvaluation for Agent {
-    fn evaluate(&mut self, image: &mut Image, number_of_updates: usize) -> std::result::Result<f64, Error> {
+    fn evaluate(
+        &mut self,
+        image: &mut Image,
+        number_of_updates: usize,
+    ) -> std::result::Result<f64, Error> {
         let mut local_fitness = 0.0;
         self.genotype_mut().short_term_memory_mut().clear();
         // create a retina at a specific position (top left of image)
         let offset = CONFIG.image_processing.retina_size as i32 / 2 + 1;
-        let mut retina = image.create_retina_at(Position::new(
-            offset,
-            offset),
-            CONFIG.image_processing.retina_size as usize)?;
-        
+        let mut retina = image.create_retina_at(
+            Position::new(offset, offset),
+            CONFIG.image_processing.retina_size as usize,
+        )?;
+
         // first location of the retina
         image.update_retina_movement_mut(&retina);
 
@@ -64,9 +106,14 @@ impl AgentEvaluation for Agent {
 
             // save retina movement in buffer
             image.update_retina_movement_mut(&retina);
-            
+
             // creating snapshot of the network at the current time step
-            let outputs = self.genotype.neurons().iter().map(|neuron| neuron.output()).collect::<Vec<f64>>();
+            let outputs = self
+                .genotype
+                .neurons()
+                .iter()
+                .map(|neuron| neuron.output())
+                .collect::<Vec<f64>>();
             let time_step = (i + 1) as u32;
             self.genotype_mut().add_snapshot(outputs, time_step);
 
@@ -130,12 +177,15 @@ impl Population {
 
     fn select_weighted(&self, rng: &mut dyn RngCore) -> (&Agent, &Agent) {
         (
-            self.agents.choose_weighted(rng, |agent| agent.fitness.max(0.000001)).unwrap(),
-            self.agents.choose_weighted(rng, |agent| agent.fitness.max(0.000001)).unwrap()
+            self.agents
+                .choose_weighted(rng, |agent| agent.fitness.max(0.000001))
+                .unwrap(),
+            self.agents
+                .choose_weighted(rng, |agent| agent.fitness.max(0.000001))
+                .unwrap(),
         )
     }
 }
-
 
 pub struct Agent {
     fitness: f64,
@@ -208,7 +258,7 @@ mod tests {
             .genotype_mut()
             .neurons_mut()
             .iter_mut()
-            .for_each(|neuron|{
+            .for_each(|neuron| {
                 neuron
                     .input_connections_mut()
                     .iter_mut()
@@ -216,12 +266,12 @@ mod tests {
                 neuron.set_self_activation(0.1);
                 neuron.set_bias(1.);
             });
-        
+
         agent2
             .genotype_mut()
             .neurons_mut()
             .iter_mut()
-            .for_each(|neuron|{
+            .for_each(|neuron| {
                 neuron
                     .input_connections_mut()
                     .iter_mut()
@@ -231,7 +281,7 @@ mod tests {
             });
 
         let offspring = agent.crossover(&mut rng, &agent2);
-        
+
         // check if the offspring is different from the parents
         assert_ne!(agent.genotype(), offspring.genotype());
         assert_ne!(agent2.genotype(), offspring.genotype());
@@ -249,15 +299,27 @@ mod tests {
             .genotype()
             .neurons()
             .iter()
-            .map(|neuron| neuron.input_connections().iter().filter(|(_, weight)| *weight < 0.0).count())
+            .map(|neuron| {
+                neuron
+                    .input_connections()
+                    .iter()
+                    .filter(|(_, weight)| *weight < 0.0)
+                    .count()
+            })
             .sum::<usize>();
         let positive_count = offspring
             .genotype()
             .neurons()
             .iter()
-            .map(|neuron| neuron.input_connections().iter().filter(|(_, weight)| *weight > 0.0).count())
+            .map(|neuron| {
+                neuron
+                    .input_connections()
+                    .iter()
+                    .filter(|(_, weight)| *weight > 0.0)
+                    .count()
+            })
             .sum::<usize>();
-        
+
         assert_eq!(positive_count, 40);
         assert_eq!(negative_count, 50);
     }
