@@ -1,4 +1,4 @@
-use image::{ImageBuffer, LumaA, Rgba};
+use image::{ImageBuffer, LumaA};
 use nalgebra::clamp;
 use std::ops::Add;
 use std::{fmt::Debug, ops::AddAssign};
@@ -112,57 +112,6 @@ impl Image {
     /// wrapper to get only the normalized value of a pixel
     pub fn get_pixel(&self, x: u32, y: u32) -> f32 {
         self.normalized_data[y as usize * self.data.width() as usize + x as usize]
-    }
-
-    fn to_rgba(&self) -> std::result::Result<ImageBuffer<Rgba<u8>, Vec<u8>>, Error> {
-        let mut buf = self
-            .normalized_data
-            .iter()
-            .map(|pixel| {
-                Rgba([
-                    (*pixel * 255.0) as u8,
-                    (*pixel * 255.0) as u8,
-                    (*pixel * 255.0) as u8,
-                    255,
-                ])
-            })
-            .collect::<Vec<Rgba<u8>>>();
-        let mut image: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(
-            CONFIG.image_processing.image_width as u32,
-            CONFIG.image_processing.image_height as u32,
-        );
-
-        buf.reverse();
-        for pixel in image.pixels_mut() {
-            if let Some(p) = buf.pop() {
-                *pixel = p;
-            } else {
-                return Err("IndexError: not enough pixels in buffer".into());
-            }
-        }
-        Ok(image)
-    }
-
-    fn to_lumaa(&self) -> std::result::Result<ImageBuffer<LumaA<u8>, Vec<u8>>, Error> {
-        let mut buf = self
-            .normalized_data
-            .iter()
-            .map(|pixel| LumaA([(*pixel * 255.0) as u8, 255]))
-            .collect::<Vec<LumaA<u8>>>();
-        let mut image: ImageBuffer<LumaA<u8>, Vec<u8>> = ImageBuffer::new(
-            CONFIG.image_processing.image_width as u32,
-            CONFIG.image_processing.image_height as u32,
-        );
-
-        buf.reverse();
-        for pixel in image.pixels_mut() {
-            if let Some(p) = buf.pop() {
-                *pixel = p;
-            } else {
-                return Err("IndexError: not enough pixels in buffer".into());
-            }
-        }
-        Ok(image)
     }
 
     /// create a subview into the image with the given position with size
@@ -474,7 +423,7 @@ mod tests {
     use crate::Rnn;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
-    use rand_distr::num_traits::Inv;
+    
 
     #[test]
     fn test_load_image() {
@@ -508,7 +457,7 @@ mod tests {
 
     #[test]
     fn test_get_retina() {
-        let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
 
         // using a image size of 33x25 px that the center pixel is at position 16, 12 (countning from 1 not 0)
         let retina = image
@@ -626,7 +575,7 @@ mod tests {
     fn test_update_from_retina_inputs() {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
-        let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
         let retina: Retina = image
             .create_retina_at(
                 Position::new(10, 10),
@@ -649,7 +598,7 @@ mod tests {
 
     #[test]
     fn test_binarize_image() {
-        let mut image = Image::from_path("images/artificial/gradient.png".to_string()).unwrap();
+        let image = Image::from_path("images/artificial/gradient.png".to_string()).unwrap();
         image.save("test/images/binarized.png".to_string()).unwrap();
     }
 
@@ -675,7 +624,7 @@ mod tests {
 
     #[test]
     fn test_retina_movement() {
-        let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
         let mut retina = image
             .create_retina_at(
                 Position::new(5, 5),

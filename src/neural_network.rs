@@ -21,6 +21,12 @@ pub struct ShortTermMemory {
     snapshots: Vec<SnapShot>,
 }
 
+impl Default for ShortTermMemory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ShortTermMemory {
     pub fn new() -> Self {
         ShortTermMemory { snapshots: vec![] }
@@ -290,8 +296,8 @@ impl Rnn {
     /// scaling factor can be set in the config file
     pub fn next_delta_position(&self) -> Position {
         Position::new(
-            (self.neurons()[0].output() * CONFIG.neural_network.movement_scale as f64) as i32,
-            (self.neurons()[1].output() * CONFIG.neural_network.movement_scale as f64) as i32,
+            (self.neurons()[0].output() * CONFIG.neural_network.movement_scale) as i32,
+            (self.neurons()[1].output() * CONFIG.neural_network.movement_scale) as i32,
         )
     }
 
@@ -410,7 +416,7 @@ impl Rnn {
 
     /// setting all incoming weights, self activation and bias to 0 from a random neuron
     pub fn delete_neuron(&mut self, rng: &mut dyn RngCore) {
-        self.neurons_mut().iter_mut().choose(rng).map(|neuron| {
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
             neuron
                 .input_connections
                 .iter_mut()
@@ -421,12 +427,12 @@ impl Rnn {
                 .retina_inputs_mut()
                 .iter_mut()
                 .for_each(|input| *input = 0.0);
-        });
+        };
     }
 
     /// setting all incoming weights to 0 from a random neuron
     pub fn delete_weights(&mut self, rng: &mut dyn RngCore) {
-        self.neurons.iter_mut().choose(rng).map(|neuron| {
+        if let Some(neuron) = self.neurons.iter_mut().choose(rng) {
             neuron
                 .input_connections
                 .iter_mut()
@@ -435,23 +441,21 @@ impl Rnn {
                 .retina_inputs_mut()
                 .iter_mut()
                 .for_each(|input| *input = 0.0);
-        });
+        };
     }
 
     /// setting bias to 0 from a random neuron
     pub fn delete_bias(&mut self, rng: &mut dyn RngCore) {
-        self.neurons_mut()
+        if let Some(neuron) = self.neurons_mut()
             .iter_mut()
-            .choose(rng)
-            .map(|neuron| neuron.bias = 0.0);
+            .choose(rng) {neuron.bias = 0.0};
     }
 
     /// setting self activation to 0 from a random neuron
     pub fn delete_self_activation(&mut self, rng: &mut dyn RngCore) {
-        self.neurons_mut()
+        if let Some(neuron) = self.neurons_mut()
             .iter_mut()
-            .choose(rng)
-            .map(|neuron| neuron.self_activation = 0.0);
+            .choose(rng) {neuron.self_activation = 0.0};
     }
 
     /// randomize the weights self activation and bias from a random neuron
@@ -459,18 +463,17 @@ impl Rnn {
     pub fn mutate_neuron(&mut self, rng: &mut dyn RngCore) {
         let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance;
         let mean = CONFIG.genetic_algorithm.mutation_rates.mean;
-        self.neurons_mut().iter_mut().choose(rng).map(|neuron| {
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
             neuron.input_connections.iter_mut().for_each(|(_, weight)| {
                 *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
             });
             neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng);
             neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng);
-            neuron
+            if let Some(input) = neuron
                 .retina_inputs_mut()
                 .iter_mut()
-                .choose(rng)
-                .map(|input| *input = Normal::new(mean, std_dev).unwrap().sample(rng) as f32);
-        });
+                .choose(rng) {*input = Normal::new(mean, std_dev).unwrap().sample(rng) as f32};
+        };
     }
 
     /// randomize all incoming weights from a random neuron
@@ -479,17 +482,16 @@ impl Rnn {
     pub fn mutate_weights(&mut self, rng: &mut dyn RngCore) {
         let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance;
         let mean = CONFIG.genetic_algorithm.mutation_rates.mean;
-        self.neurons_mut().iter_mut().choose(rng).map(|neuron| {
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
             neuron
                 .input_connections
                 .iter_mut()
                 .for_each(|(_, weight)| *weight = Normal::new(mean, std_dev).unwrap().sample(rng));
-            neuron
+            if let Some(input) = neuron
                 .retina_inputs_mut()
                 .iter_mut()
-                .choose(rng)
-                .map(|input| *input = Normal::new(mean, std_dev).unwrap().sample(rng) as f32);
-        });
+                .choose(rng) {*input = Normal::new(mean, std_dev).unwrap().sample(rng) as f32};
+        };
     }
 
     /// randomize the bias from a random neuron
@@ -497,10 +499,9 @@ impl Rnn {
     pub fn mutate_bias(&mut self, rng: &mut dyn RngCore) {
         let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance;
         let mean = CONFIG.genetic_algorithm.mutation_rates.mean;
-        self.neurons_mut()
+        if let Some(neuron) = self.neurons_mut()
             .iter_mut()
-            .choose(rng)
-            .map(|neuron| neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng));
+            .choose(rng) {neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng)};
     }
 
     /// randomize the self activation from a random neuron
@@ -508,10 +509,9 @@ impl Rnn {
     pub fn mutate_self_activation(&mut self, rng: &mut dyn RngCore) {
         let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance;
         let mean = CONFIG.genetic_algorithm.mutation_rates.mean;
-        self.neurons_mut()
+        if let Some(neuron) = self.neurons_mut()
             .iter_mut()
-            .choose(rng)
-            .map(|neuron| neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng));
+            .choose(rng) {neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng)};
     }
 
     /// saves the RNN to a json file at the saves/rnn folder or if a path is provided at the given path
@@ -538,7 +538,7 @@ impl Rnn {
                         .unwrap()
                         .replace("saves/rnn", "")
                         .replace(".json", "")
-                        .replace("\\", "")
+                        .replace('\\', "")
                         .parse::<usize>()
                         .unwrap();
                     format!("{}.json", last_file_index + 1)
@@ -616,8 +616,7 @@ impl PartialEq for Neuron {
                 other
                     .input_connections
                     .iter()
-                    .find(|other_con| (con.0, round2(con.1)) == (other_con.0, round2(other_con.1)))
-                    .is_some()
+                    .any(|other_con| (con.0, round2(con.1)) == (other_con.0, round2(other_con.1)))
             })
             && round2(self.bias) == round2(other.bias)
             && round2(self.self_activation) == round2(other.self_activation)
@@ -980,7 +979,7 @@ mod tests {
     #[test]
     fn test_rnn_to_graph_conversion_and_back() {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(&mut rng, 3);
+        let rnn = Rnn::new(&mut rng, 3);
 
         let graph = Graph::<(usize, f64), f64>::from(rnn.clone());
         let rnn2 = Rnn::from(graph.clone());

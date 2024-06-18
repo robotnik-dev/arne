@@ -1,6 +1,4 @@
-use env_logger;
-use indicatif::{ParallelProgressIterator, ProgressBar};
-use log;
+use indicatif::ProgressBar;
 use petgraph::{dot::Dot, Graph};
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
