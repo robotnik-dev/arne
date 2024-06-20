@@ -1,10 +1,8 @@
 use indicatif::ProgressBar;
-use petgraph::{dot::Dot, Graph};
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 use static_toml::static_toml;
-use std::{fs::OpenOptions, io::Write};
 
 mod utils;
 pub use utils::round2;
@@ -36,9 +34,6 @@ static_toml! {
 
 fn main() -> Result {
     env_logger::init();
-
-    // creating all necessary directories
-    std::fs::create_dir_all("test/best_agents")?;
 
     let mut rng = ChaCha8Rng::from_entropy();
 
@@ -116,6 +111,10 @@ fn main() -> Result {
     // - the rnn as png image
     // - the rnn as dot file
     // - the movement of the retina over time
+
+    // remove 'best_agents' directory if it exists
+    std::fs::remove_dir_all(CONFIG.image_processing.path_to_agents_dir).unwrap_or_default();
+
     let generating_files_bar = ProgressBar::new(CONFIG.genetic_algorithm.take_agents as u64);
     population
         .agents_mut()
@@ -127,32 +126,40 @@ fn main() -> Result {
         .take(CONFIG.genetic_algorithm.take_agents as usize)
         .for_each(|(index, agent)| {
             // create a new directory for every agent with the index as name if the directory does not exist
-            std::fs::create_dir_all(format!("test/best_agents/{}", index)).unwrap();
+            std::fs::create_dir_all(format!("{}/{}", CONFIG.image_processing.path_to_agents_dir, index)).unwrap();
+            
+            // save statistics per generation
+            agent
+                .statistics_mut()
+                .par_iter_mut()
+                .enumerate()
+                .take(CONFIG.genetic_algorithm.generate_images_for_first_generations as usize)
+                .for_each(|(i, (image, memory, rnn))| {
+                    std::fs::create_dir_all(format!("{}/{}/gen_{}", CONFIG.image_processing.path_to_agents_dir, index, i)).unwrap();
 
+                    memory
+                        .visualize(format!("{}/{}/gen_{}/memory.png", CONFIG.image_processing.path_to_agents_dir, index, i))
+                        .unwrap();
+                    image.save_upscaled(format!("{}/{}/gen_{}/retina.png", CONFIG.image_processing.path_to_agents_dir, index, i)).unwrap();
+                    rnn.to_json(Some(&format!("{}/{}/gen_{}/rnn.json", CONFIG.image_processing.path_to_agents_dir, index, i))).unwrap();
+                    rnn.to_dot(format!("{}/{}/gen_{}/rnn.dot", CONFIG.image_processing.path_to_agents_dir, index, i)).unwrap();
+                });
+                
+            // save the last image and memory of the final generation
             agent
-                .genotype()
-                .short_term_memory()
-                .visualize(format!("test/best_agents/{}/rnn_updates.png", index))
-                .unwrap();
-            agent
-                .genotype_mut()
-                .to_json(Some(&format!("test/best_agents/{}/rnn.json", index)))
-                .unwrap();
-            agent
-                .image
-                .save_upscaled(format!("test/best_agents/{}/retina_movement.png", index))
-                .unwrap();
-
-            let graph = Graph::from(agent.genotype().clone());
-            let dot = Dot::new(&graph);
-            OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(format!("test/best_agents/{}/viz.dot", index))
-                .unwrap()
-                .write_fmt(format_args!("{:?}\n", dot))
-                .unwrap();
+                .statistics_mut()
+                .iter_mut()
+                .last()
+                .map(|(image, memory, rnn)| {
+                    std::fs::create_dir_all(format!("{}/{}/final", CONFIG.image_processing.path_to_agents_dir, index)).unwrap();
+                    memory
+                        .visualize(format!("{}/{}/final/memory.png", CONFIG.image_processing.path_to_agents_dir, index))
+                        .unwrap();
+                    image.save_upscaled(format!("{}/{}/final/retina.png", CONFIG.image_processing.path_to_agents_dir, index)).unwrap();
+                    rnn.to_json(Some(&format!("{}/{}/final/rnn.json", CONFIG.image_processing.path_to_agents_dir, index))).unwrap();
+                    rnn.to_dot(format!("{}/{}/final/rnn.dot", CONFIG.image_processing.path_to_agents_dir, index)).unwrap();
+                });
+            
             generating_files_bar.inc(1);
         });
     generating_files_bar.finish();

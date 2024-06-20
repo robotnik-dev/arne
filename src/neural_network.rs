@@ -1,5 +1,5 @@
 use approx::AbsDiffEq;
-use petgraph::Graph;
+use petgraph::{dot::Dot, Graph};
 use plotters::prelude::*;
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal};
@@ -9,7 +9,6 @@ use std::{
     fs::OpenOptions,
     io::{self, Read, Write},
 };
-
 use crate::image_processing::Retina;
 use crate::utils::round2;
 use crate::{genetic_algorithm::Statistics, image_processing::Position, Result};
@@ -556,6 +555,21 @@ impl Rnn {
 
         Ok(())
     }
+
+    pub fn to_dot(&self, path: String) -> Result {
+        let graph = Graph::from(self.clone());
+        let dot = Dot::new(&graph);
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .unwrap()
+            .write_fmt(format_args!("{:?}\n", dot))
+            .unwrap();
+        Ok(())
+    }
+
 }
 
 impl From<Rnn> for Graph<(usize, f64), f64> {

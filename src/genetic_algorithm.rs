@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::image_processing::{Image, Position};
 use crate::neural_network::Rnn;
-use crate::{Error, Retina, CONFIG};
+use crate::{Error, Retina, ShortTermMemory, CONFIG};
 
-/// statisteics per Agent to store some data relevant for human evaluation
+/// statisteics per Agent to store some data relevant for human statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Statistics {
     pub deleted_neurons: u32,
@@ -90,7 +90,7 @@ impl AgentEvaluation for Agent {
         )?;
 
         // first location of the retina
-        image.push_new_retina_movement(&retina);
+        image.update_retina_movement(&retina);
 
         for i in 0..number_of_updates {
             // calculate the next delta position of the retina, encoded in the neurons
@@ -107,7 +107,7 @@ impl AgentEvaluation for Agent {
 
             // save retina movement in buffer
             // image.update_retina_movement_mut(&retina);
-            image.push_new_retina_movement(&retina);
+            image.update_retina_movement(&retina);
 
             // creating snapshot of the network at the current time step
             let outputs = self
@@ -122,7 +122,11 @@ impl AgentEvaluation for Agent {
             // calculate the fitness of the agent
             local_fitness += self.calculate_fitness(&retina);
         }
-        self.image = image.clone();
+        self.statistics.push((
+            image.clone(),
+            self.genotype().short_term_memory().clone(),
+            self.genotype().clone(),
+        ));
         Ok(local_fitness / number_of_updates as f64)
     }
 }
@@ -192,8 +196,8 @@ impl Population {
 pub struct Agent {
     fitness: f64,
     genotype: Rnn,
-    // for evaluation purposes, we store the final image with the retina movement here
-    pub image: Image,
+    // for statistics purposes, we store the final images with the retina movement and all the short term memories here
+    pub statistics: Vec<(Image, ShortTermMemory, Rnn)>,
 }
 
 impl Clone for Agent {
@@ -201,7 +205,7 @@ impl Clone for Agent {
         Agent {
             fitness: self.fitness,
             genotype: self.genotype.clone(),
-            image: self.image.clone(),
+            statistics: self.statistics.clone(),
         }
     }
 }
@@ -211,7 +215,7 @@ impl Agent {
         Agent {
             fitness: 0.0,
             genotype: Rnn::new(rng, number_of_neurons),
-            image: Image::empty(),
+            statistics: Vec::new(),
         }
     }
 
@@ -229,6 +233,14 @@ impl Agent {
 
     pub fn genotype_mut(&mut self) -> &mut Rnn {
         &mut self.genotype
+    }
+
+    pub fn statistics(&self) -> &Vec<(Image, ShortTermMemory, Rnn)> {
+        &self.statistics
+    }
+
+    pub fn statistics_mut(&mut self) -> &mut Vec<(Image, ShortTermMemory, Rnn)> {
+        &mut self.statistics
     }
 
     pub fn crossover(&self, rng: &mut dyn RngCore, with: &Agent) -> Agent {
@@ -287,14 +299,6 @@ mod tests {
         // check if the offspring is different from the parents
         assert_ne!(agent.genotype(), offspring.genotype());
         assert_ne!(agent2.genotype(), offspring.genotype());
-
-        // print the parents and then the offspring as graph
-        let parent1_graph = Graph::from(agent.genotype.clone());
-        let dot1 = Dot::new(&parent1_graph);
-        let parent2_graph = Graph::from(agent2.genotype.clone());
-        let dot2 = Dot::new(&parent2_graph);
-        let offspring_graph = Graph::from(offspring.genotype.clone());
-        let dot3 = Dot::new(&offspring_graph);
 
         // check if the number count of all negative numbers in the offsrping are approximately the saame as the psotive numbers
         let negative_count = offspring

@@ -1,7 +1,7 @@
 [image_processing]
 path_to_training_data = "images/training"
 path_to_test_data = "images/test"
-path_to_agents_dir= "images/agents"
+path_to_agents_dir= "agents"
 image_width = 33
 image_height = 25
 retina_size = 5
@@ -12,22 +12,23 @@ retina_circle_radius = 10.0
 
 [neural_network]
 neurons_per_network = 2
-number_of_network_updates = 40
+number_of_network_updates = 20
 movement_scale = 4.0
 
 [neural_network.weight_bounds]
-neuron_lower = -10.0
-neuron_upper = 10.0
+neuron_lower = -1.0
+neuron_upper = 1.0
 retina_lower = -1.0
 retina_upper = 1.0
 
 [genetic_algorithm]
-with_seed = true
-seed = 50
+with_seed = false
+seed = 79
 population_size = 100
-max_generations = 8000
+max_generations = 10
 tournament_size = 5
 take_agents = 2
+generate_images_for_first_generations = 2
 
 [genetic_algorithm.mutation_rates]
 variance = 0.2

@@ -1,9 +1,6 @@
-use env_logger::fmt::style::Color;
-use image::math::Rect;
-use image::{ImageBuffer, Luma, LumaA};
-use imageproc::drawing::{draw_cross_mut, draw_filled_circle, draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_polygon_mut};
+use image::{ImageBuffer, LumaA};
+use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
 use nalgebra::clamp;
-use plotters::style::full_palette::BLACK;
 use std::ops::{Add, Sub};
 use std::{fmt::Debug, ops::AddAssign};
 use image::imageops::resize;
@@ -78,47 +75,6 @@ impl AddAssign for Position {
         self.y += other.y;
     }
 }
-
-// /// Used to transform between small to real image dimensions
-// #[derive(Debug, Clone)]
-// struct UpScaledImage {
-//     data: ImageBuffer<LumaA<u8>, Vec<u8>>,
-// }
-
-// impl UpScaledImage {
-//     pub fn empty() -> Self {
-//         UpScaledImage {
-//             data: ImageBuffer::new(
-//                 CONFIG.image_processing.real_image_width as u32,
-//                 CONFIG.image_processing.real_image_height as u32,
-//             ),
-//         }
-//     }
-    
-//     pub fn save(&self, path: String) -> Result {
-//         self.data.save(path)?;
-//         Ok(())
-//     }
-
-//     pub fn data(&self) -> &ImageBuffer<LumaA<u8>, Vec<u8>> {
-//         &self.data
-//     }
-// }
-
-// impl From<&Image> for UpScaledImage {
-//     fn from(image: &Image) -> Self {
-//         // scale all the data in the small 33x25 image to the real image dimensions 4032x3024
-//         // create an image buffer with the real image dimensions
-        
-//         let data = resize(
-//             &image.data,
-//             CONFIG.image_processing.real_image_width as u32,
-//             CONFIG.image_processing.real_image_height as u32,
-//             image::imageops::FilterType::Nearest
-//         );
-//         UpScaledImage { data }
-//     }
-// }
 
 #[derive(Debug, Clone)]
 pub struct Image {
@@ -215,134 +171,8 @@ impl Image {
         })
     }
 
-    pub fn push_new_retina_movement(&mut self, retina: &Retina) {
+    pub fn update_retina_movement(&mut self, retina: &Retina) {
         self.retina_positions.push(retina.get_center_position());
-    }
-
-    pub fn update_retina_movement_mut(&mut self, retina: &Retina) {
-        let mut image = self.data.clone();
-
-        // change the center pixels alha value to 127
-        image
-            .get_pixel_mut(
-                (retina.get_center_position().x - 1) as u32,
-                (retina.get_center_position().y - 1) as u32,
-            )
-            .0[1] = CONFIG.image_processing.retina_highlight_alpha as u8;
-
-        let offset = retina.size() as i32 / 2 + 1;
-        // changing the alpha value to 127 for all pixel that touches the border of the retina
-        for i in 0..retina.size() as i32 {
-            for j in 0..retina.size() as i32 {
-                // clamp here because when going negative it turn into a buffer overflow
-                let x = clamp(
-                    retina.get_center_position().x - offset + i,
-                    0,
-                    CONFIG.image_processing.image_width as u32 as i32 - 1,
-                );
-                let y = clamp(
-                    retina.get_center_position().y - offset + j,
-                    0,
-                    CONFIG.image_processing.image_height as u32 as i32 - 1,
-                );
-                if i == 0 || i == retina.size() as i32 - 1 || j == 0 || j == retina.size() as i32 - 1 {
-                    image.get_pixel_mut(x as u32, y as u32).0[1] =
-                        CONFIG.image_processing.retina_highlight_alpha as u8;
-                }
-            }
-        }
-        self.data = image;
-    }
-
-    /// TODO: delete this fn
-    /// highliting the pixels in the original image that overlap with the border of the retina
-    /// and writes it to the image buffer and then saves it to the path
-    pub fn save_with_retina_mut(&mut self, retina: &Retina, path: String) -> Result {
-        let mut image = self.data.clone();
-
-        // change the center pixels alha value to 127
-        image
-            .get_pixel_mut(
-                (retina.center_position.x - 1) as u32,
-                (retina.center_position.y - 1) as u32,
-            )
-            .0[1] = CONFIG.image_processing.retina_highlight_alpha as u8;
-
-        let offset = retina.size as i32 / 2 + 1;
-        // changing the alpha value to 127 for all pixel that touches the border of the retina
-        for i in 0..retina.size as i32 {
-            for j in 0..retina.size as i32 {
-                // clamp here because when going negative it turn into a buffer overflow
-                let x = clamp(
-                    retina.center_position.x - offset + i,
-                    0,
-                    CONFIG.image_processing.image_width as u32 as i32 - 1,
-                );
-                let y = clamp(
-                    retina.center_position.y - offset + j,
-                    0,
-                    CONFIG.image_processing.image_height as u32 as i32 - 1,
-                );
-                if i == 0 || i == retina.size as i32 - 1 || j == 0 || j == retina.size as i32 - 1 {
-                    image.get_pixel_mut(x as u32, y as u32).0[1] =
-                        CONFIG.image_processing.retina_highlight_alpha as u8;
-                }
-            }
-        }
-        // draw a line from the center of the retina to the new position
-        // if retina.get_delta_position() != Position::new(0, 0) {
-        //     draw_antialiased_line_segment_mut(
-        //         &mut image,
-        //         (retina.center_position.x - retina.delta_position.x - 1, retina.center_position.y - retina.delta_position.y - 1),
-        //         (retina.center_position.x - 1, retina.center_position.y - 1),
-        //         LumaA([0, 127]),
-        //         |left, right, left_weight| interpolate(left, right, left_weight))
-        // }
-        image.save(&path)?;
-        self.data = image;
-        Ok(())
-    }
-
-    /// saves the image to the path but does not change the internal data.
-    /// Good for showing only the latest retina position
-    pub fn save_with_retina(&self, retina: &Retina, path: String) -> Result {
-        let mut image = self.data.clone();
-        // change the center pixels alha value to 127
-        image
-            .get_pixel_mut(
-                (retina.center_position.x - 1) as u32,
-                (retina.center_position.y - 1) as u32,
-            )
-            .0[1] = CONFIG.image_processing.retina_highlight_alpha as u8;
-
-        let offset = retina.size as i32 / 2 + 1;
-        // changing the alpha value to 127 for all pixel that touches the border of the retina
-        for i in 0..retina.size as i32 {
-            for j in 0..retina.size as i32 {
-                // clamp here because when going negative it turn into a buffer overflow
-                let x = clamp(
-                    retina.center_position.x - offset + i,
-                    0,
-                    CONFIG.image_processing.image_width as u32 as i32 - 1,
-                );
-                let y = clamp(
-                    retina.center_position.y - offset + j,
-                    0,
-                    CONFIG.image_processing.image_height as u32 as i32 - 1,
-                );
-                if i == 0 || i == retina.size as i32 - 1 || j == 0 || j == retina.size as i32 - 1 {
-                    image.get_pixel_mut(x as u32, y as u32).0[1] =
-                        CONFIG.image_processing.retina_highlight_alpha as u8;
-                }
-            }
-        }
-        image.save(path)?;
-        Ok(())
-    }
-
-    pub fn save(&self, path: String) -> Result {
-        self.data.save(path)?;
-        Ok(())
     }
 
     pub fn save_upscaled(&self, path: String) -> Result {
@@ -405,31 +235,6 @@ impl Image {
         }
 
         canvas.save(path)?;
-        Ok(())
-    }
-
-    /// saves the image to the path as greyscale image
-    pub fn save_greyscale(&mut self, path: String) -> Result {
-        // for each pixel in normalized data vector, transform it back to LumA<u8> and save it to the path
-        let mut buf = self
-            .normalized_data
-            .iter()
-            .map(|pixel| LumaA([(*pixel * 255.0) as u8, 255]))
-            .collect::<Vec<LumaA<u8>>>();
-        let mut image: ImageBuffer<LumaA<u8>, Vec<u8>> = ImageBuffer::new(
-            CONFIG.image_processing.image_width as u32,
-            CONFIG.image_processing.image_height as u32,
-        );
-
-        buf.reverse();
-        for pixel in image.pixels_mut() {
-            if let Some(p) = buf.pop() {
-                *pixel = p;
-            } else {
-                return Err("IndexError: not enough pixels in buffer".into());
-            }
-        }
-        image.save(path)?;
         Ok(())
     }
 
@@ -585,36 +390,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_retina() {
-        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-
-        // using a image size of 33x25 px that the center pixel is at position 16, 12 (countning from 1 not 0)
-        let retina = image
-            .create_retina_at(
-                Position::new(5, 5),
-                CONFIG.image_processing.retina_size as usize,
-            )
-            .unwrap();
-
-        retina
-            .create_png_at("test/images/only_retina.png".to_string())
-            .unwrap();
-        image
-            .save_with_retina(&retina, "test/images/with_retina_movement.png".to_string())
-            .unwrap();
-
-        assert_eq!(retina.data[12], retina.get_value(2, 2));
-        assert_eq!(retina.data[0], retina.get_value(0, 0));
-        assert_eq!(retina.data[4], retina.get_value(4, 0));
-
-        // all corners are white
-        assert_eq!(retina.get_value(0, 0), 1.);
-        assert_eq!(retina.get_value(0, 4), 1.);
-        assert_eq!(retina.get_value(4, 0), 1.);
-        assert_eq!(retina.get_value(4, 4), 1.);
-    }
-
-    #[test]
     fn test_get_retina_out_of_bounds() {
         let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
         // getting the first pixel in the top left corner should give an error
@@ -701,37 +476,6 @@ mod tests {
     }
 
     #[test]
-    fn test_update_from_retina_inputs() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(&mut rng, 3);
-        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-        let retina: Retina = image
-            .create_retina_at(
-                Position::new(10, 10),
-                CONFIG.image_processing.retina_size as usize,
-            )
-            .unwrap();
-        image
-            .save_with_retina(&retina, "test/images/with_retina_movement.png".to_string())
-            .unwrap();
-        retina
-            .create_png_at("test/images/retina.png".to_string())
-            .unwrap();
-
-        rnn.update_inputs_from_retina(&retina);
-
-        assert_eq!(round2(rnn.neurons()[0].retina_inputs()[0] as f64), 1.0);
-        assert_eq!(round2(rnn.neurons()[0].retina_inputs()[4] as f64), 0.0);
-        assert_eq!(round2(rnn.neurons()[0].retina_inputs()[24] as f64), 1.0);
-    }
-
-    #[test]
-    fn test_binarize_image() {
-        let image = Image::from_path("images/artificial/gradient.png".to_string()).unwrap();
-        image.save("test/images/binarized.png".to_string()).unwrap();
-    }
-
-    #[test]
     fn test_load_images() {
         let images = ImageReader::from_path("images/training".to_string()).unwrap();
         // let image = images.get_image(0).unwrap();
@@ -772,69 +516,6 @@ mod tests {
     }
 
     #[test]
-    fn test_display_retina_movement() {
-        let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-        let mut retina = image
-            .create_retina_at(
-                Position::new(5, 5),
-                CONFIG.image_processing.retina_size as usize,
-            )
-            .unwrap();
-        image
-            .save_with_retina_mut(&retina, "test/images/retina_movement.png".to_string())
-            .unwrap();
-        retina.move_mut(&Position::new(10, 1));
-        image
-            .save_with_retina_mut(&retina, "test/images/retina_movement.png".to_string())
-            .unwrap();
-    }
-
-    #[test]
-    fn test_save_with_retina_movement() {
-        std::fs::create_dir_all("test/saves/retina").unwrap();
-        let mut image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-        let mut retina = image
-            .create_retina_at(
-                Position::new(5, 5),
-                CONFIG.image_processing.retina_size as usize,
-            )
-            .unwrap();
-        image.update_retina_movement_mut(&retina);
-        retina.move_mut(&Position::new(10, 1));
-        image.update_retina_movement_mut(&retina);
-        retina.move_mut(&Position::new(1, 4));
-        image.update_retina_movement_mut(&retina);
-
-        image
-            .save("test/saves/retina/movement.png".to_string())
-            .unwrap();
-    }
-
-    #[test]
-    fn test_empty_to_image() {
-        std::fs::create_dir_all("test/saves/images").unwrap();
-        let mut empty_image = Image::empty();
-        let mut real_image =
-            Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-        let mut retina = real_image
-            .create_retina_at(
-                Position::new(5, 5),
-                CONFIG.image_processing.retina_size as usize,
-            )
-            .unwrap();
-        retina.move_mut(&Position::new(10, 1));
-        real_image.update_retina_movement_mut(&retina);
-        retina.move_mut(&Position::new(1, 4));
-        real_image.update_retina_movement_mut(&retina);
-
-        empty_image = real_image.clone();
-
-        empty_image
-            .save("test/saves/images/from_empty.png".to_string())
-            .unwrap();
-    }
-
-    #[test]
     fn test_scale_image_up() {
         let image = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
         image.save_upscaled("test/images/upscaled_resistor.png".to_string()).unwrap();
@@ -842,38 +523,26 @@ mod tests {
 
     #[test]
     fn test_scale_image_up_with_retina_movement() {
-        let mut image1 = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
-        let mut image2 = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
+        let mut image = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
 
-        let mut retina1 = image1
-            .create_retina_at(
-                Position::new(7, 7),
-                CONFIG.image_processing.retina_size as usize,
-            )
-            .unwrap();
-        let mut retina2 = image2
+        let mut retina = image
             .create_retina_at(
                 Position::new(7, 7),
                 CONFIG.image_processing.retina_size as usize,
             )
             .unwrap();
 
-        image1.update_retina_movement_mut(&retina1);
-        image2.retina_positions.push(retina2.get_center_position());
+        image.update_retina_movement(&retina);
+        retina.move_mut(&Position::new(21, 0));
 
-        retina1.move_mut(&Position::new(21, 0));
-        retina2.move_mut(&Position::new(21, 0));
+        image.update_retina_movement(&retina);
+        retina.move_mut(&Position::new(0, 6));
 
-        image1.update_retina_movement_mut(&retina1);
-        image2.retina_positions.push(retina2.get_center_position());
+        image.update_retina_movement(&retina);
+        retina.move_mut(&Position::new(-21, 0));
 
-        retina1.move_mut(&Position::new(0, 6));
-        retina2.move_mut(&Position::new(0, 6));
+        image.update_retina_movement(&retina);
 
-        image1.update_retina_movement_mut(&retina1);
-        image2.retina_positions.push(retina2.get_center_position());
-
-        image1.save("test/images/resistor.png".to_string()).unwrap();
-        image2.save_upscaled("test/images/resistor_upscaled.png".to_string()).unwrap();
+        image.save_upscaled("test/images/resistor_upscaled.png".to_string()).unwrap();
     }
 }
