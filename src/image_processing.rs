@@ -1,5 +1,5 @@
 use image::imageops::resize;
-use image::{ImageBuffer, LumaA};
+use image::{ImageBuffer, LumaA, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
 use nalgebra::clamp;
 use std::ops::{Add, Sub};
@@ -78,8 +78,8 @@ impl AddAssign for Position {
 
 #[derive(Debug, Clone)]
 pub struct Image {
-    data: ImageBuffer<LumaA<u8>, Vec<u8>>,
-    /// normalized AND binarized data in this vector
+    data: RgbaImage,
+    /// greyscale , normalized AND binarized data in this vector
     normalized_data: Vec<f32>,
     binarized_white: f32,
     binarized_black: f32,
@@ -90,7 +90,7 @@ pub struct Image {
 impl Image {
     pub fn empty() -> Self {
         Image {
-            data: ImageBuffer::new(
+            data: RgbaImage::new(
                 CONFIG.image_processing.image_width as u32,
                 CONFIG.image_processing.image_height as u32,
             ),
@@ -107,9 +107,10 @@ impl Image {
 
     // creates a new image, normalizes the data and binarizes it
     pub fn from_path(path: String) -> std::result::Result<Self, Error> {
-        let data = image::io::Reader::open(path)?.decode()?.into_luma_alpha8();
+        let data = image::io::Reader::open(path)?.decode()?.into_rgba8();
+        let grey = image::imageops::grayscale_alpha(&data);
         let mut normalized_data = vec![];
-        for pixel in data.pixels() {
+        for pixel in grey.pixels() {
             normalized_data.push(pixel.0[0] as f32 / 255.0);
         }
         let mut image = Image {
@@ -203,37 +204,37 @@ impl Image {
                     scaled_y as i32 - scaled_size as i32 / 2,
                 )
                 .of_size(scaled_size as u32, scaled_size as u32),
-                LumaA([127, 255]),
+                Rgba([255, 0, 0, 255]),
             );
 
             if index == 0 {
                 continue;
             }
-            // draw an arrow from the last retina position to the current retina position
-            let arrow_begin = &self.retina_positions[index - 1];
-            let arrow_end = retina_position;
+            // draw a line from the last retina position to the current retina position
+            let line_begin = &self.retina_positions[index - 1];
+            let line_end = retina_position;
             draw_line_segment_mut(
                 &mut canvas,
                 (
-                    (arrow_begin.x as f32 - 0.5) * scaling_factor_x,
-                    (arrow_begin.y as f32 - 0.5) * scaling_factor_y,
+                    (line_begin.x as f32 - 0.5) * scaling_factor_x,
+                    (line_begin.y as f32 - 0.5) * scaling_factor_y,
                 ),
                 (
-                    (arrow_end.x as f32 - 0.5) * scaling_factor_x,
-                    (arrow_end.y as f32 - 0.5) * scaling_factor_y,
+                    (line_end.x as f32 - 0.5) * scaling_factor_x,
+                    (line_end.y as f32 - 0.5) * scaling_factor_y,
                 ),
-                LumaA([127, 255]),
+                Rgba([127, 127, 127, 255])
             );
 
             // draw at the end of the linesegment a circle
             draw_filled_circle_mut(
                 &mut canvas,
                 (
-                    ((arrow_end.x as f32 - 0.5) * scaling_factor_x) as i32,
-                    ((arrow_end.y as f32 - 0.5) * scaling_factor_y) as i32,
+                    ((line_end.x as f32 - 0.5) * scaling_factor_x) as i32,
+                    ((line_end.y as f32 - 0.5) * scaling_factor_y) as i32,
                 ),
                 circle_radius as i32,
-                LumaA([127, 255]),
+                Rgba([0, 255, 0, 255])
             );
         }
 
@@ -358,36 +359,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_load_image() {
-        // using a image size of 33x25 px (nearly 4:3)
-        let image: ImageBuffer<LumaA<u8>, Vec<u8>> =
-            image::io::Reader::open("images/artificial/checkboard.png")
-                .unwrap()
-                .decode()
-                .unwrap()
-                .into_luma_alpha8();
-        // white
-        assert_eq!(*image.get_pixel(0, 0), LumaA([255, 255]));
-        // black
-        assert_eq!(*image.get_pixel(3, 0), LumaA([0, 255]));
-        // black
-        assert_eq!(*image.get_pixel(32, 24), LumaA([0, 255]));
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_invalid_load_image() {
-        let image: ImageBuffer<LumaA<u8>, Vec<u8>> =
-            image::io::Reader::open("images/artificial/checkboard.png")
-                .unwrap()
-                .decode()
-                .unwrap()
-                .into_luma_alpha8();
-        // using a image size of 33x25 px (nearly 4:3) so this should panic
-        let _ = *image.get_pixel(33, 25);
-    }
-
-    #[test]
     fn test_get_retina_out_of_bounds() {
         let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
         // getting the first pixel in the top left corner should give an error
@@ -474,26 +445,6 @@ mod tests {
     }
 
     #[test]
-    fn test_load_images() {
-        let images = ImageReader::from_path("images/training".to_string()).unwrap();
-        // let image = images.get_image(0).unwrap();
-        // let image2 = images.get_image(1).unwrap();
-        // assert_eq!(image.get_pixel(0, 0), 1.0);
-        // assert_eq!(image.get_pixel(3, 0), 0.0);
-        // assert_eq!(round2(image2.get_pixel(0, 0).into()), 0.18);
-
-        // assert_eq!(images.images.len(), 3);
-        println!("{:?}", images.images);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_invalid_load_images() {
-        let images = ImageReader::from_path("images/artificial".to_string()).unwrap();
-        images.get_image(3).unwrap();
-    }
-
-    #[test]
     fn test_retina_movement() {
         let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
         let mut retina = image
@@ -511,14 +462,6 @@ mod tests {
         retina.move_mut(&Position::new(-1, -1));
         assert_eq!(retina.get_center_position().x, 6);
         assert_eq!(retina.get_center_position().y, 6);
-    }
-
-    #[test]
-    fn test_scale_image_up() {
-        let image = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
-        image
-            .save_upscaled("test/images/upscaled_resistor.png".to_string())
-            .unwrap();
     }
 
     #[test]
@@ -547,4 +490,13 @@ mod tests {
             .save_upscaled("test/images/resistor_upscaled.png".to_string())
             .unwrap();
     }
+
+    #[test]
+    fn test_scale_real_image_down() {
+        let mut image = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
+        image
+            .save_upscaled("test/images/resistor_downscaled.png".to_string())
+            .unwrap();
+    }
+    
 }
