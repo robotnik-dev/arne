@@ -1,9 +1,9 @@
+use image::imageops::resize;
 use image::{ImageBuffer, LumaA};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
 use nalgebra::clamp;
 use std::ops::{Add, Sub};
 use std::{fmt::Debug, ops::AddAssign};
-use image::imageops::resize;
 
 use crate::{Error, Result, CONFIG};
 
@@ -187,10 +187,8 @@ impl Image {
             image::imageops::FilterType::Nearest,
         );
 
-        let scaling_factor_x = width as f32
-            / CONFIG.image_processing.image_width as f32;
-        let scaling_factor_y = height as f32
-            / CONFIG.image_processing.image_height as f32;
+        let scaling_factor_x = width as f32 / CONFIG.image_processing.image_width as f32;
+        let scaling_factor_y = height as f32 / CONFIG.image_processing.image_height as f32;
         let scaled_size = size * scaling_factor_x;
 
         for (index, retina_position) in self.retina_positions.iter().enumerate() {
@@ -202,11 +200,10 @@ impl Image {
                 &mut canvas,
                 imageproc::rect::Rect::at(
                     scaled_x as i32 - scaled_size as i32 / 2,
-                    scaled_y as i32 - scaled_size as i32 / 2 ,
-                ).of_size(
-                    scaled_size as u32,
-                    scaled_size as u32),
-                    LumaA([127, 255])
+                    scaled_y as i32 - scaled_size as i32 / 2,
+                )
+                .of_size(scaled_size as u32, scaled_size as u32),
+                LumaA([127, 255]),
             );
 
             if index == 0 {
@@ -217,20 +214,26 @@ impl Image {
             let arrow_end = retina_position;
             draw_line_segment_mut(
                 &mut canvas,
-                ((arrow_begin.x as f32 - 0.5) * scaling_factor_x, (arrow_begin.y as f32 - 0.5) * scaling_factor_y),
-                ((arrow_end.x as f32 - 0.5) * scaling_factor_x, (arrow_end.y as f32 - 0.5) * scaling_factor_y),
-                LumaA([127, 255])
+                (
+                    (arrow_begin.x as f32 - 0.5) * scaling_factor_x,
+                    (arrow_begin.y as f32 - 0.5) * scaling_factor_y,
+                ),
+                (
+                    (arrow_end.x as f32 - 0.5) * scaling_factor_x,
+                    (arrow_end.y as f32 - 0.5) * scaling_factor_y,
+                ),
+                LumaA([127, 255]),
             );
 
             // draw at the end of the linesegment a circle
             draw_filled_circle_mut(
                 &mut canvas,
                 (
-                        ((arrow_end.x as f32 - 0.5) * scaling_factor_x) as i32,
-                        ((arrow_end.y as f32 - 0.5) * scaling_factor_y) as i32,
-                    ),
-                    circle_radius as i32,
-                LumaA([127, 255])
+                    ((arrow_end.x as f32 - 0.5) * scaling_factor_x) as i32,
+                    ((arrow_end.y as f32 - 0.5) * scaling_factor_y) as i32,
+                ),
+                circle_radius as i32,
+                LumaA([127, 255]),
             );
         }
 
@@ -353,11 +356,6 @@ impl Retina {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::round2;
-    use crate::Rnn;
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
-    
 
     #[test]
     fn test_load_image() {
@@ -518,7 +516,9 @@ mod tests {
     #[test]
     fn test_scale_image_up() {
         let image = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
-        image.save_upscaled("test/images/upscaled_resistor.png".to_string()).unwrap();
+        image
+            .save_upscaled("test/images/upscaled_resistor.png".to_string())
+            .unwrap();
     }
 
     #[test]
@@ -543,6 +543,8 @@ mod tests {
 
         image.update_retina_movement(&retina);
 
-        image.save_upscaled("test/images/resistor_upscaled.png".to_string()).unwrap();
+        image
+            .save_upscaled("test/images/resistor_upscaled.png".to_string())
+            .unwrap();
     }
 }

@@ -1,3 +1,7 @@
+use crate::image_processing::Retina;
+use crate::utils::round2;
+use crate::{genetic_algorithm::Statistics, image_processing::Position, Result};
+use crate::{Error, CONFIG};
 use approx::AbsDiffEq;
 use petgraph::{dot::Dot, Graph};
 use plotters::prelude::*;
@@ -9,10 +13,6 @@ use std::{
     fs::OpenOptions,
     io::{self, Read, Write},
 };
-use crate::image_processing::Retina;
-use crate::utils::round2;
-use crate::{genetic_algorithm::Statistics, image_processing::Position, Result};
-use crate::{Error, CONFIG};
 
 /// A short term memory that can be used to store the state of the network
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -445,16 +445,16 @@ impl Rnn {
 
     /// setting bias to 0 from a random neuron
     pub fn delete_bias(&mut self, rng: &mut dyn RngCore) {
-        if let Some(neuron) = self.neurons_mut()
-            .iter_mut()
-            .choose(rng) {neuron.bias = 0.0};
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
+            neuron.bias = 0.0
+        };
     }
 
     /// setting self activation to 0 from a random neuron
     pub fn delete_self_activation(&mut self, rng: &mut dyn RngCore) {
-        if let Some(neuron) = self.neurons_mut()
-            .iter_mut()
-            .choose(rng) {neuron.self_activation = 0.0};
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
+            neuron.self_activation = 0.0
+        };
     }
 
     /// randomize the weights self activation and bias from a random neuron
@@ -468,10 +468,9 @@ impl Rnn {
             });
             neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng);
             neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng);
-            if let Some(input) = neuron
-                .retina_inputs_mut()
-                .iter_mut()
-                .choose(rng) {*input = Normal::new(mean, std_dev).unwrap().sample(rng) as f32};
+            if let Some(input) = neuron.retina_inputs_mut().iter_mut().choose(rng) {
+                *input = Normal::new(mean, std_dev).unwrap().sample(rng) as f32
+            };
         };
     }
 
@@ -486,10 +485,9 @@ impl Rnn {
                 .input_connections
                 .iter_mut()
                 .for_each(|(_, weight)| *weight = Normal::new(mean, std_dev).unwrap().sample(rng));
-            if let Some(input) = neuron
-                .retina_inputs_mut()
-                .iter_mut()
-                .choose(rng) {*input = Normal::new(mean, std_dev).unwrap().sample(rng) as f32};
+            if let Some(input) = neuron.retina_inputs_mut().iter_mut().choose(rng) {
+                *input = Normal::new(mean, std_dev).unwrap().sample(rng) as f32
+            };
         };
     }
 
@@ -498,9 +496,9 @@ impl Rnn {
     pub fn mutate_bias(&mut self, rng: &mut dyn RngCore) {
         let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance;
         let mean = CONFIG.genetic_algorithm.mutation_rates.mean;
-        if let Some(neuron) = self.neurons_mut()
-            .iter_mut()
-            .choose(rng) {neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng)};
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
+            neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng)
+        };
     }
 
     /// randomize the self activation from a random neuron
@@ -508,9 +506,9 @@ impl Rnn {
     pub fn mutate_self_activation(&mut self, rng: &mut dyn RngCore) {
         let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance;
         let mean = CONFIG.genetic_algorithm.mutation_rates.mean;
-        if let Some(neuron) = self.neurons_mut()
-            .iter_mut()
-            .choose(rng) {neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng)};
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
+            neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng)
+        };
     }
 
     /// saves the RNN to a json file at the saves/rnn folder or if a path is provided at the given path
@@ -569,7 +567,6 @@ impl Rnn {
             .unwrap();
         Ok(())
     }
-
 }
 
 impl From<Rnn> for Graph<(usize, f64), f64> {

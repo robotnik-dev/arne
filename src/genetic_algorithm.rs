@@ -82,7 +82,9 @@ impl AgentEvaluation for Agent {
         // let offset = CONFIG.image_processing.retina_size as i32 / 2 + 1;
         // let the agents start at the left side in the middle
         let offset_x = CONFIG.image_processing.retina_size as i32 / 2 + 1;
-        let offset_y = CONFIG.image_processing.retina_size as i32 / 2 + CONFIG.image_processing.image_height as i32 / 2 - 1;
+        let offset_y = CONFIG.image_processing.retina_size as i32 / 2
+            + CONFIG.image_processing.image_height as i32 / 2
+            - 1;
 
         let mut retina = image.create_retina_at(
             Position::new(offset_x, offset_y),
@@ -257,7 +259,6 @@ impl Agent {
 
 #[cfg(test)]
 mod tests {
-    use petgraph::{dot::Dot, Graph};
     use rand_chacha::ChaCha8Rng;
 
     use super::*;

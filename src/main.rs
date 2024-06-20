@@ -57,7 +57,6 @@ fn main() -> Result {
     // loop until stop criterial is met
     log::info!("starting genetic algorithm");
     loop {
-
         // for each image in the dataset
         for index in 0..image_reader.images().len() {
             // load image
@@ -98,7 +97,6 @@ fn main() -> Result {
             break;
         }
         algorithm_bar.inc(1);
-
     }
     algorithm_bar.finish();
     log::info!("genetic algorithm finished");
@@ -126,40 +124,84 @@ fn main() -> Result {
         .take(CONFIG.genetic_algorithm.take_agents as usize)
         .for_each(|(index, agent)| {
             // create a new directory for every agent with the index as name if the directory does not exist
-            std::fs::create_dir_all(format!("{}/{}", CONFIG.image_processing.path_to_agents_dir, index)).unwrap();
-            
+            std::fs::create_dir_all(format!(
+                "{}/{}",
+                CONFIG.image_processing.path_to_agents_dir, index
+            ))
+            .unwrap();
+
             // save statistics per generation
             agent
                 .statistics_mut()
                 .par_iter_mut()
                 .enumerate()
-                .take(CONFIG.genetic_algorithm.generate_images_for_first_generations as usize)
+                .take(
+                    CONFIG
+                        .genetic_algorithm
+                        .generate_images_for_first_generations as usize,
+                )
                 .for_each(|(i, (image, memory, rnn))| {
-                    std::fs::create_dir_all(format!("{}/{}/gen_{}", CONFIG.image_processing.path_to_agents_dir, index, i)).unwrap();
+                    std::fs::create_dir_all(format!(
+                        "{}/{}/gen_{}",
+                        CONFIG.image_processing.path_to_agents_dir, index, i
+                    ))
+                    .unwrap();
 
                     memory
-                        .visualize(format!("{}/{}/gen_{}/memory.png", CONFIG.image_processing.path_to_agents_dir, index, i))
+                        .visualize(format!(
+                            "{}/{}/gen_{}/memory.png",
+                            CONFIG.image_processing.path_to_agents_dir, index, i
+                        ))
                         .unwrap();
-                    image.save_upscaled(format!("{}/{}/gen_{}/retina.png", CONFIG.image_processing.path_to_agents_dir, index, i)).unwrap();
-                    rnn.to_json(Some(&format!("{}/{}/gen_{}/rnn.json", CONFIG.image_processing.path_to_agents_dir, index, i))).unwrap();
-                    rnn.to_dot(format!("{}/{}/gen_{}/rnn.dot", CONFIG.image_processing.path_to_agents_dir, index, i)).unwrap();
+                    image
+                        .save_upscaled(format!(
+                            "{}/{}/gen_{}/retina.png",
+                            CONFIG.image_processing.path_to_agents_dir, index, i
+                        ))
+                        .unwrap();
+                    rnn.to_json(Some(&format!(
+                        "{}/{}/gen_{}/rnn.json",
+                        CONFIG.image_processing.path_to_agents_dir, index, i
+                    )))
+                    .unwrap();
+                    rnn.to_dot(format!(
+                        "{}/{}/gen_{}/rnn.dot",
+                        CONFIG.image_processing.path_to_agents_dir, index, i
+                    ))
+                    .unwrap();
                 });
-                
+
             // save the last image and memory of the final generation
-            agent
-                .statistics_mut()
-                .iter_mut()
-                .last()
-                .map(|(image, memory, rnn)| {
-                    std::fs::create_dir_all(format!("{}/{}/final", CONFIG.image_processing.path_to_agents_dir, index)).unwrap();
-                    memory
-                        .visualize(format!("{}/{}/final/memory.png", CONFIG.image_processing.path_to_agents_dir, index))
-                        .unwrap();
-                    image.save_upscaled(format!("{}/{}/final/retina.png", CONFIG.image_processing.path_to_agents_dir, index)).unwrap();
-                    rnn.to_json(Some(&format!("{}/{}/final/rnn.json", CONFIG.image_processing.path_to_agents_dir, index))).unwrap();
-                    rnn.to_dot(format!("{}/{}/final/rnn.dot", CONFIG.image_processing.path_to_agents_dir, index)).unwrap();
-                });
-            
+            if let Some((image, memory, rnn)) = agent.statistics_mut().iter_mut().last() {
+                std::fs::create_dir_all(format!(
+                    "{}/{}/final",
+                    CONFIG.image_processing.path_to_agents_dir, index
+                ))
+                .unwrap();
+                memory
+                    .visualize(format!(
+                        "{}/{}/final/memory.png",
+                        CONFIG.image_processing.path_to_agents_dir, index
+                    ))
+                    .unwrap();
+                image
+                    .save_upscaled(format!(
+                        "{}/{}/final/retina.png",
+                        CONFIG.image_processing.path_to_agents_dir, index
+                    ))
+                    .unwrap();
+                rnn.to_json(Some(&format!(
+                    "{}/{}/final/rnn.json",
+                    CONFIG.image_processing.path_to_agents_dir, index
+                )))
+                .unwrap();
+                rnn.to_dot(format!(
+                    "{}/{}/final/rnn.dot",
+                    CONFIG.image_processing.path_to_agents_dir, index
+                ))
+                .unwrap();
+            };
+
             generating_files_bar.inc(1);
         });
     generating_files_bar.finish();
