@@ -79,14 +79,18 @@ impl AgentEvaluation for Agent {
         let mut local_fitness = 0.0;
         self.genotype_mut().short_term_memory_mut().clear();
         // create a retina at a specific position (top left of image)
-        let offset = CONFIG.image_processing.retina_size as i32 / 2 + 1;
+        // let offset = CONFIG.image_processing.retina_size as i32 / 2 + 1;
+        // let the agents start at the left side in the middle
+        let offset_x = CONFIG.image_processing.retina_size as i32 / 2 + 1;
+        let offset_y = CONFIG.image_processing.retina_size as i32 / 2 + CONFIG.image_processing.image_height as i32 / 2 - 1;
+
         let mut retina = image.create_retina_at(
-            Position::new(offset, offset),
+            Position::new(offset_x, offset_y),
             CONFIG.image_processing.retina_size as usize,
         )?;
 
         // first location of the retina
-        image.update_retina_movement_mut(&retina);
+        image.push_new_retina_movement(&retina);
 
         for i in 0..number_of_updates {
             // calculate the next delta position of the retina, encoded in the neurons
@@ -102,7 +106,8 @@ impl AgentEvaluation for Agent {
             self.genotype.update();
 
             // save retina movement in buffer
-            image.update_retina_movement_mut(&retina);
+            // image.update_retina_movement_mut(&retina);
+            image.push_new_retina_movement(&retina);
 
             // creating snapshot of the network at the current time step
             let outputs = self

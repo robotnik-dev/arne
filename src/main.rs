@@ -40,8 +40,12 @@ fn main() -> Result {
     // creating all necessary directories
     std::fs::create_dir_all("test/best_agents")?;
 
-    let mut rng = ChaCha8Rng::seed_from_u64(CONFIG.genetic_algorithm.seed as u64);
-    // let mut rng = ChaCha8Rng::from_entropy();
+    let mut rng = ChaCha8Rng::from_entropy();
+
+    if CONFIG.genetic_algorithm.with_seed {
+        log::info!("using seed: {}", CONFIG.genetic_algorithm.seed);
+        rng = ChaCha8Rng::seed_from_u64(CONFIG.genetic_algorithm.seed as u64);
+    }
 
     // intialize population
     let mut population = Population::new(
@@ -53,10 +57,12 @@ fn main() -> Result {
     let image_reader =
         ImageReader::from_path(CONFIG.image_processing.path_to_training_data.to_string())?;
 
-    let bar = ProgressBar::new(CONFIG.genetic_algorithm.max_generations as u64);
+    let algorithm_bar = ProgressBar::new(CONFIG.genetic_algorithm.max_generations as u64);
 
     // loop until stop criterial is met
+    log::info!("starting genetic algorithm");
     loop {
+
         // for each image in the dataset
         for index in 0..image_reader.images().len() {
             // load image
@@ -96,12 +102,13 @@ fn main() -> Result {
         if population.generation() >= CONFIG.genetic_algorithm.max_generations as u32 {
             break;
         }
+        algorithm_bar.inc(1);
 
-        bar.inc(1);
     }
-    bar.finish();
-
-    log::info!("generating files for agents");
+    algorithm_bar.finish();
+    log::info!("genetic algorithm finished");
+    log::info!("stopped after {} generations", population.generation());
+    log::info!("generating files for agents...");
 
     // the best 30 agents should be saved with:
     // - their fitness
@@ -109,6 +116,7 @@ fn main() -> Result {
     // - the rnn as png image
     // - the rnn as dot file
     // - the movement of the retina over time
+    let generating_files_bar = ProgressBar::new(CONFIG.genetic_algorithm.take_agents as u64);
     population
         .agents_mut()
         .par_iter_mut()
@@ -116,7 +124,7 @@ fn main() -> Result {
         .inspect(|(index, agent)| {
             log::debug!("agent {} fitness: {}", index, agent.fitness());
         })
-        .take(30)
+        .take(CONFIG.genetic_algorithm.take_agents as usize)
         .for_each(|(index, agent)| {
             // create a new directory for every agent with the index as name if the directory does not exist
             std::fs::create_dir_all(format!("test/best_agents/{}", index)).unwrap();
@@ -132,7 +140,7 @@ fn main() -> Result {
                 .unwrap();
             agent
                 .image
-                .save(format!("test/best_agents/{}/retina_movement.png", index))
+                .save_upscaled(format!("test/best_agents/{}/retina_movement.png", index))
                 .unwrap();
 
             let graph = Graph::from(agent.genotype().clone());
@@ -145,9 +153,9 @@ fn main() -> Result {
                 .unwrap()
                 .write_fmt(format_args!("{:?}\n", dot))
                 .unwrap();
+            generating_files_bar.inc(1);
         });
-
-    log::info!("stopped after {} generations", population.generation());
+    generating_files_bar.finish();
 
     Ok(())
 }

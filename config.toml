@@ -5,11 +5,14 @@ path_to_agents_dir= "images/agents"
 image_width = 33
 image_height = 25
 retina_size = 5
+real_image_width = 4032
+real_image_height = 3024
 retina_highlight_alpha = 100
+retina_circle_radius = 10.0
 
 [neural_network]
-neurons_per_network = 6
-number_of_network_updates = 20
+neurons_per_network = 2
+number_of_network_updates = 40
 movement_scale = 4.0
 
 [neural_network.weight_bounds]
@@ -19,10 +22,12 @@ retina_lower = -1.0
 retina_upper = 1.0
 
 [genetic_algorithm]
-seed = 554
+with_seed = true
+seed = 50
 population_size = 100
-max_generations = 1000
+max_generations = 8000
 tournament_size = 5
+take_agents = 2
 
 [genetic_algorithm.mutation_rates]
 variance = 0.2
