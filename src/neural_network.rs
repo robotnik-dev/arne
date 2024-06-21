@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
     fs::OpenOptions,
-    io::{self, Read, Write},
+    io::{Read, Write},
 };
 
 /// A short term memory that can be used to store the state of the network
@@ -512,43 +512,43 @@ impl Rnn {
     }
 
     /// saves the RNN to a json file at the saves/rnn folder or if a path is provided at the given path
-    pub fn to_json(&mut self, path: Option<&String>) -> Result {
+    pub fn to_json(&mut self, path: String) -> Result {
         // save Dot in Rnn
         self.graph = Graph::from(self.clone());
 
         let json = serde_json::to_string_pretty(self)?;
-        let file_path: String;
+        // let file_path: String;
 
-        if let Some(path) = path {
-            file_path = path.clone();
-        } else {
-            let mut entries = std::fs::read_dir("saves/rnn")?
-                .map(|res| res.map(|e| e.path()))
-                .collect::<std::result::Result<Vec<_>, io::Error>>()?;
-            entries.sort();
-            let new_file_name = entries
-                .iter()
-                .last()
-                .map(|path| {
-                    let last_file_index = path
-                        .to_str()
-                        .unwrap()
-                        .replace("saves/rnn", "")
-                        .replace(".json", "")
-                        .replace('\\', "")
-                        .parse::<usize>()
-                        .unwrap();
-                    format!("{}.json", last_file_index + 1)
-                })
-                .unwrap_or("0.json".to_string());
-            file_path = format!("saves/rnn/{}", new_file_name);
-        }
+        // if let Some(path) = path {
+        //     file_path = path.clone();
+        // } else {
+        //     let mut entries = std::fs::read_dir("saves/rnn")?
+        //         .map(|res| res.map(|e| e.path()))
+        //         .collect::<std::result::Result<Vec<_>, io::Error>>()?;
+        //     entries.sort();
+        //     let new_file_name = entries
+        //         .iter()
+        //         .last()
+        //         .map(|path| {
+        //             let last_file_index = path
+        //                 .to_str()
+        //                 .unwrap()
+        //                 .replace("saves/rnn", "")
+        //                 .replace(".json", "")
+        //                 .replace('\\', "")
+        //                 .parse::<usize>()
+        //                 .unwrap();
+        //             format!("{}.json", last_file_index + 1)
+        //         })
+        //         .unwrap_or("0.json".to_string());
+        //     file_path = format!("saves/rnn/{}", new_file_name);
+        // }
 
         OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
-            .open(file_path)?
+            .open(path)?
             .write_fmt(format_args!("{}\n", json))?;
 
         Ok(())
@@ -1007,7 +1007,7 @@ mod tests {
         let file_path = "test/saves/rnn/test_rnn.json".to_string();
 
         // save to disk
-        rnn.to_json(Some(&file_path)).unwrap();
+        rnn.to_json(file_path.clone()).unwrap();
 
         // load from disk
         let new_rnn = Rnn::from_json(file_path).unwrap();

@@ -25,9 +25,9 @@ retina_upper = 1.0
 with_seed = false
 seed = 79
 population_size = 100
-max_generations = 10
+max_generations = 1000
 tournament_size = 5
-take_agents = 2
+take_agents = 3
 generate_images_for_first_generations = 2
 
 [genetic_algorithm.mutation_rates]

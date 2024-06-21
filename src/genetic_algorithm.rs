@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::image_processing::{Image, Position};
+use crate::image_processing::{Image, ImageLabel, Position};
 use crate::neural_network::Rnn;
 use crate::{Error, Retina, ShortTermMemory, CONFIG};
 
@@ -47,6 +49,7 @@ trait FitnessCalculation<T> {
 pub trait AgentEvaluation {
     fn evaluate(
         &mut self,
+        label: ImageLabel,
         image: &mut Image,
         number_of_updates: usize,
     ) -> std::result::Result<f64, Error>;
@@ -73,6 +76,7 @@ impl FitnessCalculation<FollowLine> for Agent {
 impl AgentEvaluation for Agent {
     fn evaluate(
         &mut self,
+        label: ImageLabel,
         image: &mut Image,
         number_of_updates: usize,
     ) -> std::result::Result<f64, Error> {
@@ -124,11 +128,17 @@ impl AgentEvaluation for Agent {
             // calculate the fitness of the agent
             local_fitness += self.calculate_fitness(&retina);
         }
-        self.statistics.push((
-            image.clone(),
-            self.genotype().short_term_memory().clone(),
-            self.genotype().clone(),
-        ));
+        // save the image in the hashmap of the agent with label
+        let image = image.clone();
+        let stm = self.genotype().short_term_memory().clone();
+        let rnn = self.genotype().clone();
+        self
+            .statistics_mut()
+            .insert(
+                label.clone(),
+                (image, stm, rnn),
+            );
+        
         Ok(local_fitness / number_of_updates as f64)
     }
 }
@@ -199,7 +209,7 @@ pub struct Agent {
     fitness: f64,
     genotype: Rnn,
     // for statistics purposes, we store the final images with the retina movement and all the short term memories here
-    pub statistics: Vec<(Image, ShortTermMemory, Rnn)>,
+    pub statistics: HashMap<ImageLabel, (Image, ShortTermMemory, Rnn)>
 }
 
 impl Clone for Agent {
@@ -207,7 +217,7 @@ impl Clone for Agent {
         Agent {
             fitness: self.fitness,
             genotype: self.genotype.clone(),
-            statistics: self.statistics.clone(),
+            statistics: self.statistics.clone()
         }
     }
 }
@@ -217,7 +227,7 @@ impl Agent {
         Agent {
             fitness: 0.0,
             genotype: Rnn::new(rng, number_of_neurons),
-            statistics: Vec::new(),
+            statistics: HashMap::new()
         }
     }
 
@@ -237,11 +247,11 @@ impl Agent {
         &mut self.genotype
     }
 
-    pub fn statistics(&self) -> &Vec<(Image, ShortTermMemory, Rnn)> {
+    pub fn statistics(&self) -> &HashMap<ImageLabel, (Image, ShortTermMemory, Rnn)> {
         &self.statistics
     }
 
-    pub fn statistics_mut(&mut self) -> &mut Vec<(Image, ShortTermMemory, Rnn)> {
+    pub fn statistics_mut(&mut self) -> &mut HashMap<ImageLabel, (Image, ShortTermMemory, Rnn)> {
         &mut self.statistics
     }
 

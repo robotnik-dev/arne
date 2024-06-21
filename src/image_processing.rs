@@ -7,8 +7,19 @@ use std::{fmt::Debug, ops::AddAssign};
 
 use crate::{Error, Result, CONFIG};
 
+use crate::utils::get_label_from_path;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ImageLabel(pub String);
+
+impl std::fmt::Display for ImageLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub struct ImageReader {
-    images: Vec<Image>,
+    images: Vec<(ImageLabel, Image)>,
 }
 
 impl ImageReader {
@@ -17,20 +28,29 @@ impl ImageReader {
         let mut images = vec![];
         for entry in std::fs::read_dir(path)? {
             let path = entry?.path();
-            let path_str = path.to_str().unwrap().to_string();
-            let image = Image::from_path(path_str)?;
-            images.push(image);
+            if let Some(to_str) = path.to_str() {
+                let path_str = to_str.to_string();
+                let image = Image::from_path(path_str.clone())?;
+                if let Some(label) = get_label_from_path(path_str) {
+                    images.push((ImageLabel(label), image));
+                } else {
+                    return Err("ValueError: could not get label from path".into());
+                }
+            } else {
+                return Err("ValueError: could not convert path to string".into());
+            }
         }
         Ok(ImageReader { images })
     }
 
-    pub fn get_image(&self, index: usize) -> std::result::Result<&Image, Error> {
-        self.images
-            .get(index)
-            .ok_or("IndexError: index out of bounds".into())
+    pub fn get_image(&self, index: usize) -> std::result::Result<&(ImageLabel, Image), Error> {
+        if index >= self.images.len() {
+            return Err("IndexError: index out of bounds".into());
+        }
+        Ok(&self.images[index])
     }
 
-    pub fn images(&self) -> &Vec<Image> {
+    pub fn images(&self) -> &Vec<(ImageLabel, Image)> {
         &self.images
     }
 }
@@ -108,13 +128,20 @@ impl Image {
     // creates a new image, normalizes the data and binarizes it
     pub fn from_path(path: String) -> std::result::Result<Self, Error> {
         let data = image::io::Reader::open(path)?.decode()?.into_rgba8();
-        let grey = image::imageops::grayscale_alpha(&data);
+        let down_scaled = resize(
+            &data,
+            CONFIG.image_processing.image_width as u32,
+            CONFIG.image_processing.image_height as u32,
+            image::imageops::FilterType::Nearest,
+        );
+        let grey = image::imageops::grayscale_alpha(&down_scaled);
         let mut normalized_data = vec![];
+
         for pixel in grey.pixels() {
             normalized_data.push(pixel.0[0] as f32 / 255.0);
         }
         let mut image = Image {
-            data,
+            data: down_scaled,
             normalized_data,
             binarized_white: 1.0,
             binarized_black: 0.0,
@@ -493,9 +520,19 @@ mod tests {
 
     #[test]
     fn test_scale_real_image_down() {
-        let mut image = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
+        let image = Image::from_path("images/artificial/upscaled_resistor.png".to_string()).unwrap();
         image
-            .save_upscaled("test/images/resistor_downscaled.png".to_string())
+            .save_upscaled("test/images/resistor_down_then_upscaled.png".to_string())
+            .unwrap();
+        image.data.save("test/images/resistor_downscaled_color.png").unwrap();
+    }
+
+    #[test]
+    fn scale_image_up() {
+        let image = Image::from_path("images/artificial/resistor_rgba.png".to_string()).unwrap();
+
+        image
+            .save_upscaled("test/images/res1.png".to_string())
             .unwrap();
     }
     

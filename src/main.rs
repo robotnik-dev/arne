@@ -35,38 +35,53 @@ static_toml! {
 fn main() -> Result {
     env_logger::init();
 
+    // loading config variables from config.toml
+    log::info!("loading config variables");
+    let max_generations = CONFIG.genetic_algorithm.max_generations as u64;
+    let seed = CONFIG.genetic_algorithm.seed as u64;
+    let with_seed = CONFIG.genetic_algorithm.with_seed as bool;
+    let path_to_training_data = CONFIG.image_processing.path_to_training_data as &str;
+    let neurons_per_network = CONFIG.neural_network.neurons_per_network as usize;
+    let population_size = CONFIG.genetic_algorithm.population_size as usize;
+    let number_of_network_updates = CONFIG.neural_network.number_of_network_updates as usize;
+    let take_agents = CONFIG.genetic_algorithm.take_agents as usize;
+    let path_to_agents_dir = CONFIG.image_processing.path_to_agents_dir as &str;
+
     let mut rng = ChaCha8Rng::from_entropy();
 
-    if CONFIG.genetic_algorithm.with_seed {
-        log::info!("using seed: {}", CONFIG.genetic_algorithm.seed);
-        rng = ChaCha8Rng::seed_from_u64(CONFIG.genetic_algorithm.seed as u64);
+    if with_seed {
+        log::info!("using seed: {}", seed);
+        rng = ChaCha8Rng::seed_from_u64(seed as u64);
     }
 
     // intialize population
     let mut population = Population::new(
         &mut rng,
-        CONFIG.genetic_algorithm.population_size as usize,
-        CONFIG.neural_network.neurons_per_network as usize,
+        population_size as usize,
+        neurons_per_network as usize,
     );
     // create a reader to buffer training dataset
     let image_reader =
-        ImageReader::from_path(CONFIG.image_processing.path_to_training_data.to_string())?;
-
-    let algorithm_bar = ProgressBar::new(CONFIG.genetic_algorithm.max_generations as u64);
+        ImageReader::from_path(path_to_training_data.to_string())?;
+    
+    let algorithm_bar = ProgressBar::new(max_generations);
 
     // loop until stop criterial is met
     log::info!("starting genetic algorithm");
-    loop {
+    for _ in 0..max_generations {
+        algorithm_bar.inc(1);
         // for each image in the dataset
         for index in 0..image_reader.images().len() {
             // load image
-            let image = image_reader.get_image(index)?;
+            let (label, image) = image_reader.get_image(index)?;
+
             // evaluate the fitness of each individual of the population
             population.agents_mut().par_iter_mut().for_each(|agent| {
                 let fitness = agent
                     .evaluate(
+                        label.clone(),
                         &mut image.clone(),
-                        CONFIG.neural_network.number_of_network_updates as usize,
+                        number_of_network_updates,
                     )
                     .unwrap();
                 agent.set_fitness(fitness);
@@ -90,13 +105,6 @@ fn main() -> Result {
             // evolve the population
             population.evolve(new_agents);
         }
-
-        // check stop criteria
-        // max generations
-        if population.generation() >= CONFIG.genetic_algorithm.max_generations as u32 {
-            break;
-        }
-        algorithm_bar.inc(1);
     }
     algorithm_bar.finish();
     log::info!("genetic algorithm finished");
@@ -111,9 +119,9 @@ fn main() -> Result {
     // - the movement of the retina over time
 
     // remove 'best_agents' directory if it exists
-    std::fs::remove_dir_all(CONFIG.image_processing.path_to_agents_dir).unwrap_or_default();
+    std::fs::remove_dir_all(path_to_agents_dir).unwrap_or_default();
 
-    let generating_files_bar = ProgressBar::new(CONFIG.genetic_algorithm.take_agents as u64);
+    let generating_files_bar = ProgressBar::new(take_agents as u64);
     population
         .agents_mut()
         .par_iter_mut()
@@ -121,87 +129,43 @@ fn main() -> Result {
         .inspect(|(index, agent)| {
             log::debug!("agent {} fitness: {}", index, agent.fitness());
         })
-        .take(CONFIG.genetic_algorithm.take_agents as usize)
+        .take(take_agents)
         .for_each(|(index, agent)| {
-            // create a new directory for every agent with the index as name if the directory does not exist
-            std::fs::create_dir_all(format!(
-                "{}/{}",
-                CONFIG.image_processing.path_to_agents_dir, index
-            ))
-            .unwrap();
-
-            // save statistics per generation
             agent
                 .statistics_mut()
                 .par_iter_mut()
-                .enumerate()
-                .take(
-                    CONFIG
-                        .genetic_algorithm
-                        .generate_images_for_first_generations as usize,
-                )
-                .for_each(|(i, (image, memory, rnn))| {
+                .for_each(|(label, (image, stm, rnn))| {
                     std::fs::create_dir_all(format!(
-                        "{}/{}/gen_{}",
-                        CONFIG.image_processing.path_to_agents_dir, index, i
-                    ))
-                    .unwrap();
-
-                    memory
-                        .visualize(format!(
-                            "{}/{}/gen_{}/memory.png",
-                            CONFIG.image_processing.path_to_agents_dir, index, i
-                        ))
-                        .unwrap();
-                    image
-                        .save_upscaled(format!(
-                            "{}/{}/gen_{}/retina.png",
-                            CONFIG.image_processing.path_to_agents_dir, index, i
-                        ))
-                        .unwrap();
-                    rnn.to_json(Some(&format!(
-                        "{}/{}/gen_{}/rnn.json",
-                        CONFIG.image_processing.path_to_agents_dir, index, i
-                    )))
-                    .unwrap();
+                        "{}/{}/{}",
+                        path_to_agents_dir,
+                        index,
+                        label
+                    )).unwrap();
+                    image.save_upscaled(format!(
+                        "{}/{}/{}/retina.png",
+                        path_to_agents_dir,
+                        index,
+                        label
+                    )).unwrap();
+                    stm.visualize(format!(
+                        "{}/{}/{}/memory.png",
+                        path_to_agents_dir,
+                        index,
+                        label
+                    )).unwrap();
+                    rnn.to_json(format!(
+                        "{}/{}/{}/rnn.json",
+                        path_to_agents_dir,
+                        index,
+                        label
+                    )).unwrap();
                     rnn.to_dot(format!(
-                        "{}/{}/gen_{}/rnn.dot",
-                        CONFIG.image_processing.path_to_agents_dir, index, i
-                    ))
-                    .unwrap();
+                        "{}/{}/{}/rnn.dot",
+                        path_to_agents_dir,
+                        index,
+                        label
+                    )).unwrap();
                 });
-
-            // save the last image and memory of the final generation
-            if let Some((image, memory, rnn)) = agent.statistics_mut().iter_mut().last() {
-                std::fs::create_dir_all(format!(
-                    "{}/{}/final",
-                    CONFIG.image_processing.path_to_agents_dir, index
-                ))
-                .unwrap();
-                memory
-                    .visualize(format!(
-                        "{}/{}/final/memory.png",
-                        CONFIG.image_processing.path_to_agents_dir, index
-                    ))
-                    .unwrap();
-                image
-                    .save_upscaled(format!(
-                        "{}/{}/final/retina.png",
-                        CONFIG.image_processing.path_to_agents_dir, index
-                    ))
-                    .unwrap();
-                rnn.to_json(Some(&format!(
-                    "{}/{}/final/rnn.json",
-                    CONFIG.image_processing.path_to_agents_dir, index
-                )))
-                .unwrap();
-                rnn.to_dot(format!(
-                    "{}/{}/final/rnn.dot",
-                    CONFIG.image_processing.path_to_agents_dir, index
-                ))
-                .unwrap();
-            };
-
             generating_files_bar.inc(1);
         });
     generating_files_bar.finish();
