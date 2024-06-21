@@ -26,8 +26,8 @@ static_toml! {
 fn main() -> Result {
     env_logger::init();
 
-    // loading config variables from config.toml
     log::info!("loading config variables");
+
     let max_generations = CONFIG.genetic_algorithm.max_generations as u64;
     let seed = CONFIG.genetic_algorithm.seed as u64;
     let with_seed = CONFIG.genetic_algorithm.with_seed;
@@ -38,6 +38,8 @@ fn main() -> Result {
     let take_agents = CONFIG.genetic_algorithm.take_agents as usize;
     let path_to_agents_dir = CONFIG.image_processing.path_to_agents_dir as &str;
 
+    log::info!("setting up rng");
+
     let mut rng = ChaCha8Rng::from_entropy();
 
     if with_seed {
@@ -45,8 +47,13 @@ fn main() -> Result {
         rng = ChaCha8Rng::seed_from_u64(seed);
     }
 
+    log::info!("initializing population...");
+
     // intialize population
     let mut population = Population::new(&mut rng, population_size, neurons_per_network);
+
+    log::info!("loading training dataset...");
+
     // create a reader to buffer training dataset
     let image_reader = ImageReader::from_path(path_to_training_data.to_string())?;
 
@@ -68,30 +75,30 @@ fn main() -> Result {
                     .unwrap();
                 agent.set_fitness(fitness);
             });
-            // sort the population by fitness
-            population
-                .agents_mut()
-                .sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
-
-            // select, crossover and mutate
-            let new_agents = (0..population.agents().len())
-                .map(|_| {
-                    let (parent1, parent2) =
-                        population.select(&mut rng, SelectionMethod::Tournament);
-                    let mut offspring = parent1.crossover(&mut rng, parent2);
-                    offspring.mutate(&mut rng);
-                    offspring
-                })
-                .collect::<Vec<Agent>>();
-
-            // evolve the population
-            population.evolve(new_agents);
         }
+        // sort the population by fitness
+        population
+            .agents_mut()
+            .sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
+
+        // select, crossover and mutate
+        let new_agents = (0..population.agents().len())
+            .map(|_| {
+                let (parent1, parent2) =
+                    population.select(&mut rng, SelectionMethod::Tournament);
+                let mut offspring = parent1.crossover(&mut rng, parent2);
+                offspring.mutate(&mut rng);
+                offspring
+            })
+            .collect::<Vec<Agent>>();
+
+        // evolve the population
+        population.evolve(new_agents);
     }
     algorithm_bar.finish();
     log::info!("genetic algorithm finished");
     log::info!("stopped after {} generations", population.generation());
-    log::info!("generating files for agents...");
+    log::info!("generating files for the best {} agents...", take_agents);
 
     // remove 'best_agents' directory if it exists
     std::fs::remove_dir_all(path_to_agents_dir).unwrap_or_default();

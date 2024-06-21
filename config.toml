@@ -11,7 +11,7 @@ retina_highlight_alpha = 100
 retina_circle_radius = 10.0
 
 [neural_network]
-neurons_per_network = 2
+neurons_per_network = 3
 number_of_network_updates = 20
 movement_scale = 4.0
 
@@ -22,13 +22,12 @@ retina_lower = -1.0
 retina_upper = 1.0
 
 [genetic_algorithm]
-with_seed = false
+with_seed = true
 seed = 79
 population_size = 100
 max_generations = 1000
 tournament_size = 5
 take_agents = 3
-generate_images_for_first_generations = 2
 
 [genetic_algorithm.mutation_rates]
 variance = 0.2

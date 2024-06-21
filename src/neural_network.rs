@@ -306,7 +306,7 @@ impl Rnn {
             neuron.retina_inputs_mut().clear();
             for i in 0..retina.size() {
                 for j in 0..retina.size() {
-                    neuron.add_retina_input(retina.get_value(i, j));
+                    neuron.add_retina_input(retina.get_value(j, i));
                 }
             }
         });
@@ -315,14 +315,14 @@ impl Rnn {
     pub fn update(&mut self) {
         // collect all outputs from neurons in a hashmap with access to the index
         let outputs = self
-            .neurons
+            .neurons()
             .iter()
             .map(|neuron| (neuron.index, neuron.output))
             .collect::<std::collections::HashMap<usize, f64>>();
 
-        self.neurons.iter_mut().for_each(|neuron| {
+        self.neurons_mut().iter_mut().for_each(|neuron| {
             let mut activation = neuron
-                .input_connections
+                .input_connections()
                 .iter()
                 .map(|(index, weight)| weight * outputs[index])
                 .sum::<f64>();
@@ -331,8 +331,8 @@ impl Rnn {
             let retina_sum = neuron
                 .retina_inputs()
                 .iter()
-                .zip(neuron.retina_weights.iter())
-                .map(|(input, weight)| { *input } * weight)
+                .zip(neuron.retina_weights().iter())
+                .map(|(input, weight)| *input * weight)
                 .sum::<f64>();
             activation += retina_sum;
 
@@ -703,6 +703,10 @@ impl Neuron {
         &mut self.retina_inputs
     }
 
+    pub fn retina_weights(&self) -> &Vec<f64> {
+        &self.retina_weights
+    }
+
     pub fn add_retina_input(&mut self, input: f64) {
         self.retina_inputs.push(input);
     }
@@ -711,7 +715,7 @@ impl Neuron {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::genetic_algorithm::Agent;
+    use crate::{genetic_algorithm::Agent, image_processing::Image};
     use rand_chacha::ChaCha8Rng;
 
     #[test]
@@ -1015,5 +1019,23 @@ mod tests {
         assert_eq!(round2(new_rnn.neurons()[0].output()), -0.44);
         assert_eq!(round2(new_rnn.neurons()[1].bias()), -0.22);
         assert_eq!(new_rnn.graph.node_count(), 3);
+    }
+
+    #[test]
+    fn test_update_retina_inputs() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let image = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
+        let mut retina = image.create_retina_at(Position::new(3, 13), 5).unwrap();
+        rnn.update_inputs_from_retina(&retina);
+        rnn.to_json("test/saves/rnn/test_update_retina_inputs1.json".to_string()).unwrap();
+        
+        retina.move_mut(&Position::new(5, 0), &image);
+        rnn.update_inputs_from_retina(&retina);
+        rnn.to_json("test/saves/rnn/test_update_retina_inputs2.json".to_string()).unwrap();
+
+        // assert_eq!(rnn.neurons()[0].retina_inputs().len(), 9);
+        // assert_eq!(rnn.neurons()[1].retina_inputs().len(), 9);
+        // assert_eq!(rnn.neurons()[2].retina_inputs().len(), 9);
     }
 }

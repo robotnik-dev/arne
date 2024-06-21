@@ -63,9 +63,12 @@ struct FollowLine;
 impl FitnessCalculation<FollowLine> for Agent {
     fn calculate_fitness(&self, retina: &Retina) -> f64 {
         // if the neuron 3 has a high activation and the retina center value is a black pixel, than the fitness is high
+        // and the retina moved in the last time step. and NOT going back in the same direction
         let neuron_3 = self.genotype().neurons()[2].output();
         let retina_center_value = retina.get_center_value();
-        (retina.binarized_white() - retina_center_value + neuron_3) / 2.0
+        let moved = retina.get_delta_position().len() / CONFIG.neural_network.movement_scale as f64;
+        
+        (retina.binarized_white() - retina_center_value + neuron_3 + moved) / 3.0
     }
 }
 
@@ -99,7 +102,7 @@ impl AgentEvaluation for Agent {
             let delta = self.genotype().next_delta_position();
 
             // move the retina to the next position
-            retina.move_mut(&delta);
+            retina.move_mut(&delta, &image);
 
             // update all input connections to the retina from each neuron
             self.genotype_mut().update_inputs_from_retina(&retina);

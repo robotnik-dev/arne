@@ -65,6 +65,26 @@ impl Position {
     pub fn new(x: i32, y: i32) -> Self {
         Position { x, y }
     }
+
+    pub fn len(&self) -> f64 {
+        ((self.x.pow(2) + self.y.pow(2)) as f64).sqrt()
+    }
+
+    /// returns the normalized vector
+    pub fn normalized(&self) -> Position {
+        Position {
+            x: (self.x as f64 / self.len()) as i32,
+            y: (self.y as f64 / self.len()) as i32,
+        }
+    }
+
+    pub fn x(&self) -> i32 {
+        self.x
+    }
+
+    pub fn y(&self) -> i32 {
+        self.y
+    }
 }
 
 impl Add for Position {
@@ -194,6 +214,7 @@ impl Image {
             size,
             center_position: position,
             delta_position: Position::new(0, 0),
+            last_delta_position: Position::new(0, 0),
             binarized_white: self.binarized_white,
             binarized_black: self.binarized_black,
         })
@@ -303,6 +324,7 @@ pub struct Retina {
     data: Vec<f64>,
     size: usize,
     delta_position: Position,
+    last_delta_position: Position,
     // this is only for visualization purpose, the Rnn does not know this information
     center_position: Position,
     binarized_white: f64,
@@ -311,7 +333,6 @@ pub struct Retina {
 
 impl Retina {
     /// counting from 0
-    /// TODO: return Result
     pub fn get_value(&self, x: usize, y: usize) -> f64 {
         self.data[y * self.size + x]
     }
@@ -355,7 +376,7 @@ impl Retina {
 
     /// moves the retina by the given delta position and clamps it to the borders of the image
     /// when the retina would move outside the image
-    pub fn move_mut(&mut self, delta: &Position) {
+    pub fn move_mut(&mut self, delta: &Position, image: &Image) {
         let offset = self.size as i32 / 2 + 1;
         // calculate the difference of the amount of pixels that the retina might move outside the image
         let mut highest_diff_x = 0i32;
@@ -378,6 +399,18 @@ impl Retina {
         // move the retina to the new position and add the highest difference to the delta position
         self.delta_position = delta.clone() + Position::new(highest_diff_x, highest_diff_y);
         self.center_position += self.delta_position.clone();
+
+        // update the data vector with the new values
+        let mut new_data = vec![];
+        let offset = self.size() as i32 / 2 + 1;
+        for i in 0..self.size() as i32 {
+            for j in 0..self.size() as i32 {
+                let x = self.center_position.x - offset + j;
+                let y = self.center_position.y - offset + i;
+                new_data.push(image.get_pixel(x as u32, y as u32));
+            }
+        }
+        self.data = new_data;
     }
 }
 
@@ -406,7 +439,7 @@ mod tests {
             )
             .unwrap();
 
-        retina.move_mut(&Position::new(50, 0));
+        retina.move_mut(&Position::new(50, 0), &image);
 
         assert_eq!(
             retina.get_center_position().x,
@@ -426,7 +459,7 @@ mod tests {
             )
             .unwrap();
 
-        retina.move_mut(&Position::new(-50, 0));
+        retina.move_mut(&Position::new(-50, 0), &image);
 
         assert_eq!(
             retina.get_center_position().x,
@@ -444,7 +477,7 @@ mod tests {
             )
             .unwrap();
 
-        retina.move_mut(&Position::new(0, -60));
+        retina.move_mut(&Position::new(0, -60), &image);
         assert_eq!(
             retina.get_center_position().y,
             (CONFIG.image_processing.retina_size as usize as i32 / 2) + 1
@@ -461,7 +494,7 @@ mod tests {
             )
             .unwrap();
 
-        retina.move_mut(&Position::new(0, 80));
+        retina.move_mut(&Position::new(0, 80), &image);
         assert_eq!(
             retina.get_center_position().y,
             CONFIG.image_processing.image_height as u32 as i32
@@ -480,13 +513,13 @@ mod tests {
                 CONFIG.image_processing.retina_size as usize,
             )
             .unwrap();
-        retina.move_mut(&Position::new(1, 1));
+        retina.move_mut(&Position::new(1, 1), &image);
         assert_eq!(retina.get_center_position().x, 6);
         assert_eq!(retina.get_center_position().y, 6);
-        retina.move_mut(&Position::new(1, 1));
+        retina.move_mut(&Position::new(1, 1), &image);
         assert_eq!(retina.get_center_position().x, 7);
         assert_eq!(retina.get_center_position().y, 7);
-        retina.move_mut(&Position::new(-1, -1));
+        retina.move_mut(&Position::new(-1, -1), &image);
         assert_eq!(retina.get_center_position().x, 6);
         assert_eq!(retina.get_center_position().y, 6);
     }
@@ -503,13 +536,13 @@ mod tests {
             .unwrap();
 
         image.update_retina_movement(&retina);
-        retina.move_mut(&Position::new(21, 0));
+        retina.move_mut(&Position::new(21, 0), &image);
 
         image.update_retina_movement(&retina);
-        retina.move_mut(&Position::new(0, 6));
+        retina.move_mut(&Position::new(0, 6), &image);
 
         image.update_retina_movement(&retina);
-        retina.move_mut(&Position::new(-21, 0));
+        retina.move_mut(&Position::new(-21, 0), &image);
 
         image.update_retina_movement(&retina);
 
