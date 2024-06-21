@@ -62,14 +62,10 @@ struct FollowLine;
 
 impl FitnessCalculation<FollowLine> for Agent {
     fn calculate_fitness(&self, retina: &Retina) -> f64 {
-        // the higher the difference between the center pixel to 1.0(white) the higher the fitness
-        // and if the majority of the retina is dark, the fitness will be higher.
-        // calculate the mean of all the retina values
-        // let mean = retina.get_data().iter().sum::<u8>() as f64 / retina.get_data().len() as f64;
-        // print!("{} ", retina.get_center_value());
-        // println!("center value: {} ", retina.get_center_value());
-        // println!("binarized white: {} ", retina.binarized_white());
-        1.0 - (retina.binarized_white() - retina.get_center_value()) as f64
+        // if the neuron 3 has a high activation and the retina center value is a black pixel, than the fitness is high
+        let neuron_3 = self.genotype().neurons()[2].output();
+        let retina_center_value = retina.get_center_value();
+        (retina.binarized_white() - retina_center_value + neuron_3) / 2.0
     }
 }
 

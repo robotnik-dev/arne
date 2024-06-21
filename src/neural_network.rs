@@ -469,7 +469,7 @@ impl Rnn {
             neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng);
             neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng);
             if let Some(input) = neuron.retina_inputs_mut().iter_mut().choose(rng) {
-                *input = Normal::new(mean, std_dev).unwrap().sample(rng) as f32
+                *input = Normal::new(mean, std_dev).unwrap().sample(rng) as f64
             };
         };
     }
@@ -486,7 +486,7 @@ impl Rnn {
                 .iter_mut()
                 .for_each(|(_, weight)| *weight = Normal::new(mean, std_dev).unwrap().sample(rng));
             if let Some(input) = neuron.retina_inputs_mut().iter_mut().choose(rng) {
-                *input = Normal::new(mean, std_dev).unwrap().sample(rng) as f32
+                *input = Normal::new(mean, std_dev).unwrap().sample(rng) as f64
             };
         };
     }
@@ -614,7 +614,7 @@ pub struct Neuron {
     /// but store it separately
     self_activation: f64,
     /// the pixel values of the retina
-    retina_inputs: Vec<f32>,
+    retina_inputs: Vec<f64>,
     /// the weights of the retina inputs
     retina_weights: Vec<f64>,
 }
@@ -695,15 +695,15 @@ impl Neuron {
         self.bias = bias;
     }
 
-    pub fn retina_inputs(&self) -> &Vec<f32> {
+    pub fn retina_inputs(&self) -> &Vec<f64> {
         &self.retina_inputs
     }
 
-    pub fn retina_inputs_mut(&mut self) -> &mut Vec<f32> {
+    pub fn retina_inputs_mut(&mut self) -> &mut Vec<f64> {
         &mut self.retina_inputs
     }
 
-    pub fn add_retina_input(&mut self, input: f32) {
+    pub fn add_retina_input(&mut self, input: f64) {
         self.retina_inputs.push(input);
     }
 }

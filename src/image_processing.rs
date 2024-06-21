@@ -100,9 +100,9 @@ impl AddAssign for Position {
 pub struct Image {
     data: RgbaImage,
     /// greyscale , normalized AND binarized data in this vector
-    normalized_data: Vec<f32>,
-    binarized_white: f32,
-    binarized_black: f32,
+    normalized_data: Vec<f64>,
+    binarized_white: f64,
+    binarized_black: f64,
     /// used to visualize the retina movement on an upscaled image
     retina_positions: Vec<Position>,
 }
@@ -138,7 +138,7 @@ impl Image {
         let mut normalized_data = vec![];
 
         for pixel in grey.pixels() {
-            normalized_data.push(pixel.0[0] as f32 / 255.0);
+            normalized_data.push(pixel.0[0] as f64 / 255.0);
         }
         let mut image = Image {
             data: down_scaled,
@@ -151,12 +151,12 @@ impl Image {
         Ok(image)
     }
 
-    pub fn data(&self) -> &Vec<f32> {
+    pub fn data(&self) -> &Vec<f64> {
         &self.normalized_data
     }
 
     /// wrapper to get only the normalized value of a pixel
-    pub fn get_pixel(&self, x: u32, y: u32) -> f32 {
+    pub fn get_pixel(&self, x: u32, y: u32) -> f64 {
         self.normalized_data[y as usize * self.data.width() as usize + x as usize]
     }
 
@@ -276,13 +276,13 @@ impl Image {
         // 3. use the mean of the dark pixels to set every dark pixel of the real image to that mean value
         // 4. do it wth the white pixels the same way
         let mean_color =
-            self.normalized_data.iter().sum::<f32>() / self.normalized_data.len() as f32;
-        let (dark_pixels, white_pixels): (Vec<f32>, Vec<f32>) = self
+            self.normalized_data.iter().sum::<f64>() / self.normalized_data.len() as f64;
+        let (dark_pixels, white_pixels): (Vec<f64>, Vec<f64>) = self
             .normalized_data
             .iter()
             .partition(|pixel| **pixel < mean_color);
-        let dark_binary = dark_pixels.iter().sum::<f32>() / dark_pixels.len() as f32;
-        let white_binary = white_pixels.iter().sum::<f32>() / white_pixels.len() as f32;
+        let dark_binary = dark_pixels.iter().sum::<f64>() / dark_pixels.len() as f64;
+        let white_binary = white_pixels.iter().sum::<f64>() / white_pixels.len() as f64;
 
         // save the binarized values
         self.binarized_black = dark_binary;
@@ -300,27 +300,27 @@ impl Image {
 
 pub struct Retina {
     // color data stored in a vector
-    data: Vec<f32>,
+    data: Vec<f64>,
     size: usize,
     delta_position: Position,
     // this is only for visualization purpose, the Rnn does not know this information
     center_position: Position,
-    binarized_white: f32,
-    binarized_black: f32,
+    binarized_white: f64,
+    binarized_black: f64,
 }
 
 impl Retina {
     /// counting from 0
     /// TODO: return Result
-    pub fn get_value(&self, x: usize, y: usize) -> f32 {
+    pub fn get_value(&self, x: usize, y: usize) -> f64 {
         self.data[y * self.size + x]
     }
 
-    pub fn get_center_value(&self) -> f32 {
+    pub fn get_center_value(&self) -> f64 {
         self.get_value(self.size / 2, self.size / 2)
     }
 
-    pub fn get_data(&self) -> &Vec<f32> {
+    pub fn get_data(&self) -> &Vec<f64> {
         &self.data
     }
 
@@ -328,11 +328,11 @@ impl Retina {
         self.size
     }
 
-    pub fn binarized_white(&self) -> f32 {
+    pub fn binarized_white(&self) -> f64 {
         self.binarized_white
     }
 
-    pub fn binarized_black(&self) -> f32 {
+    pub fn binarized_black(&self) -> f64 {
         self.binarized_black
     }
 
