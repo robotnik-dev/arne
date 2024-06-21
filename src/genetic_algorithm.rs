@@ -132,13 +132,9 @@ impl AgentEvaluation for Agent {
         let image = image.clone();
         let stm = self.genotype().short_term_memory().clone();
         let rnn = self.genotype().clone();
-        self
-            .statistics_mut()
-            .insert(
-                label.clone(),
-                (image, stm, rnn),
-            );
-        
+        self.statistics_mut()
+            .insert(label.clone(), (image, stm, rnn));
+
         Ok(local_fitness / number_of_updates as f64)
     }
 }
@@ -209,7 +205,7 @@ pub struct Agent {
     fitness: f64,
     genotype: Rnn,
     // for statistics purposes, we store the final images with the retina movement and all the short term memories here
-    pub statistics: HashMap<ImageLabel, (Image, ShortTermMemory, Rnn)>
+    pub statistics: HashMap<ImageLabel, (Image, ShortTermMemory, Rnn)>,
 }
 
 impl Clone for Agent {
@@ -217,7 +213,7 @@ impl Clone for Agent {
         Agent {
             fitness: self.fitness,
             genotype: self.genotype.clone(),
-            statistics: self.statistics.clone()
+            statistics: self.statistics.clone(),
         }
     }
 }
@@ -227,7 +223,7 @@ impl Agent {
         Agent {
             fitness: 0.0,
             genotype: Rnn::new(rng, number_of_neurons),
-            statistics: HashMap::new()
+            statistics: HashMap::new(),
         }
     }
 

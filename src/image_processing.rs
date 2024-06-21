@@ -250,7 +250,7 @@ impl Image {
                     (line_end.x as f32 - 0.5) * scaling_factor_x,
                     (line_end.y as f32 - 0.5) * scaling_factor_y,
                 ),
-                Rgba([127, 127, 127, 255])
+                Rgba([127, 127, 127, 255]),
             );
 
             // draw at the end of the linesegment a circle
@@ -261,7 +261,7 @@ impl Image {
                     ((line_end.y as f32 - 0.5) * scaling_factor_y) as i32,
                 ),
                 circle_radius as i32,
-                Rgba([0, 255, 0, 255])
+                Rgba([0, 255, 0, 255]),
             );
         }
 
@@ -520,11 +520,15 @@ mod tests {
 
     #[test]
     fn test_scale_real_image_down() {
-        let image = Image::from_path("images/artificial/upscaled_resistor.png".to_string()).unwrap();
+        let image =
+            Image::from_path("images/artificial/upscaled_resistor.png".to_string()).unwrap();
         image
             .save_upscaled("test/images/resistor_down_then_upscaled.png".to_string())
             .unwrap();
-        image.data.save("test/images/resistor_downscaled_color.png").unwrap();
+        image
+            .data
+            .save("test/images/resistor_downscaled_color.png")
+            .unwrap();
     }
 
     #[test]
@@ -535,5 +539,4 @@ mod tests {
             .save_upscaled("test/images/res1.png".to_string())
             .unwrap();
     }
-    
 }

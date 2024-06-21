@@ -23,15 +23,6 @@ static_toml! {
     pub static CONFIG = include_toml!("config.toml");
 }
 
-// Stuff to change and experiment with:
-// - number of generations
-// - TODO: change global variance over time (decrease)
-// - crossover method is uniform, try other methods
-// - selection method is roulette wheel, try other methods
-// - mutation chances
-// - number of neurons in the RNN
-// - Population size
-
 fn main() -> Result {
     env_logger::init();
 
@@ -39,7 +30,7 @@ fn main() -> Result {
     log::info!("loading config variables");
     let max_generations = CONFIG.genetic_algorithm.max_generations as u64;
     let seed = CONFIG.genetic_algorithm.seed as u64;
-    let with_seed = CONFIG.genetic_algorithm.with_seed as bool;
+    let with_seed = CONFIG.genetic_algorithm.with_seed;
     let path_to_training_data = CONFIG.image_processing.path_to_training_data as &str;
     let neurons_per_network = CONFIG.neural_network.neurons_per_network as usize;
     let population_size = CONFIG.genetic_algorithm.population_size as usize;
@@ -51,19 +42,14 @@ fn main() -> Result {
 
     if with_seed {
         log::info!("using seed: {}", seed);
-        rng = ChaCha8Rng::seed_from_u64(seed as u64);
+        rng = ChaCha8Rng::seed_from_u64(seed);
     }
 
     // intialize population
-    let mut population = Population::new(
-        &mut rng,
-        population_size as usize,
-        neurons_per_network as usize,
-    );
+    let mut population = Population::new(&mut rng, population_size, neurons_per_network);
     // create a reader to buffer training dataset
-    let image_reader =
-        ImageReader::from_path(path_to_training_data.to_string())?;
-    
+    let image_reader = ImageReader::from_path(path_to_training_data.to_string())?;
+
     let algorithm_bar = ProgressBar::new(max_generations);
 
     // loop until stop criterial is met
@@ -78,11 +64,7 @@ fn main() -> Result {
             // evaluate the fitness of each individual of the population
             population.agents_mut().par_iter_mut().for_each(|agent| {
                 let fitness = agent
-                    .evaluate(
-                        label.clone(),
-                        &mut image.clone(),
-                        number_of_network_updates,
-                    )
+                    .evaluate(label.clone(), &mut image.clone(), number_of_network_updates)
                     .unwrap();
                 agent.set_fitness(fitness);
             });
@@ -111,13 +93,6 @@ fn main() -> Result {
     log::info!("stopped after {} generations", population.generation());
     log::info!("generating files for agents...");
 
-    // the best 30 agents should be saved with:
-    // - their fitness
-    // - the rnn as json file
-    // - the rnn as png image
-    // - the rnn as dot file
-    // - the movement of the retina over time
-
     // remove 'best_agents' directory if it exists
     std::fs::remove_dir_all(path_to_agents_dir).unwrap_or_default();
 
@@ -135,36 +110,29 @@ fn main() -> Result {
                 .statistics_mut()
                 .par_iter_mut()
                 .for_each(|(label, (image, stm, rnn))| {
-                    std::fs::create_dir_all(format!(
-                        "{}/{}/{}",
-                        path_to_agents_dir,
-                        index,
-                        label
-                    )).unwrap();
-                    image.save_upscaled(format!(
-                        "{}/{}/{}/retina.png",
-                        path_to_agents_dir,
-                        index,
-                        label
-                    )).unwrap();
+                    std::fs::create_dir_all(format!("{}/{}/{}", path_to_agents_dir, index, label))
+                        .unwrap();
+                    image
+                        .save_upscaled(format!(
+                            "{}/{}/{}/retina.png",
+                            path_to_agents_dir, index, label
+                        ))
+                        .unwrap();
                     stm.visualize(format!(
                         "{}/{}/{}/memory.png",
-                        path_to_agents_dir,
-                        index,
-                        label
-                    )).unwrap();
+                        path_to_agents_dir, index, label
+                    ))
+                    .unwrap();
                     rnn.to_json(format!(
                         "{}/{}/{}/rnn.json",
-                        path_to_agents_dir,
-                        index,
-                        label
-                    )).unwrap();
+                        path_to_agents_dir, index, label
+                    ))
+                    .unwrap();
                     rnn.to_dot(format!(
                         "{}/{}/{}/rnn.dot",
-                        path_to_agents_dir,
-                        index,
-                        label
-                    )).unwrap();
+                        path_to_agents_dir, index, label
+                    ))
+                    .unwrap();
                 });
             generating_files_bar.inc(1);
         });
