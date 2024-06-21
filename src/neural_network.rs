@@ -332,7 +332,7 @@ impl Rnn {
                 .retina_inputs()
                 .iter()
                 .zip(neuron.retina_weights.iter())
-                .map(|(input, weight)| *input as f64 * weight)
+                .map(|(input, weight)| { *input } * weight)
                 .sum::<f64>();
             activation += retina_sum;
 
@@ -469,7 +469,7 @@ impl Rnn {
             neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng);
             neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng);
             if let Some(input) = neuron.retina_inputs_mut().iter_mut().choose(rng) {
-                *input = Normal::new(mean, std_dev).unwrap().sample(rng) as f64
+                *input = Normal::new(mean, std_dev).unwrap().sample(rng)
             };
         };
     }
@@ -486,7 +486,7 @@ impl Rnn {
                 .iter_mut()
                 .for_each(|(_, weight)| *weight = Normal::new(mean, std_dev).unwrap().sample(rng));
             if let Some(input) = neuron.retina_inputs_mut().iter_mut().choose(rng) {
-                *input = Normal::new(mean, std_dev).unwrap().sample(rng) as f64
+                *input = Normal::new(mean, std_dev).unwrap().sample(rng)
             };
         };
     }
