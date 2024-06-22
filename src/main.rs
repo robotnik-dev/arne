@@ -119,12 +119,12 @@ fn main() -> Result {
                 .for_each(|(label, (image, stm, rnn))| {
                     std::fs::create_dir_all(format!("{}/{}/{}", path_to_agents_dir, index, label))
                         .unwrap();
-                    image
-                        .save_upscaled(format!(
-                            "{}/{}/{}/retina.png",
-                            path_to_agents_dir, index, label
-                        ))
-                        .unwrap();
+                    // image
+                    //     .save_upscaled(format!(
+                    //         "{}/{}/{}/retina.png",
+                    //         path_to_agents_dir, index, label
+                    //     ))
+                    //     .unwrap();
                     stm.visualize(format!(
                         "{}/{}/{}/memory.png",
                         path_to_agents_dir, index, label

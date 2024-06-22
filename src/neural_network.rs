@@ -49,7 +49,7 @@ impl ShortTermMemory {
             .collect()
     }
 
-    pub fn add_snapshot(&mut self, outputs: Vec<f64>, time_step: u32) {
+    pub fn add_snapshot(&mut self, outputs: Vec<f32>, time_step: u32) {
         let snapshot = SnapShot::new(outputs, time_step);
         self.snapshots.push(snapshot);
     }
@@ -62,7 +62,7 @@ impl ShortTermMemory {
 
     /// function that returns a list of tuples of (timestep, neuron_output) as a vector
     /// for evry snapshot that was already saved so that it can be visualized
-    pub fn get_visualization_data(&self) -> Option<Vec<Vec<(u32, f64)>>> {
+    pub fn get_visualization_data(&self) -> Option<Vec<Vec<(u32, f32)>>> {
         let mut data = vec![];
         for idx in 0..self.get_neuron_count() {
             let mut snapshot_data = vec![];
@@ -94,7 +94,7 @@ impl ShortTermMemory {
 
             let mut chart_context = chart_builder.build_cartesian_2d(
                 1u32..CONFIG.neural_network.number_of_network_updates as u32,
-                -1.0f64..1.0f64,
+                -1.0f32..1.0f32,
             )?;
 
             chart_context
@@ -132,7 +132,7 @@ impl PartialEq for ShortTermMemory {
 /// to store the outputs of the neurons to visulaize the network
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SnapShot {
-    outputs: Vec<f64>,
+    outputs: Vec<f32>,
     time_step: u32,
 }
 
@@ -146,15 +146,15 @@ impl PartialEq for SnapShot {
 }
 
 impl SnapShot {
-    pub fn new(outputs: Vec<f64>, time_step: u32) -> Self {
+    pub fn new(outputs: Vec<f32>, time_step: u32) -> Self {
         SnapShot { outputs, time_step }
     }
 
-    pub fn outputs(&self) -> &Vec<f64> {
+    pub fn outputs(&self) -> &Vec<f32> {
         &self.outputs
     }
 
-    pub fn outputs_mut(&mut self) -> &mut Vec<f64> {
+    pub fn outputs_mut(&mut self) -> &mut Vec<f32> {
         &mut self.outputs
     }
 
@@ -172,7 +172,7 @@ pub struct Rnn {
     neurons: Vec<Neuron>,
     short_term_memory: ShortTermMemory,
     /// visual representation of the network
-    graph: Graph<(usize, f64), f64>,
+    graph: Graph<(usize, f32), f32>,
     statistics: Statistics,
 }
 
@@ -185,8 +185,8 @@ impl PartialEq for Rnn {
     }
 }
 
-impl From<Graph<(usize, f64), f64>> for Rnn {
-    fn from(graph: Graph<(usize, f64), f64>) -> Self {
+impl From<Graph<(usize, f32), f32>> for Rnn {
+    fn from(graph: Graph<(usize, f32), f32>) -> Self {
         let mut neurons = vec![];
         for node in graph.node_indices() {
             let mut neuron = Neuron {
@@ -238,10 +238,10 @@ impl Rnn {
 
         // connect all neurons with each other
         // with the Xavier initialization
-        // let (lower, upper) = (-1.0 / (neuron_count as f64).sqrt(), 1.0 / (neuron_count as f64).sqrt());
+        // let (lower, upper) = (-1.0 / (neuron_count as f32).sqrt(), 1.0 / (neuron_count as f32).sqrt());
         let (lower, upper) = (
-            CONFIG.neural_network.weight_bounds.neuron_lower,
-            CONFIG.neural_network.weight_bounds.neuron_upper,
+            CONFIG.neural_network.weight_bounds.neuron_lower as f32,
+            CONFIG.neural_network.weight_bounds.neuron_upper as f32,
         );
         neurons.iter_mut().enumerate().for_each(|(index, neuron)| {
             for i in 0..neuron_count {
@@ -279,7 +279,7 @@ impl Rnn {
         &mut self.short_term_memory
     }
 
-    pub fn add_snapshot(&mut self, outputs: Vec<f64>, time_step: u32) {
+    pub fn add_snapshot(&mut self, outputs: Vec<f32>, time_step: u32) {
         self.short_term_memory.add_snapshot(outputs, time_step);
     }
 
@@ -295,8 +295,8 @@ impl Rnn {
     /// scaling factor can be set in the config file
     pub fn next_delta_position(&self) -> Position {
         Position::new(
-            (self.neurons()[0].output() * CONFIG.neural_network.movement_scale) as i32,
-            (self.neurons()[1].output() * CONFIG.neural_network.movement_scale) as i32,
+            (self.neurons()[0].output() * CONFIG.neural_network.movement_scale as f32) as i32,
+            (self.neurons()[1].output() * CONFIG.neural_network.movement_scale as f32) as i32,
         )
     }
 
@@ -318,14 +318,14 @@ impl Rnn {
             .neurons()
             .iter()
             .map(|neuron| (neuron.index, neuron.output))
-            .collect::<std::collections::HashMap<usize, f64>>();
+            .collect::<std::collections::HashMap<usize, f32>>();
 
         self.neurons_mut().iter_mut().for_each(|neuron| {
             let mut activation = neuron
                 .input_connections()
                 .iter()
                 .map(|(index, weight)| weight * outputs[index])
-                .sum::<f64>();
+                .sum::<f32>();
 
             // add sum of retina inputs times each retina weight to the activation
             let retina_sum = neuron
@@ -333,7 +333,7 @@ impl Rnn {
                 .iter()
                 .zip(neuron.retina_weights().iter())
                 .map(|(input, weight)| *input * weight)
-                .sum::<f64>();
+                .sum::<f32>();
             activation += retina_sum;
 
             // add self activation to the activation
@@ -460,8 +460,8 @@ impl Rnn {
     /// randomize the weights self activation and bias from a random neuron
     /// randomize with a normal distribution with mean 0 and variance 0.2
     pub fn mutate_neuron(&mut self, rng: &mut dyn RngCore) {
-        let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance;
-        let mean = CONFIG.genetic_algorithm.mutation_rates.mean;
+        let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance as f32;
+        let mean = CONFIG.genetic_algorithm.mutation_rates.mean as f32;
         if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
             neuron.input_connections.iter_mut().for_each(|(_, weight)| {
                 *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
@@ -478,8 +478,8 @@ impl Rnn {
     /// randomize with a normal distribution with mean 0 and variance 0.2
     /// Update also one random weight from the retina inputs
     pub fn mutate_weights(&mut self, rng: &mut dyn RngCore) {
-        let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance;
-        let mean = CONFIG.genetic_algorithm.mutation_rates.mean;
+        let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance as f32;
+        let mean = CONFIG.genetic_algorithm.mutation_rates.mean as f32;
         if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
             neuron
                 .input_connections
@@ -494,8 +494,8 @@ impl Rnn {
     /// randomize the bias from a random neuron
     /// randomize with a normal distribution with mean 0 and variance 0.2
     pub fn mutate_bias(&mut self, rng: &mut dyn RngCore) {
-        let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance;
-        let mean = CONFIG.genetic_algorithm.mutation_rates.mean;
+        let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance as f32;
+        let mean = CONFIG.genetic_algorithm.mutation_rates.mean as f32;
         if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
             neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng)
         };
@@ -504,8 +504,8 @@ impl Rnn {
     /// randomize the self activation from a random neuron
     /// randomize with a normal distribution with mean 0 and variance 0.2
     pub fn mutate_self_activation(&mut self, rng: &mut dyn RngCore) {
-        let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance;
-        let mean = CONFIG.genetic_algorithm.mutation_rates.mean;
+        let std_dev = CONFIG.genetic_algorithm.mutation_rates.variance as f32;
+        let mean = CONFIG.genetic_algorithm.mutation_rates.mean as f32;
         if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
             neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng)
         };
@@ -569,10 +569,10 @@ impl Rnn {
     }
 }
 
-impl From<Rnn> for Graph<(usize, f64), f64> {
+impl From<Rnn> for Graph<(usize, f32), f32> {
     fn from(rnn: Rnn) -> Self {
         // converting the RNN to a graph
-        let mut graph = Graph::<(usize, f64), f64>::new();
+        let mut graph = Graph::<(usize, f32), f32>::new();
         let mut nodes = vec![];
 
         // creating nodes and adding self activation
@@ -603,20 +603,20 @@ pub struct Neuron {
     // a unique identifier for the neuron
     index: usize,
     /// the activation of the neuron
-    // activation: f64,
+    // activation: f32,
     /// output of the neuron after activation_function is applied
-    output: f64,
+    output: f32,
     /// the indices of the neurons that are connected to this neuron and the weight of the connection
     /// the weight of 0 means no connection
-    input_connections: Vec<(usize, f64)>,
-    bias: f64,
+    input_connections: Vec<(usize, f32)>,
+    bias: f32,
     /// to represent the memory of the neuron, we append self activation to the input vector
     /// but store it separately
-    self_activation: f64,
+    self_activation: f32,
     /// the pixel values of the retina
-    retina_inputs: Vec<f64>,
+    retina_inputs: Vec<f32>,
     /// the weights of the retina inputs
-    retina_weights: Vec<f64>,
+    retina_weights: Vec<f32>,
 }
 
 impl PartialEq for Neuron {
@@ -638,18 +638,18 @@ impl Neuron {
     pub fn new(rng: &mut dyn RngCore, index: usize, _neuron_count: usize) -> Self {
         // genrate random weights for the retina weights
         let (retina_lower, retina_upper) = (
-            CONFIG.neural_network.weight_bounds.retina_lower,
-            CONFIG.neural_network.weight_bounds.retina_upper,
+            CONFIG.neural_network.weight_bounds.retina_lower as f32,
+            CONFIG.neural_network.weight_bounds.retina_upper as f32,
         );
         let retina_weights = (0..CONFIG.image_processing.retina_size
             * CONFIG.image_processing.retina_size)
             .map(|_| rng.gen_range(retina_lower..=retina_upper))
-            .collect::<Vec<f64>>();
+            .collect::<Vec<f32>>();
 
-        // let (lower, upper) = (-1.0 / (neuron_count as f64).sqrt(), 1.0 / (neuron_count as f64).sqrt());
+        // let (lower, upper) = (-1.0 / (neuron_count as f32).sqrt(), 1.0 / (neuron_count as f32).sqrt());
         let (neuron_lower, neuron_upper) = (
-            CONFIG.neural_network.weight_bounds.neuron_lower,
-            CONFIG.neural_network.weight_bounds.neuron_upper,
+            CONFIG.neural_network.weight_bounds.neuron_lower as f32,
+            CONFIG.neural_network.weight_bounds.neuron_upper as f32,
         );
         Neuron {
             index,
@@ -663,51 +663,51 @@ impl Neuron {
         }
     }
 
-    pub fn output(&self) -> f64 {
+    pub fn output(&self) -> f32 {
         self.output
     }
 
-    pub fn set_output(&mut self, output: f64) {
+    pub fn set_output(&mut self, output: f32) {
         self.output = output;
     }
 
-    pub fn input_connections(&self) -> &Vec<(usize, f64)> {
+    pub fn input_connections(&self) -> &Vec<(usize, f32)> {
         &self.input_connections
     }
 
-    pub fn input_connections_mut(&mut self) -> &mut Vec<(usize, f64)> {
+    pub fn input_connections_mut(&mut self) -> &mut Vec<(usize, f32)> {
         &mut self.input_connections
     }
 
-    pub fn self_activation(&self) -> f64 {
+    pub fn self_activation(&self) -> f32 {
         self.self_activation
     }
 
-    pub fn set_self_activation(&mut self, self_activation: f64) {
+    pub fn set_self_activation(&mut self, self_activation: f32) {
         self.self_activation = self_activation;
     }
 
-    pub fn bias(&self) -> f64 {
+    pub fn bias(&self) -> f32 {
         self.bias
     }
 
-    pub fn set_bias(&mut self, bias: f64) {
+    pub fn set_bias(&mut self, bias: f32) {
         self.bias = bias;
     }
 
-    pub fn retina_inputs(&self) -> &Vec<f64> {
+    pub fn retina_inputs(&self) -> &Vec<f32> {
         &self.retina_inputs
     }
 
-    pub fn retina_inputs_mut(&mut self) -> &mut Vec<f64> {
+    pub fn retina_inputs_mut(&mut self) -> &mut Vec<f32> {
         &mut self.retina_inputs
     }
 
-    pub fn retina_weights(&self) -> &Vec<f64> {
+    pub fn retina_weights(&self) -> &Vec<f32> {
         &self.retina_weights
     }
 
-    pub fn add_retina_input(&mut self, input: f64) {
+    pub fn add_retina_input(&mut self, input: f32) {
         self.retina_inputs.push(input);
     }
 }
@@ -732,13 +732,13 @@ mod tests {
                 .iter_mut()
                 .for_each(|(_, weight)| {
                     *weight = rng.gen_range(
-                        CONFIG.neural_network.weight_bounds.neuron_lower
-                            ..=CONFIG.neural_network.weight_bounds.neuron_upper,
+                        CONFIG.neural_network.weight_bounds.neuron_lower as f32
+                            ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
                     )
                 });
             neuron.set_self_activation(rng.gen_range(
-                CONFIG.neural_network.weight_bounds.neuron_lower
-                    ..=CONFIG.neural_network.weight_bounds.neuron_upper,
+                CONFIG.neural_network.weight_bounds.neuron_lower as f32
+                    ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
             ));
             neuron.set_bias(1.);
         });
@@ -771,13 +771,13 @@ mod tests {
                 .iter_mut()
                 .for_each(|(_, weight)| {
                     *weight = rng.gen_range(
-                        CONFIG.neural_network.weight_bounds.neuron_lower
-                            ..=CONFIG.neural_network.weight_bounds.neuron_upper,
+                        CONFIG.neural_network.weight_bounds.neuron_lower as f32
+                            ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
                     )
                 });
             neuron.set_self_activation(rng.gen_range(
-                CONFIG.neural_network.weight_bounds.neuron_lower
-                    ..=CONFIG.neural_network.weight_bounds.neuron_upper,
+                CONFIG.neural_network.weight_bounds.neuron_lower as f32
+                    ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
             ));
             neuron.set_bias(1.);
         });
@@ -914,18 +914,18 @@ mod tests {
             .for_each(|neuron| {
                 neuron.input_connections.iter_mut().for_each(|(_, weight)| {
                     *weight = rng.gen_range(
-                        CONFIG.neural_network.weight_bounds.neuron_lower
-                            ..=CONFIG.neural_network.weight_bounds.neuron_upper,
+                        CONFIG.neural_network.weight_bounds.neuron_lower as f32
+                            ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
                     )
                 });
                 neuron.set_self_activation(rng.gen_range(
-                    CONFIG.neural_network.weight_bounds.neuron_lower
-                        ..=CONFIG.neural_network.weight_bounds.neuron_upper,
+                    CONFIG.neural_network.weight_bounds.neuron_lower as f32
+                        ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
                 ));
                 neuron.set_bias(-0.6);
             });
 
-        let graph = Graph::<(usize, f64), f64>::from(agent.genotype().clone());
+        let graph = Graph::<(usize, f32), f32>::from(agent.genotype().clone());
 
         graph.node_indices().for_each(|node| {
             graph.neighbors(node).for_each(|neighbor| {
@@ -950,7 +950,7 @@ mod tests {
 
     #[test]
     fn test_from_graph_to_rnn() {
-        let mut graph = Graph::<(usize, f64), f64>::new();
+        let mut graph = Graph::<(usize, f32), f32>::new();
         let node1 = graph.add_node((0, 1.0));
         let node2 = graph.add_node((1, -0.5));
         let node3 = graph.add_node((2, 0.0));
@@ -996,7 +996,7 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let rnn = Rnn::new(&mut rng, 3);
 
-        let graph = Graph::<(usize, f64), f64>::from(rnn.clone());
+        let graph = Graph::<(usize, f32), f32>::from(rnn.clone());
         let rnn2 = Rnn::from(graph.clone());
 
         assert_eq!(rnn, rnn2);

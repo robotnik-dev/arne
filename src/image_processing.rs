@@ -1,13 +1,20 @@
+use image::buffer::ConvertBuffer;
 use image::imageops::resize;
-use image::{ImageBuffer, LumaA, Rgba, RgbaImage};
+use image::{DynamicImage, GenericImage, GenericImageView, GrayAlphaImage, ImageBuffer, LumaA, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
 use nalgebra::clamp;
+use rayon::vec;
 use std::ops::{Add, Sub};
 use std::{fmt::Debug, ops::AddAssign};
 
 use crate::{Error, Result, CONFIG};
 
 use crate::utils::get_label_from_path;
+
+pub enum ImageType {
+    Rgba,
+    Grey,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImageLabel(pub String);
@@ -66,15 +73,15 @@ impl Position {
         Position { x, y }
     }
 
-    pub fn len(&self) -> f64 {
-        ((self.x.pow(2) + self.y.pow(2)) as f64).sqrt()
+    pub fn len(&self) -> f32 {
+        ((self.x.pow(2) + self.y.pow(2)) as f32).sqrt()
     }
 
     /// returns the normalized vector
     pub fn normalized(&self) -> Position {
         Position {
-            x: (self.x as f64 / self.len()) as i32,
-            y: (self.y as f64 / self.len()) as i32,
+            x: (self.x as f32 / self.len()) as i32,
+            y: (self.y as f32 / self.len()) as i32,
         }
     }
 
@@ -118,66 +125,150 @@ impl AddAssign for Position {
 
 #[derive(Debug, Clone)]
 pub struct Image {
-    data: RgbaImage,
-    /// greyscale , normalized AND binarized data in this vector
-    normalized_data: Vec<f64>,
-    binarized_white: f64,
-    binarized_black: f64,
+    /// generic container for the image data
+    rgba: RgbaImage,
+    grey: GrayAlphaImage,
+    binarized_grey: GrayAlphaImage,
+    width: u32,
+    height: u32,
+    binarized_white: u8,
+    binarized_black: u8,
     /// used to visualize the retina movement on an upscaled image
     retina_positions: Vec<Position>,
 }
 
 impl Image {
+    /// Empty image with the default size
     pub fn empty() -> Self {
         Image {
-            data: RgbaImage::new(
-                CONFIG.image_processing.image_width as u32,
-                CONFIG.image_processing.image_height as u32,
+            rgba: RgbaImage::new(
+                CONFIG.image_processing.real_image_width as u32,
+                CONFIG.image_processing.real_image_height as u32,
             ),
-            normalized_data: vec![
-                0.0;
-                CONFIG.image_processing.image_width as usize
-                    * CONFIG.image_processing.image_height as usize
-            ],
-            binarized_white: 1.0,
-            binarized_black: 0.0,
+            grey: GrayAlphaImage::new(
+                CONFIG.image_processing.real_image_width as u32,
+                CONFIG.image_processing.real_image_height as u32,
+            ),
+            binarized_grey: GrayAlphaImage::new(
+                CONFIG.image_processing.real_image_width as u32,
+                CONFIG.image_processing.real_image_height as u32,
+            ),
+            width: CONFIG.image_processing.real_image_width as u32,
+            height: CONFIG.image_processing.real_image_height as u32,
+            binarized_white: 255,
+            binarized_black: 0,
             retina_positions: vec![],
         }
     }
 
-    // creates a new image, normalizes the data and binarizes it
+    /// load from a path and return an image with color data
     pub fn from_path(path: String) -> std::result::Result<Self, Error> {
-        let data = image::io::Reader::open(path)?.decode()?.into_rgba8();
-        let down_scaled = resize(
-            &data,
-            CONFIG.image_processing.image_width as u32,
-            CONFIG.image_processing.image_height as u32,
+        let rgba = image::io::Reader::open(path.clone())?.decode()?.into_rgba8();
+        let grey = image::io::Reader::open(path)?.decode()?.into_luma_alpha8();
+        let width = rgba.width();
+        let height = rgba.height();
+        Ok(Image {
+            rgba,
+            grey,
+            width,
+            height,
+            binarized_grey: GrayAlphaImage::new(
+                width,
+                height,
+            ),
+            binarized_white: 255,
+            binarized_black: 0,
+            retina_positions: vec![],
+        })
+    }
+
+    pub fn rgba(&self) -> &RgbaImage {
+        &self.rgba
+    }
+
+    pub fn grey(&self) -> &GrayAlphaImage {
+        &self.grey
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+    
+    /// get grey value normalized between 0 and 1
+    pub fn get_pixel(&self, x: u32, y: u32) -> f32 {
+        self.grey.get_pixel(x, y).0[0] as f32 / 255.0
+    }
+
+    /// resizes all internal datastructures to new size
+    pub fn resize_all(&mut self, width: u32, height: u32) -> std::result::Result<&mut Self, Error> {
+        let new_rgba = resize(
+            &self.rgba,
+            width,
+            height,
             image::imageops::FilterType::Nearest,
         );
-        let grey = image::imageops::grayscale_alpha(&down_scaled);
-        let mut normalized_data = vec![];
+        let new_grey = resize(
+            &self.grey,
+            width,
+            height,
+            image::imageops::FilterType::Nearest,
+        );
+        let new_bin_grey = resize(
+            &self.binarized_grey,
+            width,
+            height,
+            image::imageops::FilterType::Nearest,
+        );
+        self.rgba = new_rgba;
+        self.grey = new_grey;
+        self.binarized_grey = new_bin_grey;
 
-        for pixel in grey.pixels() {
-            normalized_data.push(pixel.0[0] as f64 / 255.0);
+        Ok(self)
+    }
+
+    // binarizes the grey image
+    pub fn binarize(&mut self, relative: bool) -> std::result::Result<&mut Self, Error> {
+        // 1. calculated the mean color of the image
+        // 2. collect dark and white pixels in seperate vector to cacluate the mean of the white and dark pixels respectively
+        // 3. use the mean of the dark pixels to set every dark pixel of the real image to that mean value
+        // 4. do it wth the white pixels the same way
+        let mean_color =
+            self.grey().pixels().map(|p| p.0[0] as f32).sum::<f32>() / self.grey().pixels().count() as f32;
+
+        let (dark_pixels, white_pixels): (Vec<f32>, Vec<f32>) = self
+            .grey()
+            .pixels()
+            .map(|pixel| pixel.0[0] as f32)
+            .partition(|pixel| *pixel < mean_color);
+
+        let black_binary = dark_pixels.iter().sum::<f32>() / dark_pixels.len() as f32;
+        let white_binary = white_pixels.iter().sum::<f32>() / white_pixels.len() as f32;
+
+        // save the binarized values
+        self.binarized_black = black_binary as u8;
+        self.binarized_white = white_binary as u8;
+        let black = if relative {black_binary as u8} else {0};
+        let white = if relative {white_binary as u8} else {255};
+        for (x, y, pixel) in self.grey.enumerate_pixels() {
+            if (pixel.0[0] as f32) < black_binary {
+                self.binarized_grey.put_pixel(x, y, LumaA([black, 255]));
+            } else {
+                self.binarized_grey.put_pixel(x, y, LumaA([white, 255]));
+            }
         }
-        let mut image = Image {
-            data: down_scaled,
-            normalized_data,
-            binarized_white: 1.0,
-            binarized_black: 0.0,
-            retina_positions: vec![],
-        };
-        image.binarize();
-        Ok(image)
+
+        Ok(self)
     }
 
-    pub fn data(&self) -> &Vec<f64> {
-        &self.normalized_data
-    }
-
-    /// wrapper to get only the normalized value of a pixel
-    pub fn get_pixel(&self, x: u32, y: u32) -> f64 {
-        self.normalized_data[y as usize * self.data.width() as usize + x as usize]
+    /// blurs the grey image with the given sigma
+    pub fn blur(&mut self, sigma: f32) -> std::result::Result<&mut Self, Error> {
+        let blurred = image::imageops::blur(&self.grey, sigma);
+        self.grey = blurred;
+        Ok(self)
     }
 
     /// create a subview into the image with the given position with size
@@ -197,8 +288,8 @@ impl Image {
             for j in 0..size as i32 {
                 // when going negative with this operation it means that we try to access a pixel that is outside of the image
                 // so we give back an error
-                if position.x >= CONFIG.image_processing.image_width as u32 as i32 + offset
-                    || position.y >= CONFIG.image_processing.image_height as u32 as i32 + offset
+                if position.x >= self.width() as i32 + offset
+                    || position.y >= self.height() as i32 + offset
                     || position.x < offset
                     || position.y < offset
                 {
@@ -215,8 +306,8 @@ impl Image {
             center_position: position,
             delta_position: Position::new(0, 0),
             last_delta_position: Position::new(0, 0),
-            binarized_white: self.binarized_white,
-            binarized_black: self.binarized_black,
+            binarized_white_normalized: self.binarized_white as f32 / 255.0,
+            binarized_black_normalized: self.binarized_black as f32 / 255.0,
         })
     }
 
@@ -224,22 +315,31 @@ impl Image {
         self.retina_positions.push(retina.get_center_position());
     }
 
-    pub fn save_upscaled(&self, path: String) -> Result {
-        let width = CONFIG.image_processing.real_image_width as u32;
-        let height = CONFIG.image_processing.real_image_height as u32;
+    pub fn save_rgba(&self, path: String) -> Result {
+        self.rgba.save(path)?;
+        Ok(())
+    }
+
+    pub fn save_grey(&self, path: String) -> Result {
+        self.grey.save(path)?;
+        Ok(())
+    }
+
+    pub fn save_binarized_grey(&self, path: String) -> Result {
+        self.binarized_grey.save(path)?;
+        Ok(())
+    }
+
+    /// on the rgba version of the image
+    pub fn save_with_retina(&self, path: String) -> Result {
         let size = CONFIG.image_processing.retina_size as f32;
         let circle_radius = CONFIG.image_processing.retina_circle_radius as f32;
-        let mut canvas = resize(
-            &self.data,
-            width,
-            height,
-            image::imageops::FilterType::Nearest,
-        );
 
-        let scaling_factor_x = width as f32 / CONFIG.image_processing.image_width as f32;
-        let scaling_factor_y = height as f32 / CONFIG.image_processing.image_height as f32;
+        let scaling_factor_x = self.width() as f32 / CONFIG.image_processing.image_width as f32;
+        let scaling_factor_y = self.height() as f32 / CONFIG.image_processing.image_height as f32;
         let scaled_size = size * scaling_factor_x;
 
+        let mut canvas = self.rgba.clone();
         for (index, retina_position) in self.retina_positions.iter().enumerate() {
             let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;
@@ -285,63 +385,36 @@ impl Image {
                 Rgba([0, 255, 0, 255]),
             );
         }
-
         canvas.save(path)?;
+ 
         Ok(())
     }
-
-    // binarizes the image and stores it internally in the normalized_data vector
-    fn binarize(&mut self) {
-        // 1. calculated the mean color of the image
-        // 2. collect dark and white pixels in seperate vector to cacluate the mean of the white and dark pixels respectively
-        // 3. use the mean of the dark pixels to set every dark pixel of the real image to that mean value
-        // 4. do it wth the white pixels the same way
-        let mean_color =
-            self.normalized_data.iter().sum::<f64>() / self.normalized_data.len() as f64;
-        let (dark_pixels, white_pixels): (Vec<f64>, Vec<f64>) = self
-            .normalized_data
-            .iter()
-            .partition(|pixel| **pixel < mean_color);
-        let dark_binary = dark_pixels.iter().sum::<f64>() / dark_pixels.len() as f64;
-        let white_binary = white_pixels.iter().sum::<f64>() / white_pixels.len() as f64;
-
-        // save the binarized values
-        self.binarized_black = dark_binary;
-        self.binarized_white = white_binary;
-
-        for pixel in self.normalized_data.iter_mut() {
-            if *pixel <= mean_color {
-                *pixel = dark_binary;
-            } else {
-                *pixel = white_binary;
-            }
-        }
-    }
+    
 }
 
 pub struct Retina {
     // color data stored in a vector
-    data: Vec<f64>,
+    data: Vec<f32>,
     size: usize,
     delta_position: Position,
     last_delta_position: Position,
     // this is only for visualization purpose, the Rnn does not know this information
     center_position: Position,
-    binarized_white: f64,
-    binarized_black: f64,
+    binarized_white_normalized: f32,
+    binarized_black_normalized: f32,
 }
 
 impl Retina {
     /// counting from 0
-    pub fn get_value(&self, x: usize, y: usize) -> f64 {
+    pub fn get_value(&self, x: usize, y: usize) -> f32 {
         self.data[y * self.size + x]
     }
 
-    pub fn get_center_value(&self) -> f64 {
+    pub fn get_center_value(&self) -> f32 {
         self.get_value(self.size / 2, self.size / 2)
     }
 
-    pub fn get_data(&self) -> &Vec<f64> {
+    pub fn get_data(&self) -> &Vec<f32> {
         &self.data
     }
 
@@ -349,12 +422,12 @@ impl Retina {
         self.size
     }
 
-    pub fn binarized_white(&self) -> f64 {
-        self.binarized_white
+    pub fn binarized_white(&self) -> f32 {
+        self.binarized_white_normalized
     }
 
-    pub fn binarized_black(&self) -> f64 {
-        self.binarized_black
+    pub fn binarized_black(&self) -> f32 {
+        self.binarized_black_normalized
     }
 
     pub fn get_center_position(&self) -> Position {
@@ -525,51 +598,32 @@ mod tests {
     }
 
     #[test]
-    fn test_scale_image_up_with_retina_movement() {
-        let mut image = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
+    fn test_load_real_image() {
+        let mut image = Image::from_path("images/test/03.png".to_string()).unwrap();
+        image.blur(3.0).unwrap();
+        image.resize_all(360, 277);
+        image.binarize(false).unwrap();
+        image.save_binarized_grey("test/images/02_resized.png".to_string()).unwrap();
 
-        let mut retina = image
-            .create_retina_at(
-                Position::new(7, 7),
-                CONFIG.image_processing.retina_size as usize,
-            )
-            .unwrap();
+        image.resize_all(33, 25);
+        image.save_binarized_grey("test/images/02_binarized_resized.png".to_string()).unwrap();
+        
 
-        image.update_retina_movement(&retina);
-        retina.move_mut(&Position::new(21, 0), &image);
+        // image.save_grey("test/images/01_grey.png".to_string()).unwrap();
+        // image.save_rgba("test/images/01_rgba.png".to_string()).unwrap();
+        // image.resize(33, 25).unwrap();
+        // image.save_grey("test/images/01_grey_resized.png".to_string()).unwrap();
+        // image.save_rgba("test/images/01_rgba_resized.png".to_string()).unwrap();
+        // image.save_with_retina("test/images/01_orig.png".to_string()).unwrap();
+        // println!("{:?}", image.grey().pixels().min_by(|a, b| a.0[0].partial_cmp(&b.0[0]).unwrap()));
+        // println!("{:?}", image.grey().pixels().max_by(|a, b| a.0[0].partial_cmp(&b.0[0]).unwrap()));
 
-        image.update_retina_movement(&retina);
-        retina.move_mut(&Position::new(0, 6), &image);
+        // image.to_grey().unwrap();
+        // image.save_with_retina("test/images/01_grey.png".to_string()).unwrap();
+        
 
-        image.update_retina_movement(&retina);
-        retina.move_mut(&Position::new(-21, 0), &image);
-
-        image.update_retina_movement(&retina);
-
-        image
-            .save_upscaled("test/images/resistor_upscaled.png".to_string())
-            .unwrap();
-    }
-
-    #[test]
-    fn test_scale_real_image_down() {
-        let image =
-            Image::from_path("images/artificial/upscaled_resistor.png".to_string()).unwrap();
-        image
-            .save_upscaled("test/images/resistor_down_then_upscaled.png".to_string())
-            .unwrap();
-        image
-            .data
-            .save("test/images/resistor_downscaled_color.png")
-            .unwrap();
-    }
-
-    #[test]
-    fn scale_image_up() {
-        let image = Image::from_path("images/artificial/resistor_rgba.png".to_string()).unwrap();
-
-        image
-            .save_upscaled("test/images/res1.png".to_string())
-            .unwrap();
+        // image
+        //     .save("test/images/real_img.png".to_string())
+        //     .unwrap();
     }
 }

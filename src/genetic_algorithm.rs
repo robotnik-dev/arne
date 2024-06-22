@@ -43,7 +43,7 @@ pub enum SelectionMethod {
 /// The actual mapping between the genotype and the phenotype.
 /// Need to be implemented for each invdividual marker type like FollowLine
 trait FitnessCalculation<T> {
-    fn calculate_fitness(&self, retina: &Retina) -> f64;
+    fn calculate_fitness(&self, retina: &Retina) -> f32;
 }
 
 pub trait AgentEvaluation {
@@ -52,7 +52,7 @@ pub trait AgentEvaluation {
         label: ImageLabel,
         image: &mut Image,
         number_of_updates: usize,
-    ) -> std::result::Result<f64, Error>;
+    ) -> std::result::Result<f32, Error>;
 }
 
 /// Marker type. This phenotype/solution to the problem is a line follower.
@@ -61,12 +61,12 @@ pub trait AgentEvaluation {
 struct FollowLine;
 
 impl FitnessCalculation<FollowLine> for Agent {
-    fn calculate_fitness(&self, retina: &Retina) -> f64 {
+    fn calculate_fitness(&self, retina: &Retina) -> f32 {
         // if the neuron 3 has a high activation and the retina center value is a black pixel, than the fitness is high
         // and the retina moved in the last time step. and NOT going back in the same direction
         let neuron_3 = self.genotype().neurons()[2].output();
         let retina_center_value = retina.get_center_value();
-        let moved = retina.get_delta_position().len() / CONFIG.neural_network.movement_scale as f64;
+        let moved = retina.get_delta_position().len() / CONFIG.neural_network.movement_scale as f32;
         
         (retina.binarized_white() - retina_center_value + neuron_3 + moved) / 3.0
     }
@@ -78,7 +78,7 @@ impl AgentEvaluation for Agent {
         label: ImageLabel,
         image: &mut Image,
         number_of_updates: usize,
-    ) -> std::result::Result<f64, Error> {
+    ) -> std::result::Result<f32, Error> {
         let mut local_fitness = 0.0;
         self.genotype_mut().short_term_memory_mut().clear();
         // create a retina at a specific position (top left of image)
@@ -120,7 +120,7 @@ impl AgentEvaluation for Agent {
                 .neurons()
                 .iter()
                 .map(|neuron| neuron.output())
-                .collect::<Vec<f64>>();
+                .collect::<Vec<f32>>();
             let time_step = (i + 1) as u32;
             self.genotype_mut().add_snapshot(outputs, time_step);
 
@@ -134,7 +134,7 @@ impl AgentEvaluation for Agent {
         self.statistics_mut()
             .insert(label.clone(), (image, stm, rnn));
 
-        Ok(local_fitness / number_of_updates as f64)
+        Ok(local_fitness / number_of_updates as f32)
     }
 }
 
@@ -201,7 +201,7 @@ impl Population {
 }
 
 pub struct Agent {
-    fitness: f64,
+    fitness: f32,
     genotype: Rnn,
     // for statistics purposes, we store the final images with the retina movement and all the short term memories here
     pub statistics: HashMap<ImageLabel, (Image, ShortTermMemory, Rnn)>,
@@ -226,11 +226,11 @@ impl Agent {
         }
     }
 
-    pub fn fitness(&self) -> f64 {
+    pub fn fitness(&self) -> f32 {
         self.fitness
     }
 
-    pub fn set_fitness(&mut self, fitness: f64) {
+    pub fn set_fitness(&mut self, fitness: f32) {
         self.fitness = fitness;
     }
 
