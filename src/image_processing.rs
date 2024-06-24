@@ -1,20 +1,14 @@
-use image::buffer::ConvertBuffer;
 use image::imageops::resize;
-use image::{DynamicImage, GenericImage, GenericImageView, GrayAlphaImage, ImageBuffer, LumaA, Rgba, RgbaImage};
+use image::{DynamicImage, GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
 use nalgebra::clamp;
-use rayon::vec;
 use std::ops::{Add, Sub};
 use std::{fmt::Debug, ops::AddAssign};
 
 use crate::{Error, Result, CONFIG};
-
 use crate::utils::get_label_from_path;
-
-pub enum ImageType {
-    Rgba,
-    Grey,
-}
+use skeletonize::edge_detection::sobel4;
+use skeletonize::{foreground, thin_image_edges, MarkingMethod};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImageLabel(pub String);
@@ -127,8 +121,7 @@ impl AddAssign for Position {
 pub struct Image {
     /// generic container for the image data
     rgba: RgbaImage,
-    grey: GrayAlphaImage,
-    binarized_grey: GrayAlphaImage,
+    grey: GrayImage,
     width: u32,
     height: u32,
     binarized_white: u8,
@@ -145,11 +138,7 @@ impl Image {
                 CONFIG.image_processing.real_image_width as u32,
                 CONFIG.image_processing.real_image_height as u32,
             ),
-            grey: GrayAlphaImage::new(
-                CONFIG.image_processing.real_image_width as u32,
-                CONFIG.image_processing.real_image_height as u32,
-            ),
-            binarized_grey: GrayAlphaImage::new(
+            grey: GrayImage::new(
                 CONFIG.image_processing.real_image_width as u32,
                 CONFIG.image_processing.real_image_height as u32,
             ),
@@ -164,7 +153,7 @@ impl Image {
     /// load from a path and return an image with color data
     pub fn from_path(path: String) -> std::result::Result<Self, Error> {
         let rgba = image::io::Reader::open(path.clone())?.decode()?.into_rgba8();
-        let grey = image::io::Reader::open(path)?.decode()?.into_luma_alpha8();
+        let grey = image::io::Reader::open(path)?.decode()?.into_luma8();
         let width = rgba.width();
         let height = rgba.height();
         Ok(Image {
@@ -172,10 +161,6 @@ impl Image {
             grey,
             width,
             height,
-            binarized_grey: GrayAlphaImage::new(
-                width,
-                height,
-            ),
             binarized_white: 255,
             binarized_black: 0,
             retina_positions: vec![],
@@ -186,7 +171,7 @@ impl Image {
         &self.rgba
     }
 
-    pub fn grey(&self) -> &GrayAlphaImage {
+    pub fn grey(&self) -> &GrayImage {
         &self.grey
     }
 
@@ -215,51 +200,10 @@ impl Image {
             &self.grey,
             width,
             height,
-            image::imageops::FilterType::Nearest,
-        );
-        let new_bin_grey = resize(
-            &self.binarized_grey,
-            width,
-            height,
-            image::imageops::FilterType::Nearest,
+            image::imageops::FilterType::Lanczos3,
         );
         self.rgba = new_rgba;
         self.grey = new_grey;
-        self.binarized_grey = new_bin_grey;
-
-        Ok(self)
-    }
-
-    // binarizes the grey image
-    pub fn binarize(&mut self, relative: bool) -> std::result::Result<&mut Self, Error> {
-        // 1. calculated the mean color of the image
-        // 2. collect dark and white pixels in seperate vector to cacluate the mean of the white and dark pixels respectively
-        // 3. use the mean of the dark pixels to set every dark pixel of the real image to that mean value
-        // 4. do it wth the white pixels the same way
-        let mean_color =
-            self.grey().pixels().map(|p| p.0[0] as f32).sum::<f32>() / self.grey().pixels().count() as f32;
-
-        let (dark_pixels, white_pixels): (Vec<f32>, Vec<f32>) = self
-            .grey()
-            .pixels()
-            .map(|pixel| pixel.0[0] as f32)
-            .partition(|pixel| *pixel < mean_color);
-
-        let black_binary = dark_pixels.iter().sum::<f32>() / dark_pixels.len() as f32;
-        let white_binary = white_pixels.iter().sum::<f32>() / white_pixels.len() as f32;
-
-        // save the binarized values
-        self.binarized_black = black_binary as u8;
-        self.binarized_white = white_binary as u8;
-        let black = if relative {black_binary as u8} else {0};
-        let white = if relative {white_binary as u8} else {255};
-        for (x, y, pixel) in self.grey.enumerate_pixels() {
-            if (pixel.0[0] as f32) < black_binary {
-                self.binarized_grey.put_pixel(x, y, LumaA([black, 255]));
-            } else {
-                self.binarized_grey.put_pixel(x, y, LumaA([white, 255]));
-            }
-        }
 
         Ok(self)
     }
@@ -268,6 +212,36 @@ impl Image {
     pub fn blur(&mut self, sigma: f32) -> std::result::Result<&mut Self, Error> {
         let blurred = image::imageops::blur(&self.grey, sigma);
         self.grey = blurred;
+        Ok(self)
+    }
+
+    pub fn edged(&mut self, threshold: Option<f32>) -> std::result::Result<&mut Self, Error> {
+        let img = image::DynamicImage::ImageLuma8(self.grey.clone());
+        self.grey = sobel4::<foreground::Black>(&img, threshold)?.into_luma8();
+        // thin_image_edges::<foreground::White>(&mut filtered, method, None)?;
+        Ok(self)
+    }
+
+    pub fn thinned(&mut self, threshold: f32) -> std::result::Result<&mut Self, Error> {
+        let method = MarkingMethod::Standard;
+        let img = image::DynamicImage::ImageLuma8(self.grey.clone());
+        let mut filtered = sobel4::<foreground::Black>(&img, Some(threshold))?;
+        thin_image_edges::<foreground::White>(&mut filtered, method, None)?;
+        Ok(self)
+    }
+
+    pub fn close(&mut self, norm: imageproc::distance_transform::Norm, k: u8) -> std::result::Result<&mut Self, Error> {
+        imageproc::morphology::close_mut(&mut self.grey, norm, k);
+        Ok(self)
+    }
+
+    pub fn dilate(&mut self, norm: imageproc::distance_transform::Norm, k: u8) -> std::result::Result<&mut Self, Error> {
+        imageproc::morphology::dilate_mut(&mut self.grey, norm, k);
+        Ok(self)
+    }
+
+    pub fn erode(&mut self, norm: imageproc::distance_transform::Norm, k: u8) -> std::result::Result<&mut Self, Error> {
+        imageproc::morphology::erode_mut(&mut self.grey, norm, k);
         Ok(self)
     }
 
@@ -305,7 +279,6 @@ impl Image {
             size,
             center_position: position,
             delta_position: Position::new(0, 0),
-            last_delta_position: Position::new(0, 0),
             binarized_white_normalized: self.binarized_white as f32 / 255.0,
             binarized_black_normalized: self.binarized_black as f32 / 255.0,
         })
@@ -315,19 +288,14 @@ impl Image {
         self.retina_positions.push(retina.get_center_position());
     }
 
-    pub fn save_rgba(&self, path: String) -> Result {
+    pub fn save_rgba(&mut self, path: String) -> std::result::Result<&mut Self, Error> {
         self.rgba.save(path)?;
-        Ok(())
+        Ok(self)
     }
 
-    pub fn save_grey(&self, path: String) -> Result {
+    pub fn save_grey(&mut self, path: String) -> std::result::Result<&mut Self, Error> {
         self.grey.save(path)?;
-        Ok(())
-    }
-
-    pub fn save_binarized_grey(&self, path: String) -> Result {
-        self.binarized_grey.save(path)?;
-        Ok(())
+        Ok(self)
     }
 
     /// on the rgba version of the image
@@ -397,7 +365,6 @@ pub struct Retina {
     data: Vec<f32>,
     size: usize,
     delta_position: Position,
-    last_delta_position: Position,
     // this is only for visualization purpose, the Rnn does not know this information
     center_position: Position,
     binarized_white_normalized: f32,
@@ -441,7 +408,7 @@ impl Retina {
     pub fn create_png_at(&self, path: String) -> Result {
         let mut imgbuf = ImageBuffer::new(self.size as u32, self.size as u32);
         for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
-            *pixel = LumaA([(self.get_value(x as usize, y as usize) * 255.0) as u8, 255]);
+            *pixel = Luma([(self.get_value(x as usize, y as usize) * 255.0) as u8]);
         }
         imgbuf.save(path)?;
         Ok(())
@@ -598,32 +565,71 @@ mod tests {
     }
 
     #[test]
-    fn test_load_real_image() {
-        let mut image = Image::from_path("images/test/03.png".to_string()).unwrap();
-        image.blur(3.0).unwrap();
-        image.resize_all(360, 277);
-        image.binarize(false).unwrap();
-        image.save_binarized_grey("test/images/02_resized.png".to_string()).unwrap();
-
-        image.resize_all(33, 25);
-        image.save_binarized_grey("test/images/02_binarized_resized.png".to_string()).unwrap();
-        
-
-        // image.save_grey("test/images/01_grey.png".to_string()).unwrap();
-        // image.save_rgba("test/images/01_rgba.png".to_string()).unwrap();
-        // image.resize(33, 25).unwrap();
-        // image.save_grey("test/images/01_grey_resized.png".to_string()).unwrap();
-        // image.save_rgba("test/images/01_rgba_resized.png".to_string()).unwrap();
-        // image.save_with_retina("test/images/01_orig.png".to_string()).unwrap();
-        // println!("{:?}", image.grey().pixels().min_by(|a, b| a.0[0].partial_cmp(&b.0[0]).unwrap()));
-        // println!("{:?}", image.grey().pixels().max_by(|a, b| a.0[0].partial_cmp(&b.0[0]).unwrap()));
-
-        // image.to_grey().unwrap();
-        // image.save_with_retina("test/images/01_grey.png".to_string()).unwrap();
-        
-
-        // image
-        //     .save("test/images/real_img.png".to_string())
-        //     .unwrap();
+    fn test_in_sequence() {
+        super::tests::test_edges();
+        super::tests::test_close();
+        // super::tests::test_resize();
+        // super::tests::test_thinned();
     }
+
+    #[test]
+    fn test_edges() {
+        let mut image = Image::from_path("images/test/03.png".to_string()).unwrap();
+
+        image
+            .edged(None).unwrap()
+            .save_grey("test/images/03_edges.png".to_string()).unwrap();
+    }
+
+    #[test]
+    fn test_resize() {
+        let mut image = Image::from_path("test/images/03_eroded.png".to_string()).unwrap();
+
+        image
+            .resize_all(66,50).unwrap()
+            .save_grey("test/images/03_resized.png".to_string()).unwrap();
+    }
+
+    #[test]
+    fn test_close() {
+        let mut image = Image::from_path("test/images/03_edges.png".to_string()).unwrap();
+
+        image
+            .close(imageproc::distance_transform::Norm::L1, 3).unwrap()
+            .save_grey("test/images/03_closed.png".to_string()).unwrap();
+    }
+
+    #[test]
+    fn test_dilate() {
+        let mut image = Image::from_path("test/images/03_edges.png".to_string()).unwrap();
+
+        image
+            .dilate(imageproc::distance_transform::Norm::L1, 1).unwrap()
+            .save_grey("test/images/03_dilated.png".to_string()).unwrap();
+    }
+
+    #[test]
+    fn test_erode() {
+        let mut image = Image::from_path("test/images/03_closed.png".to_string()).unwrap();
+
+        image
+            .erode(imageproc::distance_transform::Norm::L1, 4).unwrap()
+            .save_grey("test/images/03_eroded.png".to_string()).unwrap();
+    }
+
+
+    #[test]
+    fn test_edges2() {
+        let mut image = Image::from_path("test/images/03_resized.png".to_string()).unwrap();
+
+        image
+            .edged(Some(0.2)).unwrap()
+            .dilate(imageproc::distance_transform::Norm::L1, 1).unwrap()
+            .erode(imageproc::distance_transform::Norm::L1, 1).unwrap()
+            // .edged(0.1).unwrap()
+            .thinned(0.6).unwrap()
+            .save_grey("test/images/03_edges2.png".to_string()).unwrap();
+    }
+    
+
 }
