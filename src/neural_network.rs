@@ -171,6 +171,8 @@ impl SnapShot {
 pub struct Rnn {
     neurons: Vec<Neuron>,
     short_term_memory: ShortTermMemory,
+    #[serde(skip)]
+    retina_weights_buffer: Vec<f32>,
     /// visual representation of the network
     graph: Graph<(usize, f32), f32>,
     statistics: Statistics,
@@ -222,6 +224,7 @@ impl From<Graph<(usize, f32), f32>> for Rnn {
         Rnn {
             neurons,
             short_term_memory: ShortTermMemory::new(),
+            retina_weights_buffer: vec![],
             graph,
             statistics: Statistics::new(),
         }
@@ -231,8 +234,20 @@ impl From<Graph<(usize, f32), f32>> for Rnn {
 impl Rnn {
     pub fn new(rng: &mut dyn RngCore, neuron_count: usize) -> Self {
         let mut neurons = vec![];
+        // genrate random weights for the retina weights
+        let (retina_lower, retina_upper) = (
+            CONFIG.neural_network.weight_bounds.retina_lower as f32,
+            CONFIG.neural_network.weight_bounds.retina_upper as f32,
+        );
+
+        // maximal retina size is goal image height^2
+        let retina_weights_buffer = (0..CONFIG.image_processing.goal_image_width
+            * CONFIG.image_processing.goal_image_height)
+            .map(|_| rng.gen_range(retina_lower..=retina_upper))
+            .collect::<Vec<f32>>();
+
         for i in 0..neuron_count {
-            let neuron = Neuron::new(rng, i, neuron_count);
+            let neuron = Neuron::new(rng, i, neuron_count, &retina_weights_buffer);
             neurons.push(neuron);
         }
 
@@ -256,6 +271,7 @@ impl Rnn {
         Rnn {
             neurons,
             short_term_memory: ShortTermMemory::new(),
+            retina_weights_buffer,
             graph: Graph::default(),
             statistics: Statistics::new(),
         }
@@ -295,9 +311,16 @@ impl Rnn {
     /// scaling factor can be set in the config file
     pub fn next_delta_position(&self) -> Position {
         Position::new(
-            (self.neurons()[0].output() * CONFIG.neural_network.movement_scale as f32) as i32,
-            (self.neurons()[1].output() * CONFIG.neural_network.movement_scale as f32) as i32,
+            (self.neurons()[0].output() * CONFIG.neural_network.retina_movement_speed as f32)
+                as i32,
+            (self.neurons()[1].output() * CONFIG.neural_network.retina_movement_speed as f32)
+                as i32,
         )
+    }
+
+    /// the scaled output of neuron 3 is the resize factor of the retina, scaled by the retina_resize_speed
+    pub fn next_size_factor(&self) -> f32 {
+        self.neurons()[2].output() * CONFIG.neural_network.retina_resize_speed as f32
     }
 
     /// each neruon has a connection to all of the 25 retina pixels and these need to be updated each rnn update step
@@ -309,6 +332,18 @@ impl Rnn {
                     neuron.add_retina_input(retina.get_value(j, i));
                 }
             }
+        });
+    }
+
+    pub fn update_retina_size(&mut self, size: usize) {
+        let new_retina_weights = self
+            .retina_weights_buffer
+            .iter()
+            .cloned()
+            .take(size * size)
+            .collect::<Vec<f32>>();
+        self.neurons_mut().iter_mut().for_each(|neuron| {
+            neuron.update_retina_weights(new_retina_weights.clone());
         });
     }
 
@@ -513,36 +548,9 @@ impl Rnn {
 
     /// saves the RNN to a json file at the saves/rnn folder or if a path is provided at the given path
     pub fn to_json(&mut self, path: String) -> Result {
-        // save Dot in Rnn
         self.graph = Graph::from(self.clone());
 
         let json = serde_json::to_string_pretty(self)?;
-        // let file_path: String;
-
-        // if let Some(path) = path {
-        //     file_path = path.clone();
-        // } else {
-        //     let mut entries = std::fs::read_dir("saves/rnn")?
-        //         .map(|res| res.map(|e| e.path()))
-        //         .collect::<std::result::Result<Vec<_>, io::Error>>()?;
-        //     entries.sort();
-        //     let new_file_name = entries
-        //         .iter()
-        //         .last()
-        //         .map(|path| {
-        //             let last_file_index = path
-        //                 .to_str()
-        //                 .unwrap()
-        //                 .replace("saves/rnn", "")
-        //                 .replace(".json", "")
-        //                 .replace('\\', "")
-        //                 .parse::<usize>()
-        //                 .unwrap();
-        //             format!("{}.json", last_file_index + 1)
-        //         })
-        //         .unwrap_or("0.json".to_string());
-        //     file_path = format!("saves/rnn/{}", new_file_name);
-        // }
 
         OpenOptions::new()
             .create(true)
@@ -614,6 +622,7 @@ pub struct Neuron {
     /// but store it separately
     self_activation: f32,
     /// the pixel values of the retina
+    #[serde(skip)]
     retina_inputs: Vec<f32>,
     /// the weights of the retina inputs
     retina_weights: Vec<f32>,
@@ -635,15 +644,20 @@ impl PartialEq for Neuron {
 }
 
 impl Neuron {
-    pub fn new(rng: &mut dyn RngCore, index: usize, _neuron_count: usize) -> Self {
-        // genrate random weights for the retina weights
-        let (retina_lower, retina_upper) = (
-            CONFIG.neural_network.weight_bounds.retina_lower as f32,
-            CONFIG.neural_network.weight_bounds.retina_upper as f32,
-        );
-        let retina_weights = (0..CONFIG.image_processing.retina_size
-            * CONFIG.image_processing.retina_size)
-            .map(|_| rng.gen_range(retina_lower..=retina_upper))
+    pub fn new(
+        rng: &mut dyn RngCore,
+        index: usize,
+        _neuron_count: usize,
+        retina_weights_buffer: &[f32],
+    ) -> Self {
+        // intital retina weights are a vector of retina_siz^2
+        let retina_weights = retina_weights_buffer
+            .iter()
+            .cloned()
+            .take(
+                CONFIG.image_processing.initial_retina_size as usize
+                    * CONFIG.image_processing.initial_retina_size as usize,
+            )
             .collect::<Vec<f32>>();
 
         // let (lower, upper) = (-1.0 / (neuron_count as f32).sqrt(), 1.0 / (neuron_count as f32).sqrt());
@@ -709,6 +723,12 @@ impl Neuron {
 
     pub fn add_retina_input(&mut self, input: f32) {
         self.retina_inputs.push(input);
+    }
+
+    /// after the retian size changes, we need to update the retina weights with the new size
+    /// for the we need to take the first n weights from the retina_weights_buffer and overwrite the retina_weights
+    pub fn update_retina_weights(&mut self, new_weights: Vec<f32>) {
+        self.retina_weights = new_weights;
     }
 }
 
@@ -796,11 +816,6 @@ mod tests {
         assert_eq!(round2(rnn.neurons()[1].output), 0.93);
         assert_eq!(round2(rnn.neurons()[2].output), 0.64);
     }
-
-    // #[test]
-    // fn test_evaluate_agent() {
-    //     todo!()
-    // }
 
     #[test]
     fn test_create_snapshots() {
@@ -1003,39 +1018,67 @@ mod tests {
     }
 
     #[test]
-    fn test_build_from_json() {
+    fn test_retina_weights_and_inputs_same_size_after_change_in_size() {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
-        rnn.neurons_mut()[0].set_output(-0.44);
-        rnn.neurons_mut()[1].set_bias(-0.22);
-        let file_path = "test/saves/rnn/test_rnn.json".to_string();
+        let image = Image::from_vec(vec![0.0; 320 * 320]).unwrap();
+        let mut retina = image.create_retina_at(Position::new(160, 120), 5).unwrap();
+        rnn.update_inputs_from_retina(&retina);
+        // resize to maximum size
+        retina.set_size(239, &image).unwrap();
+        rnn.update_retina_size(239);
+        rnn.update_inputs_from_retina(&retina);
 
-        // save to disk
-        rnn.to_json(file_path.clone()).unwrap();
+        rnn.neurons().iter().for_each(|neuron| {
+            assert_eq!(neuron.retina_inputs().len(), neuron.retina_weights().len());
+        });
 
-        // load from disk
-        let new_rnn = Rnn::from_json(file_path).unwrap();
+        // back to smalles size
+        retina.set_size(5, &image).unwrap();
+        rnn.update_retina_size(5);
+        rnn.update_inputs_from_retina(&retina);
 
-        assert_eq!(round2(new_rnn.neurons()[0].output()), -0.44);
-        assert_eq!(round2(new_rnn.neurons()[1].bias()), -0.22);
-        assert_eq!(new_rnn.graph.node_count(), 3);
+        rnn.neurons().iter().for_each(|neuron| {
+            assert_eq!(neuron.retina_inputs().len(), neuron.retina_weights().len());
+        });
     }
 
     #[test]
-    fn test_update_retina_inputs() {
+    fn test_retina_weights_buffer_length() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let rnn = Rnn::new(&mut rng, 3);
+
+        assert_eq!(rnn.retina_weights_buffer.len(), 320 * 240);
+    }
+
+    #[test]
+    fn test_retina_weights_and_inputs_same_size() {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
-        let image = Image::from_path("images/artificial/resistor.png".to_string()).unwrap();
-        let mut retina = image.create_retina_at(Position::new(3, 13), 5).unwrap();
-        rnn.update_inputs_from_retina(&retina);
-        rnn.to_json("test/saves/rnn/test_update_retina_inputs1.json".to_string()).unwrap();
-        
-        retina.move_mut(&Position::new(5, 0), &image);
-        rnn.update_inputs_from_retina(&retina);
-        rnn.to_json("test/saves/rnn/test_update_retina_inputs2.json".to_string()).unwrap();
+        let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
+        let retina = image.create_retina_at(Position::new(3, 13), 5).unwrap();
 
-        // assert_eq!(rnn.neurons()[0].retina_inputs().len(), 9);
-        // assert_eq!(rnn.neurons()[1].retina_inputs().len(), 9);
-        // assert_eq!(rnn.neurons()[2].retina_inputs().len(), 9);
+        rnn.update_inputs_from_retina(&retina);
+        rnn.neurons().iter().for_each(|neuron| {
+            assert_eq!(neuron.retina_inputs().len(), neuron.retina_weights().len());
+        });
+    }
+
+    #[test]
+    fn test_load_json() {
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rnn = Rnn::new(&mut rng, 3);
+        let image = Image::from_vec(vec![0.0; 320 * 320]).unwrap();
+        let mut retina = image.create_retina_at(Position::new(160, 120), 5).unwrap();
+        rnn.update_inputs_from_retina(&retina);
+        rnn.update();
+        retina.set_size(51, &image).unwrap();
+        rnn.update_retina_size(51);
+        rnn.update_inputs_from_retina(&retina);
+        rnn.update();
+
+        rnn.to_json("test/saves/rnn/rnn.json".to_string()).unwrap();
+        let loaded_rnn = Rnn::from_json("test/saves/rnn/rnn.json".to_string()).unwrap();
+        assert_eq!(rnn, loaded_rnn);
     }
 }

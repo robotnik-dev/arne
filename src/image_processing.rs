@@ -1,14 +1,14 @@
 use image::imageops::resize;
-use image::{DynamicImage, GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
+use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
 use nalgebra::clamp;
 use std::ops::{Add, Sub};
 use std::{fmt::Debug, ops::AddAssign};
 
-use crate::{Error, Result, CONFIG};
 use crate::utils::get_label_from_path;
+use crate::{Error, Result, CONFIG};
 use skeletonize::edge_detection::sobel4;
-use skeletonize::{foreground, thin_image_edges, MarkingMethod};
+use skeletonize::foreground;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImageLabel(pub String);
@@ -24,7 +24,7 @@ pub struct ImageReader {
 }
 
 impl ImageReader {
-    /// reads a directory and returns a list of all images in it
+    /// reads a directory and returns a list of all images in it (preprocessed)
     pub fn from_path(path: String) -> std::result::Result<Self, Error> {
         let mut images = vec![];
         for entry in std::fs::read_dir(path)? {
@@ -33,7 +33,7 @@ impl ImageReader {
                 let path_str = to_str.to_string();
                 let image = Image::from_path(path_str.clone())?;
                 if let Some(label) = get_label_from_path(path_str) {
-                    images.push((ImageLabel(label), image));
+                    images.push((ImageLabel(label), image.clone()));
                 } else {
                     return Err("ValueError: could not get label from path".into());
                 }
@@ -86,6 +86,13 @@ impl Position {
     pub fn y(&self) -> i32 {
         self.y
     }
+
+    pub fn invert(&self) -> Position {
+        Position {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
 }
 
 impl Add for Position {
@@ -124,10 +131,8 @@ pub struct Image {
     grey: GrayImage,
     width: u32,
     height: u32,
-    binarized_white: u8,
-    binarized_black: u8,
-    /// used to visualize the retina movement on an upscaled image
-    retina_positions: Vec<Position>,
+    /// used to visualize the retina movement on an upscaled image (Position, size of retina)
+    retina_positions: Vec<(Position, usize)>,
 }
 
 impl Image {
@@ -135,36 +140,75 @@ impl Image {
     pub fn empty() -> Self {
         Image {
             rgba: RgbaImage::new(
-                CONFIG.image_processing.real_image_width as u32,
-                CONFIG.image_processing.real_image_height as u32,
+                CONFIG.image_processing.input_image_width as u32,
+                CONFIG.image_processing.input_image_height as u32,
             ),
             grey: GrayImage::new(
-                CONFIG.image_processing.real_image_width as u32,
-                CONFIG.image_processing.real_image_height as u32,
+                CONFIG.image_processing.input_image_width as u32,
+                CONFIG.image_processing.input_image_height as u32,
             ),
-            width: CONFIG.image_processing.real_image_width as u32,
-            height: CONFIG.image_processing.real_image_height as u32,
-            binarized_white: 255,
-            binarized_black: 0,
+            width: CONFIG.image_processing.input_image_width as u32,
+            height: CONFIG.image_processing.input_image_height as u32,
             retina_positions: vec![],
         }
     }
 
-    /// load from a path and return an image with color data
-    pub fn from_path(path: String) -> std::result::Result<Self, Error> {
-        let rgba = image::io::Reader::open(path.clone())?.decode()?.into_rgba8();
-        let grey = image::io::Reader::open(path)?.decode()?.into_luma8();
-        let width = rgba.width();
-        let height = rgba.height();
+    /// create an image from a vector of f32 values. Must be a square length
+    pub fn from_vec(vec: Vec<f32>) -> std::result::Result<Self, Error> {
+        // figure out if the vector length can be squared
+        if (vec.len() as f32).sqrt() % 1.0 != 0.0 {
+            return Err("ValueError: vector length must be a square number".into());
+        }
+
+        let width = f32::sqrt(vec.len() as f32) as u32;
+        let height = f32::sqrt(vec.len() as f32) as u32;
+        let mut rgba = RgbaImage::new(width, height);
+        let mut grey = GrayImage::new(width, height);
+        for i in 0..height {
+            for j in 0..width {
+                let value = (vec[(i * width + j) as usize]) as u8;
+                rgba.put_pixel(j, i, Rgba([value, value, value, 255]));
+                grey.put_pixel(j, i, Luma([value]));
+            }
+        }
         Ok(Image {
             rgba,
             grey,
             width,
             height,
-            binarized_white: 255,
-            binarized_black: 0,
             retina_positions: vec![],
         })
+    }
+
+    /// load from a path and return an image(preprocessed)
+    pub fn from_path(path: String) -> std::result::Result<Self, Error> {
+        let rgba = image::io::Reader::open(path.clone())?
+            .decode()?
+            .into_rgba8();
+        let grey = image::io::Reader::open(path)?.decode()?.into_luma8();
+        let width = rgba.width();
+        let height = rgba.height();
+        let mut image = Image {
+            rgba,
+            grey,
+            width,
+            height,
+            retina_positions: vec![],
+        };
+
+        // preprocess the image
+        image
+            .resize_all(
+                CONFIG.image_processing.goal_image_width as u32,
+                CONFIG.image_processing.goal_image_height as u32,
+            )?
+            .edged(Some(CONFIG.image_processing.sobel_threshold as f32))?
+            .erode(
+                imageproc::distance_transform::Norm::L1,
+                CONFIG.image_processing.erode_pixels as u8,
+            )?;
+
+        Ok(image)
     }
 
     pub fn rgba(&self) -> &RgbaImage {
@@ -182,7 +226,7 @@ impl Image {
     pub fn height(&self) -> u32 {
         self.height
     }
-    
+
     /// get grey value normalized between 0 and 1
     pub fn get_pixel(&self, x: u32, y: u32) -> f32 {
         self.grey.get_pixel(x, y).0[0] as f32 / 255.0
@@ -204,14 +248,9 @@ impl Image {
         );
         self.rgba = new_rgba;
         self.grey = new_grey;
+        self.width = width;
+        self.height = height;
 
-        Ok(self)
-    }
-
-    /// blurs the grey image with the given sigma
-    pub fn blur(&mut self, sigma: f32) -> std::result::Result<&mut Self, Error> {
-        let blurred = image::imageops::blur(&self.grey, sigma);
-        self.grey = blurred;
         Ok(self)
     }
 
@@ -222,25 +261,11 @@ impl Image {
         Ok(self)
     }
 
-    pub fn thinned(&mut self, threshold: f32) -> std::result::Result<&mut Self, Error> {
-        let method = MarkingMethod::Standard;
-        let img = image::DynamicImage::ImageLuma8(self.grey.clone());
-        let mut filtered = sobel4::<foreground::Black>(&img, Some(threshold))?;
-        thin_image_edges::<foreground::White>(&mut filtered, method, None)?;
-        Ok(self)
-    }
-
-    pub fn close(&mut self, norm: imageproc::distance_transform::Norm, k: u8) -> std::result::Result<&mut Self, Error> {
-        imageproc::morphology::close_mut(&mut self.grey, norm, k);
-        Ok(self)
-    }
-
-    pub fn dilate(&mut self, norm: imageproc::distance_transform::Norm, k: u8) -> std::result::Result<&mut Self, Error> {
-        imageproc::morphology::dilate_mut(&mut self.grey, norm, k);
-        Ok(self)
-    }
-
-    pub fn erode(&mut self, norm: imageproc::distance_transform::Norm, k: u8) -> std::result::Result<&mut Self, Error> {
+    pub fn erode(
+        &mut self,
+        norm: imageproc::distance_transform::Norm,
+        k: u8,
+    ) -> std::result::Result<&mut Self, Error> {
         imageproc::morphology::erode_mut(&mut self.grey, norm, k);
         Ok(self)
     }
@@ -278,14 +303,14 @@ impl Image {
             data,
             size,
             center_position: position,
-            delta_position: Position::new(0, 0),
-            binarized_white_normalized: self.binarized_white as f32 / 255.0,
-            binarized_black_normalized: self.binarized_black as f32 / 255.0,
+            current_delta_position: Position::new(0, 0),
+            last_delta_position: Position::new(0, 0),
         })
     }
 
     pub fn update_retina_movement(&mut self, retina: &Retina) {
-        self.retina_positions.push(retina.get_center_position());
+        self.retina_positions
+            .push((retina.get_center_position(), retina.size()));
     }
 
     pub fn save_rgba(&mut self, path: String) -> std::result::Result<&mut Self, Error> {
@@ -298,17 +323,70 @@ impl Image {
         Ok(self)
     }
 
-    /// on the rgba version of the image
     pub fn save_with_retina(&self, path: String) -> Result {
-        let size = CONFIG.image_processing.retina_size as f32;
+        let mut canvas = self.grey().clone();
+        for (index, (retina_position, retina_size)) in self.retina_positions.iter().enumerate() {
+            let scaled_size = *retina_size as f32;
+            let x = retina_position.x as f32 - 0.5;
+            let y = retina_position.y as f32 - 0.5;
+
+            // draw border of the retina
+            draw_hollow_rect_mut(
+                &mut canvas,
+                imageproc::rect::Rect::at(
+                    x as i32 - scaled_size as i32 / 2,
+                    y as i32 - scaled_size as i32 / 2,
+                )
+                .of_size(scaled_size as u32, scaled_size as u32),
+                Luma([0]),
+            );
+
+            if index == 0 {
+                continue;
+            }
+            // draw a line from the last retina position to the current retina position
+            let (line_begin, _) = &self.retina_positions[index - 1];
+            let line_end = retina_position;
+            draw_line_segment_mut(
+                &mut canvas,
+                ((line_begin.x as f32 - 0.5), (line_begin.y as f32 - 0.5)),
+                ((line_end.x as f32 - 0.5), (line_end.y as f32 - 0.5)),
+                Luma([127]),
+            );
+
+            // draw at the end of the linesegment a circle
+            draw_filled_circle_mut(
+                &mut canvas,
+                (
+                    (line_end.x as f32 - 0.5) as i32,
+                    (line_end.y as f32 - 0.5) as i32,
+                ),
+                1_i32,
+                Luma([0]),
+            );
+        }
+        canvas.save(path)?;
+
+        Ok(())
+    }
+
+    /// on the rgba version of the image upscaled
+    pub fn save_with_retina_upscaled(&self, path: String) -> Result {
         let circle_radius = CONFIG.image_processing.retina_circle_radius as f32;
+        let upscaled_width = CONFIG.image_processing.goal_image_width as u32;
+        let upscaled_height = CONFIG.image_processing.goal_image_height as u32;
 
-        let scaling_factor_x = self.width() as f32 / CONFIG.image_processing.image_width as f32;
-        let scaling_factor_y = self.height() as f32 / CONFIG.image_processing.image_height as f32;
-        let scaled_size = size * scaling_factor_x;
+        let scaling_factor_x = upscaled_width as f32 / self.width() as f32;
+        let scaling_factor_y = upscaled_height as f32 / self.height() as f32;
 
-        let mut canvas = self.rgba.clone();
-        for (index, retina_position) in self.retina_positions.iter().enumerate() {
+        let mut canvas = resize(
+            &self.rgba().clone(),
+            upscaled_width,
+            upscaled_height,
+            image::imageops::FilterType::Nearest,
+        );
+        for (index, (retina_position, retina_size)) in self.retina_positions.iter().enumerate() {
+            let scaled_size = *retina_size as f32 * scaling_factor_x;
             let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;
 
@@ -327,7 +405,7 @@ impl Image {
                 continue;
             }
             // draw a line from the last retina position to the current retina position
-            let line_begin = &self.retina_positions[index - 1];
+            let (line_begin, _) = &self.retina_positions[index - 1];
             let line_end = retina_position;
             draw_line_segment_mut(
                 &mut canvas,
@@ -354,59 +432,96 @@ impl Image {
             );
         }
         canvas.save(path)?;
- 
+
         Ok(())
     }
-    
 }
 
 pub struct Retina {
     // color data stored in a vector
     data: Vec<f32>,
     size: usize,
-    delta_position: Position,
-    // this is only for visualization purpose, the Rnn does not know this information
+    last_delta_position: Position,
+    current_delta_position: Position,
+    /// this is only for visualization purpose, the Rnn does not know this information
     center_position: Position,
-    binarized_white_normalized: f32,
-    binarized_black_normalized: f32,
 }
 
 impl Retina {
     /// counting from 0
     pub fn get_value(&self, x: usize, y: usize) -> f32 {
-        self.data[y * self.size + x]
+        self.get_data()[y * self.size() + x]
     }
 
     pub fn get_center_value(&self) -> f32 {
-        self.get_value(self.size / 2, self.size / 2)
+        self.get_value(self.size() / 2, self.size() / 2)
     }
 
     pub fn get_data(&self) -> &Vec<f32> {
         &self.data
     }
 
+    pub fn set_data(&mut self, data: Vec<f32>) {
+        self.data = data;
+    }
+
     pub fn size(&self) -> usize {
         self.size
     }
 
-    pub fn binarized_white(&self) -> f32 {
-        self.binarized_white_normalized
-    }
+    pub fn set_size(&mut self, size: usize, image: &Image) -> Result {
+        if CONFIG.image_processing.min_retina_size as usize > size {
+            return Err("ValueError: size is smaller than the minimum retina size".into());
+        }
 
-    pub fn binarized_black(&self) -> f32 {
-        self.binarized_black_normalized
+        if size % 2 == 0 {
+            return Err("ValueError: size must be an odd number".into());
+        }
+
+        if self.size == size {
+            return Err("ValueError: cannot set size, it's the same".into());
+        }
+
+        // make sure that the new size does not exceed the image boundaries
+        let offset = size as i32 / 2 + 1;
+        let x = self.get_center_position().x;
+        let y = self.get_center_position().y;
+        if x - offset < 0
+            || y - offset < 0
+            || x + offset >= image.width() as i32
+            || y + offset >= image.height() as i32
+        {
+            return Err("IndexError: new size exceeds image boundaries".into());
+        }
+
+        // update the data vector with the new values
+        let mut new_data = vec![];
+        for i in 0..size as i32 {
+            for j in 0..size as i32 {
+                let x = x - offset + j;
+                let y = y - offset + i;
+                new_data.push(image.get_pixel(x as u32, y as u32));
+            }
+        }
+        self.size = size;
+        self.set_data(new_data);
+        Ok(())
     }
 
     pub fn get_center_position(&self) -> Position {
         self.center_position.clone()
     }
 
-    pub fn get_delta_position(&self) -> Position {
-        self.delta_position.clone()
+    pub fn get_last_delta_position(&self) -> Position {
+        self.last_delta_position.clone()
+    }
+
+    pub fn get_current_delta_position(&self) -> Position {
+        self.current_delta_position.clone()
     }
 
     pub fn create_png_at(&self, path: String) -> Result {
-        let mut imgbuf = ImageBuffer::new(self.size as u32, self.size as u32);
+        let mut imgbuf = ImageBuffer::new(self.size() as u32, self.size() as u32);
         for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
             *pixel = Luma([(self.get_value(x as usize, y as usize) * 255.0) as u8]);
         }
@@ -417,40 +532,40 @@ impl Retina {
     /// moves the retina by the given delta position and clamps it to the borders of the image
     /// when the retina would move outside the image
     pub fn move_mut(&mut self, delta: &Position, image: &Image) {
-        let offset = self.size as i32 / 2 + 1;
+        let offset = self.size() as i32 / 2 + 1;
         // calculate the difference of the amount of pixels that the retina might move outside the image
         let mut highest_diff_x = 0i32;
         let mut highest_diff_y = 0i32;
-        for i in 0..self.size as i32 {
-            for j in 0..self.size as i32 {
-                let x = self.center_position.x - offset + i + delta.x;
-                let diff_x = clamp(x, 0, CONFIG.image_processing.image_width as u32 as i32 - 1) - x;
+        for i in 0..self.size() as i32 {
+            for j in 0..self.size() as i32 {
+                let x = self.get_center_position().x - offset + i + delta.x;
+                let diff_x = clamp(x, 0, image.width() as i32 - 1) - x;
                 if diff_x.abs() > highest_diff_x.abs() {
                     highest_diff_x = diff_x;
                 }
-                let y = self.center_position.y - offset + j + delta.y;
-                let diff_y =
-                    clamp(y, 0, CONFIG.image_processing.image_height as u32 as i32 - 1) - y;
+                let y = self.get_center_position().y - offset + j + delta.y;
+                let diff_y = clamp(y, 0, image.height() as i32 - 1) - y;
                 if diff_y.abs() > highest_diff_y.abs() {
                     highest_diff_y = diff_y;
                 }
             }
         }
         // move the retina to the new position and add the highest difference to the delta position
-        self.delta_position = delta.clone() + Position::new(highest_diff_x, highest_diff_y);
-        self.center_position += self.delta_position.clone();
+        self.last_delta_position = self.get_current_delta_position();
+        self.current_delta_position = delta.clone() + Position::new(highest_diff_x, highest_diff_y);
+        self.center_position += self.get_current_delta_position();
 
         // update the data vector with the new values
         let mut new_data = vec![];
         let offset = self.size() as i32 / 2 + 1;
         for i in 0..self.size() as i32 {
             for j in 0..self.size() as i32 {
-                let x = self.center_position.x - offset + j;
-                let y = self.center_position.y - offset + i;
+                let x = self.get_center_position().x - offset + j;
+                let y = self.get_center_position().y - offset + i;
                 new_data.push(image.get_pixel(x as u32, y as u32));
             }
         }
-        self.data = new_data;
+        self.set_data(new_data);
     }
 }
 
@@ -460,176 +575,81 @@ mod tests {
 
     #[test]
     fn test_get_retina_out_of_bounds() {
-        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         // getting the first pixel in the top left corner should give an error
-        let retina = image.create_retina_at(
-            Position::new(1, 1),
-            CONFIG.image_processing.retina_size as usize,
-        );
+        let retina = image.create_retina_at(Position::new(1, 1), 5 as usize);
         assert!(retina.is_err());
     }
 
     #[test]
     fn test_invalid_retina_movement_to_the_right() {
-        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(
-                Position::new(20, 13),
-                CONFIG.image_processing.retina_size as usize,
-            )
+            .create_retina_at(Position::new(5, 13), 5 as usize)
             .unwrap();
 
-        retina.move_mut(&Position::new(50, 0), &image);
-
-        assert_eq!(
-            retina.get_center_position().x,
-            (CONFIG.image_processing.image_width as u32 as i32 - 1)
-                - (CONFIG.image_processing.retina_size as usize as i32 / 2)
-                + 1
-        );
+        retina.move_mut(&Position::new(80, 0), &image);
+        assert_eq!(retina.get_center_position().x, 31);
     }
 
     #[test]
     fn test_invalid_retina_movement_to_the_left() {
-        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(
-                Position::new(5, 13),
-                CONFIG.image_processing.retina_size as usize,
-            )
+            .create_retina_at(Position::new(5, 13), 5 as usize)
             .unwrap();
 
-        retina.move_mut(&Position::new(-50, 0), &image);
-
-        assert_eq!(
-            retina.get_center_position().x,
-            (CONFIG.image_processing.retina_size as usize as i32 / 2) + 1
-        );
+        retina.move_mut(&Position::new(-80, 0), &image);
+        assert_eq!(retina.get_center_position().x, 3);
     }
 
     #[test]
     fn test_invalid_retina_movement_to_the_top() {
-        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(
-                Position::new(5, 13),
-                CONFIG.image_processing.retina_size as usize,
-            )
+            .create_retina_at(Position::new(5, 13), 5 as usize)
             .unwrap();
 
-        retina.move_mut(&Position::new(0, -60), &image);
-        assert_eq!(
-            retina.get_center_position().y,
-            (CONFIG.image_processing.retina_size as usize as i32 / 2) + 1
-        );
+        retina.move_mut(&Position::new(0, -80), &image);
+        assert_eq!(retina.get_center_position().y, 3);
     }
 
     #[test]
     fn test_invalid_retina_movement_to_the_bottom() {
-        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
+        let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(
-                Position::new(5, 13),
-                CONFIG.image_processing.retina_size as usize,
-            )
+            .create_retina_at(Position::new(5, 13), 5 as usize)
             .unwrap();
 
         retina.move_mut(&Position::new(0, 80), &image);
-        assert_eq!(
-            retina.get_center_position().y,
-            CONFIG.image_processing.image_height as u32 as i32
-                - 1
-                - (CONFIG.image_processing.retina_size as usize as i32 / 2)
-                + 1
-        );
+        assert_eq!(retina.get_center_position().y, 31);
     }
 
     #[test]
     fn test_retina_movement() {
-        let image = Image::from_path("images/artificial/checkboard.png".to_string()).unwrap();
-        let mut retina = image
-            .create_retina_at(
-                Position::new(5, 5),
-                CONFIG.image_processing.retina_size as usize,
-            )
-            .unwrap();
+        let mut image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 5), 5).unwrap();
+        image.update_retina_movement(&retina);
         retina.move_mut(&Position::new(1, 1), &image);
+        image.update_retina_movement(&retina);
         assert_eq!(retina.get_center_position().x, 6);
         assert_eq!(retina.get_center_position().y, 6);
-        retina.move_mut(&Position::new(1, 1), &image);
-        assert_eq!(retina.get_center_position().x, 7);
-        assert_eq!(retina.get_center_position().y, 7);
+
+        retina.move_mut(&Position::new(10, 6), &image);
+        image.update_retina_movement(&retina);
+        let _ = retina.set_size(9, &image);
+
         retina.move_mut(&Position::new(-1, -1), &image);
-        assert_eq!(retina.get_center_position().x, 6);
-        assert_eq!(retina.get_center_position().y, 6);
+        image.update_retina_movement(&retina);
+        assert_eq!(retina.get_center_position().x, 15);
+        assert_eq!(retina.get_center_position().y, 11);
     }
 
     #[test]
-    fn test_in_sequence() {
-        super::tests::test_edges();
-        super::tests::test_close();
-        // super::tests::test_resize();
-        // super::tests::test_thinned();
+    #[should_panic]
+    fn test_invalid_retina_size() {
+        let image = Image::from_vec(vec![0.0; 9 * 9]).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 5), 5).unwrap();
+        retina.set_size(10, &image).unwrap();
     }
-
-    #[test]
-    fn test_edges() {
-        let mut image = Image::from_path("images/test/03.png".to_string()).unwrap();
-
-        image
-            .edged(None).unwrap()
-            .save_grey("test/images/03_edges.png".to_string()).unwrap();
-    }
-
-    #[test]
-    fn test_resize() {
-        let mut image = Image::from_path("test/images/03_eroded.png".to_string()).unwrap();
-
-        image
-            .resize_all(66,50).unwrap()
-            .save_grey("test/images/03_resized.png".to_string()).unwrap();
-    }
-
-    #[test]
-    fn test_close() {
-        let mut image = Image::from_path("test/images/03_edges.png".to_string()).unwrap();
-
-        image
-            .close(imageproc::distance_transform::Norm::L1, 3).unwrap()
-            .save_grey("test/images/03_closed.png".to_string()).unwrap();
-    }
-
-    #[test]
-    fn test_dilate() {
-        let mut image = Image::from_path("test/images/03_edges.png".to_string()).unwrap();
-
-        image
-            .dilate(imageproc::distance_transform::Norm::L1, 1).unwrap()
-            .save_grey("test/images/03_dilated.png".to_string()).unwrap();
-    }
-
-    #[test]
-    fn test_erode() {
-        let mut image = Image::from_path("test/images/03_closed.png".to_string()).unwrap();
-
-        image
-            .erode(imageproc::distance_transform::Norm::L1, 4).unwrap()
-            .save_grey("test/images/03_eroded.png".to_string()).unwrap();
-    }
-
-
-    #[test]
-    fn test_edges2() {
-        let mut image = Image::from_path("test/images/03_resized.png".to_string()).unwrap();
-
-        image
-            .edged(Some(0.2)).unwrap()
-            .dilate(imageproc::distance_transform::Norm::L1, 1).unwrap()
-            .erode(imageproc::distance_transform::Norm::L1, 1).unwrap()
-            // .edged(0.1).unwrap()
-            .thinned(0.6).unwrap()
-            .save_grey("test/images/03_edges2.png".to_string()).unwrap();
-    }
-    
-
 }

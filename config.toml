@@ -2,18 +2,22 @@
 path_to_training_data = "images/training"
 path_to_test_data = "images/test"
 path_to_agents_dir= "agents"
-image_width = 33
-image_height = 25
-retina_size = 5
-real_image_width = 4032
-real_image_height = 3024
-retina_highlight_alpha = 100
-retina_circle_radius = 10.0
+input_image_width = 4032
+input_image_height = 3024
+goal_image_width = 320
+goal_image_height = 240
+initial_retina_size = 33
+min_retina_size = 5
+max_retina_size = 239
+retina_circle_radius = 1.0
+sobel_threshold = 0.3
+erode_pixels = 1
 
 [neural_network]
-neurons_per_network = 3
-number_of_network_updates = 20
-movement_scale = 4.0
+neurons_per_network = 4
+number_of_network_updates = 40
+retina_movement_speed = 10.0
+retina_resize_speed = 10.0
 
 [neural_network.weight_bounds]
 neuron_lower = -1.0
@@ -22,10 +26,10 @@ retina_lower = -1.0
 retina_upper = 1.0
 
 [genetic_algorithm]
-with_seed = true
-seed = 79
+with_seed = false
+seed = 60
 population_size = 100
-max_generations = 1000
+max_generations = 100
 tournament_size = 5
 take_agents = 3
 

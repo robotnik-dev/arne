@@ -62,13 +62,20 @@ struct FollowLine;
 
 impl FitnessCalculation<FollowLine> for Agent {
     fn calculate_fitness(&self, retina: &Retina) -> f32 {
-        // if the neuron 3 has a high activation and the retina center value is a black pixel, than the fitness is high
-        // and the retina moved in the last time step. and NOT going back in the same direction
-        let neuron_3 = self.genotype().neurons()[2].output();
-        let retina_center_value = retina.get_center_value();
-        let moved = retina.get_delta_position().len() / CONFIG.neural_network.movement_scale as f32;
-        
-        (retina.binarized_white() - retina_center_value + neuron_3 + moved) / 3.0
+        // fitness is high when:
+        // - the neuron 4 has a high activation -> recognized as square (normalized to 0-1)
+        // - lots of black pixels
+        // - the retina moved in the last time step
+        // - the retina is small
+        let fitness_vec = [
+            1.0 + self.genotype().neurons()[3].output() / 0.5,
+            retina.get_data().iter().filter(|p| **p == 0.0).count() as f32
+                / (retina.size() * retina.size()) as f32,
+            retina.get_current_delta_position().len(),
+            1.0 - (retina.size() as f32 / CONFIG.image_processing.max_retina_size as f32),
+        ];
+
+        fitness_vec.iter().sum::<f32>() / fitness_vec.len() as f32
     }
 }
 
@@ -81,17 +88,13 @@ impl AgentEvaluation for Agent {
     ) -> std::result::Result<f32, Error> {
         let mut local_fitness = 0.0;
         self.genotype_mut().short_term_memory_mut().clear();
-        // create a retina at a specific position (top left of image)
-        // let offset = CONFIG.image_processing.retina_size as i32 / 2 + 1;
-        // let the agents start at the left side in the middle
-        let offset_x = CONFIG.image_processing.retina_size as i32 / 2 + 1;
-        let offset_y = CONFIG.image_processing.retina_size as i32 / 2
-            + CONFIG.image_processing.image_height as i32 / 2
-            - 1;
-
+        // create a retina at a specific position (middle of the image)
+        // with maximum size of the retina
+        let offset_x = image.width() as i32 / 2;
+        let offset_y = image.height() as i32 / 2;
         let mut retina = image.create_retina_at(
             Position::new(offset_x, offset_y),
-            CONFIG.image_processing.retina_size as usize,
+            CONFIG.image_processing.initial_retina_size as usize,
         )?;
 
         // first location of the retina
@@ -100,9 +103,14 @@ impl AgentEvaluation for Agent {
         for i in 0..number_of_updates {
             // calculate the next delta position of the retina, encoded in the neurons
             let delta = self.genotype().next_delta_position();
+            let new_size = (retina.size() as f32 + self.genotype().next_size_factor()) as usize;
 
-            // move the retina to the next position
-            retina.move_mut(&delta, &image);
+            // move the retina to the next position and scale up or down after the movement
+            retina.move_mut(&delta, image);
+            if retina.set_size(new_size, image).is_ok() {
+                self.genotype_mut().update_retina_size(new_size);
+                log::debug!("Retina size changed to: {}", new_size);
+            }
 
             // update all input connections to the retina from each neuron
             self.genotype_mut().update_inputs_from_retina(&retina);

@@ -84,8 +84,7 @@ fn main() -> Result {
         // select, crossover and mutate
         let new_agents = (0..population.agents().len())
             .map(|_| {
-                let (parent1, parent2) =
-                    population.select(&mut rng, SelectionMethod::Tournament);
+                let (parent1, parent2) = population.select(&mut rng, SelectionMethod::Tournament);
                 let mut offspring = parent1.crossover(&mut rng, parent2);
                 offspring.mutate(&mut rng);
                 offspring
@@ -119,12 +118,18 @@ fn main() -> Result {
                 .for_each(|(label, (image, stm, rnn))| {
                     std::fs::create_dir_all(format!("{}/{}/{}", path_to_agents_dir, index, label))
                         .unwrap();
-                    // image
-                    //     .save_upscaled(format!(
-                    //         "{}/{}/{}/retina.png",
-                    //         path_to_agents_dir, index, label
-                    //     ))
-                    //     .unwrap();
+                    image
+                        .save_with_retina(format!(
+                            "{}/{}/{}/retina.png",
+                            path_to_agents_dir, index, label
+                        ))
+                        .unwrap();
+                    image
+                        .save_with_retina_upscaled(format!(
+                            "{}/{}/{}/retina_orig.png",
+                            path_to_agents_dir, index, label
+                        ))
+                        .unwrap();
                     stm.visualize(format!(
                         "{}/{}/{}/memory.png",
                         path_to_agents_dir, index, label
