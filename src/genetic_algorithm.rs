@@ -65,18 +65,17 @@ struct FollowLine;
 impl FitnessCalculation<FollowLine> for Agent {
     fn calculate_fitness(&self, retina: &Retina) -> f32 {
         // fitness is high when:
-        // - the neuron 4 has a high activation -> recognized as square (normalized to 0-1)
-        // - lots of black pixels
-        // - the retina moved in the last time step
-        // - the retina is small
         let fitness_vec = [
-            1.0 + self.genotype().neurons()[3].output() / 0.5,
+            // - the neuron 4 has a high activation -> recognized as square (normalized to 0-1)
+            (1.0 + self.genotype().neurons()[3].output()) / 2.0,
+            // - lots of black pixels
             retina.get_data().iter().filter(|p| **p == 0.0).count() as f32
-                / (retina.size() * retina.size()) as f32,
-            retina.get_current_delta_position().len(),
+            / (retina.size() * retina.size()) as f32,
+            // - the retina moved in the last time step
+            retina.get_current_delta_position().normalized_len(),
+            // - the retina is small
             1.0 - (retina.size() as f32 / CONFIG.image_processing.max_retina_size as f32),
         ];
-
         fitness_vec.iter().sum::<f32>() / fitness_vec.len() as f32
     }
 }

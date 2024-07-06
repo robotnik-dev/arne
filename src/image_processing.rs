@@ -79,6 +79,13 @@ impl Position {
         }
     }
 
+    /// length of the vector normalized between 0 and 1
+    pub fn normalized_len(&self) -> f32 {
+        let move_speed = CONFIG.neural_network.retina_movement_speed as i32;
+        let max_len = ((move_speed.pow(2) + move_speed.pow(2)) as f32).sqrt();
+        self.len() as f32 / max_len
+    }
+
     pub fn x(&self) -> i32 {
         self.x
     }
