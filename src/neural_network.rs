@@ -546,6 +546,10 @@ impl Rnn {
         };
     }
 
+    pub fn update_fitness(&mut self, fitness: f32) {
+        self.statistics.fitness = fitness;
+    }
+
     /// saves the RNN to a json file at the saves/rnn folder or if a path is provided at the given path
     pub fn to_json(&mut self, path: String) -> Result {
         self.graph = Graph::from(self.clone());

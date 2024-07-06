@@ -18,6 +18,7 @@ pub struct Statistics {
     pub mutated_weights: u32,
     pub mutated_biases: u32,
     pub mutated_self_activations: u32,
+    pub fitness: f32,
 }
 
 impl Statistics {
@@ -31,6 +32,7 @@ impl Statistics {
             mutated_weights: 0,
             mutated_biases: 0,
             mutated_self_activations: 0,
+            fitness: 0.0,
         }
     }
 }
@@ -109,7 +111,6 @@ impl AgentEvaluation for Agent {
             retina.move_mut(&delta, image);
             if retina.set_size(new_size, image).is_ok() {
                 self.genotype_mut().update_retina_size(new_size);
-                log::debug!("Retina size changed to: {}", new_size);
             }
 
             // update all input connections to the retina from each neuron
@@ -141,8 +142,9 @@ impl AgentEvaluation for Agent {
         let rnn = self.genotype().clone();
         self.statistics_mut()
             .insert(label.clone(), (image, stm, rnn));
-
-        Ok(local_fitness / number_of_updates as f32)
+        let fitness = local_fitness / number_of_updates as f32;
+        self.genotype_mut().update_fitness(fitness);
+        Ok(fitness)
     }
 }
 
