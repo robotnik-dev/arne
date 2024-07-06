@@ -1,0 +1,6 @@
+* C:\Users\Robotnik\Documents\LTspice\Draft2.asc
+V1 N001 N002 9
+R1 N003 N001 1
+R2 N003 N002 100
+.backanno
+.end

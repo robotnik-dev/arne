@@ -16,6 +16,8 @@ pub use neural_network::{Rnn, ShortTermMemory, SnapShot};
 mod genetic_algorithm;
 pub use genetic_algorithm::{Agent, AgentEvaluation, Population, SelectionMethod};
 
+mod netlist;
+
 type Error = Box<dyn std::error::Error>;
 type Result = std::result::Result<(), Error>;
 

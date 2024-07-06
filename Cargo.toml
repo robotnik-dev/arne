@@ -24,6 +24,7 @@ log = "0.4.21"
 env_logger = "0.11.3"
 indicatif = {version = "0.17.8", features = ["rayon"]}
 skeletonize = "0.2"
+netlist = "0.1.15"
 
 [dependencies.petgraph]
 version = "0.6.5"
