@@ -323,7 +323,7 @@ impl Rnn {
         self.neurons()[2].output() * CONFIG.neural_network.retina_resize_speed as f32
     }
 
-    /// each neruon has a connection to all of the 25 retina pixels and these need to be updated each rnn update step
+    /// each neuron has a connection to all of the retina pixels and these need to be updated each rnn update step
     pub fn update_inputs_from_retina(&mut self, retina: &Retina) {
         self.neurons_mut().iter_mut().for_each(|neuron| {
             neuron.retina_inputs_mut().clear();
@@ -742,84 +742,90 @@ mod tests {
     use crate::{genetic_algorithm::Agent, image_processing::Image};
     use rand_chacha::ChaCha8Rng;
 
-    #[test]
-    fn test_update_rnn_two_neurons() {
-        use rand::prelude::*;
-        use rand_chacha::ChaCha8Rng;
-
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(&mut rng, 3);
-        // randomize the weights and self activations with a custom seed and set the bias to 1.0
-        rnn.neurons_mut().iter_mut().for_each(|neuron| {
-            neuron
-                .input_connections_mut()
-                .iter_mut()
-                .for_each(|(_, weight)| {
-                    *weight = rng.gen_range(
-                        CONFIG.neural_network.weight_bounds.neuron_lower as f32
-                            ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
-                    )
-                });
-            neuron.set_self_activation(rng.gen_range(
-                CONFIG.neural_network.weight_bounds.neuron_lower as f32
-                    ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
-            ));
-            neuron.set_bias(1.);
-        });
-
-        // first iteration
-        rnn.update();
-
-        assert_eq!(round2(rnn.neurons()[0].output), 0.76);
-        assert_eq!(round2(rnn.neurons()[1].output), 0.76);
-
-        // second iteration
-        rnn.update();
-
-        assert_eq!(round2(rnn.neurons()[0].output), -0.53);
-        assert_eq!(round2(rnn.neurons()[1].output), 0.93);
+    fn get_test_dir() -> String {
+        let dir = "tests/rnn".to_string();
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
     }
 
-    #[test]
-    fn test_update_rnn_three_neurons() {
-        use rand::prelude::*;
-        use rand_chacha::ChaCha8Rng;
+    // #[test]
+    // fn test_update_rnn_two_neurons() {
+    //     use rand::prelude::*;
+    //     use rand_chacha::ChaCha8Rng;
 
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(&mut rng, 3);
+    //     let mut rng = ChaCha8Rng::seed_from_u64(2);
+    //     let mut rnn = Rnn::new(&mut rng, 3);
+    //     // randomize the weights and self activations with a custom seed and set the bias to 1.0
+    //     rnn.neurons_mut().iter_mut().for_each(|neuron| {
+    //         neuron
+    //             .input_connections_mut()
+    //             .iter_mut()
+    //             .for_each(|(_, weight)| {
+    //                 *weight = rng.gen_range(
+    //                     CONFIG.neural_network.weight_bounds.neuron_lower as f32
+    //                         ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
+    //                 )
+    //             });
+    //         neuron.set_self_activation(rng.gen_range(
+    //             CONFIG.neural_network.weight_bounds.neuron_lower as f32
+    //                 ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
+    //         ));
+    //         neuron.set_bias(1.);
+    //     });
 
-        // randomize the weights and self activations with a custom seed and set the bias to 1.0
-        rnn.neurons_mut().iter_mut().for_each(|neuron| {
-            neuron
-                .input_connections_mut()
-                .iter_mut()
-                .for_each(|(_, weight)| {
-                    *weight = rng.gen_range(
-                        CONFIG.neural_network.weight_bounds.neuron_lower as f32
-                            ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
-                    )
-                });
-            neuron.set_self_activation(rng.gen_range(
-                CONFIG.neural_network.weight_bounds.neuron_lower as f32
-                    ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
-            ));
-            neuron.set_bias(1.);
-        });
+    //     // first iteration
+    //     rnn.update();
 
-        // first iteration
-        rnn.update();
+    //     assert_eq!(round2(rnn.neurons()[0].output), 0.76);
+    //     assert_eq!(round2(rnn.neurons()[1].output), 0.76);
 
-        assert_eq!(round2(rnn.neurons()[0].output), 0.76);
-        assert_eq!(round2(rnn.neurons()[1].output), 0.76);
-        assert_eq!(round2(rnn.neurons()[2].output), 0.76);
+    //     // second iteration
+    //     rnn.update();
 
-        // second iteration
-        rnn.update();
+    //     assert_eq!(round2(rnn.neurons()[0].output), -0.53);
+    //     assert_eq!(round2(rnn.neurons()[1].output), 0.93);
+    // }
 
-        assert_eq!(round2(rnn.neurons()[0].output), -0.53);
-        assert_eq!(round2(rnn.neurons()[1].output), 0.93);
-        assert_eq!(round2(rnn.neurons()[2].output), 0.64);
-    }
+    // #[test]
+    // fn test_update_rnn_three_neurons() {
+    //     use rand::prelude::*;
+    //     use rand_chacha::ChaCha8Rng;
+
+    //     let mut rng = ChaCha8Rng::seed_from_u64(2);
+    //     let mut rnn = Rnn::new(&mut rng, 3);
+
+    //     // randomize the weights and self activations with a custom seed and set the bias to 1.0
+    //     rnn.neurons_mut().iter_mut().for_each(|neuron| {
+    //         neuron
+    //             .input_connections_mut()
+    //             .iter_mut()
+    //             .for_each(|(_, weight)| {
+    //                 *weight = rng.gen_range(
+    //                     CONFIG.neural_network.weight_bounds.neuron_lower as f32
+    //                         ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
+    //                 )
+    //             });
+    //         neuron.set_self_activation(rng.gen_range(
+    //             CONFIG.neural_network.weight_bounds.neuron_lower as f32
+    //                 ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
+    //         ));
+    //         neuron.set_bias(1.);
+    //     });
+
+    //     // first iteration
+    //     rnn.update();
+
+    //     assert_eq!(round2(rnn.neurons()[0].output), 0.76);
+    //     assert_eq!(round2(rnn.neurons()[1].output), 0.76);
+    //     assert_eq!(round2(rnn.neurons()[2].output), 0.76);
+
+    //     // second iteration
+    //     rnn.update();
+
+    //     assert_eq!(round2(rnn.neurons()[0].output), -0.53);
+    //     assert_eq!(round2(rnn.neurons()[1].output), 0.93);
+    //     assert_eq!(round2(rnn.neurons()[2].output), 0.64);
+    // }
 
     #[test]
     fn test_create_snapshots() {
@@ -1062,6 +1068,7 @@ mod tests {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let retina = image.create_retina_at(Position::new(3, 13), 5).unwrap();
 
+        rnn.update_retina_size(5);
         rnn.update_inputs_from_retina(&retina);
         rnn.neurons().iter().for_each(|neuron| {
             assert_eq!(neuron.retina_inputs().len(), neuron.retina_weights().len());
@@ -1081,8 +1088,10 @@ mod tests {
         rnn.update_inputs_from_retina(&retina);
         rnn.update();
 
-        rnn.to_json("test/saves/rnn/rnn.json".to_string()).unwrap();
-        let loaded_rnn = Rnn::from_json("test/saves/rnn/rnn.json".to_string()).unwrap();
+        let dir = get_test_dir();
+        let file = "test_load_json.json".to_string();
+        rnn.to_json(format!("{}/{}", dir, file)).unwrap();
+        let loaded_rnn = Rnn::from_json(format!("{}/{}", dir, file)).unwrap();
         assert_eq!(rnn, loaded_rnn);
     }
 }

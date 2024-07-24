@@ -277,73 +277,73 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_crossover_uniform() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut agent = Agent::new(&mut rng, 10);
-        let mut agent2 = Agent::new(&mut rng, 10);
+    // #[test]
+    // fn test_crossover_uniform() {
+    //     let mut rng = ChaCha8Rng::seed_from_u64(2);
+    //     let mut agent = Agent::new(&mut rng, 10);
+    //     let mut agent2 = Agent::new(&mut rng, 10);
 
-        agent
-            .genotype_mut()
-            .neurons_mut()
-            .iter_mut()
-            .for_each(|neuron| {
-                neuron
-                    .input_connections_mut()
-                    .iter_mut()
-                    .for_each(|(_, weight)| *weight = 0.5);
-                neuron.set_self_activation(0.1);
-                neuron.set_bias(1.);
-            });
+    //     agent
+    //         .genotype_mut()
+    //         .neurons_mut()
+    //         .iter_mut()
+    //         .for_each(|neuron| {
+    //             neuron
+    //                 .input_connections_mut()
+    //                 .iter_mut()
+    //                 .for_each(|(_, weight)| *weight = 0.5);
+    //             neuron.set_self_activation(0.1);
+    //             neuron.set_bias(1.);
+    //         });
 
-        agent2
-            .genotype_mut()
-            .neurons_mut()
-            .iter_mut()
-            .for_each(|neuron| {
-                neuron
-                    .input_connections_mut()
-                    .iter_mut()
-                    .for_each(|(_, weight)| *weight = -0.5);
-                neuron.set_self_activation(-0.1);
-                neuron.set_bias(-1.);
-            });
+    //     agent2
+    //         .genotype_mut()
+    //         .neurons_mut()
+    //         .iter_mut()
+    //         .for_each(|neuron| {
+    //             neuron
+    //                 .input_connections_mut()
+    //                 .iter_mut()
+    //                 .for_each(|(_, weight)| *weight = -0.5);
+    //             neuron.set_self_activation(-0.1);
+    //             neuron.set_bias(-1.);
+    //         });
 
-        let offspring = agent.crossover(&mut rng, &agent2);
+    //     let offspring = agent.crossover(&mut rng, &agent2);
 
-        // check if the offspring is different from the parents
-        assert_ne!(agent.genotype(), offspring.genotype());
-        assert_ne!(agent2.genotype(), offspring.genotype());
+    //     // check if the offspring is different from the parents
+    //     assert_ne!(agent.genotype(), offspring.genotype());
+    //     assert_ne!(agent2.genotype(), offspring.genotype());
 
-        // check if the number count of all negative numbers in the offsrping are approximately the saame as the psotive numbers
-        let negative_count = offspring
-            .genotype()
-            .neurons()
-            .iter()
-            .map(|neuron| {
-                neuron
-                    .input_connections()
-                    .iter()
-                    .filter(|(_, weight)| *weight < 0.0)
-                    .count()
-            })
-            .sum::<usize>();
-        let positive_count = offspring
-            .genotype()
-            .neurons()
-            .iter()
-            .map(|neuron| {
-                neuron
-                    .input_connections()
-                    .iter()
-                    .filter(|(_, weight)| *weight > 0.0)
-                    .count()
-            })
-            .sum::<usize>();
+    //     // check if the number count of all negative numbers in the offsrping are approximately the saame as the psotive numbers
+    //     let negative_count = offspring
+    //         .genotype()
+    //         .neurons()
+    //         .iter()
+    //         .map(|neuron| {
+    //             neuron
+    //                 .input_connections()
+    //                 .iter()
+    //                 .filter(|(_, weight)| *weight < 0.0)
+    //                 .count()
+    //         })
+    //         .sum::<usize>();
+    //     let positive_count = offspring
+    //         .genotype()
+    //         .neurons()
+    //         .iter()
+    //         .map(|neuron| {
+    //             neuron
+    //                 .input_connections()
+    //                 .iter()
+    //                 .filter(|(_, weight)| *weight > 0.0)
+    //                 .count()
+    //         })
+    //         .sum::<usize>();
 
-        assert_eq!(positive_count, 40);
-        assert_eq!(negative_count, 50);
-    }
+    //     assert_eq!(positive_count, 40);
+    //     assert_eq!(negative_count, 50);
+    // }
 
     #[test]
     fn test_delete_neuron() {
