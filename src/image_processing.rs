@@ -515,6 +515,26 @@ impl Retina {
         Ok(())
     }
 
+    /// same as set_size but ignores all bounds. Can panic
+    pub fn set_size_override(&mut self, size: usize, image: &Image) {
+        // make sure that the new size does not exceed the image boundaries
+        let offset = size as i32 / 2 + 1;
+        let x = self.get_center_position().x;
+        let y = self.get_center_position().y;
+
+        // update the data vector with the new values
+        let mut new_data = vec![];
+        for i in 0..size as i32 {
+            for j in 0..size as i32 {
+                let x = x - offset + j;
+                let y = y - offset + i;
+                new_data.push(image.get_pixel(x as u32, y as u32));
+            }
+        }
+        self.size = size;
+        self.set_data(new_data);
+    }
+
     pub fn get_center_position(&self) -> Position {
         self.center_position.clone()
     }

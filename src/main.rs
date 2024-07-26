@@ -34,11 +34,12 @@ fn main() -> Result {
     let seed = CONFIG.genetic_algorithm.seed as u64;
     let with_seed = CONFIG.genetic_algorithm.with_seed;
     let path_to_training_data = CONFIG.image_processing.path_to_training_data as &str;
-    let neurons_per_network = CONFIG.neural_network.neurons_per_network as usize;
+    let neurons_per_rnn = CONFIG.neural_network.neurons_per_network as usize;
     let population_size = CONFIG.genetic_algorithm.population_size as usize;
     let number_of_network_updates = CONFIG.neural_network.number_of_network_updates as usize;
     let take_agents = CONFIG.genetic_algorithm.take_agents as usize;
     let path_to_agents_dir = CONFIG.image_processing.path_to_agents_dir as &str;
+    let networks_per_agent = CONFIG.neural_network.networks_per_agent as usize;
 
     log::info!("setting up rng");
 
@@ -52,7 +53,7 @@ fn main() -> Result {
     log::info!("initializing population...");
 
     // intialize population
-    let mut population = Population::new(&mut rng, population_size, neurons_per_network);
+    let mut population = Population::new(&mut rng, population_size, networks_per_agent, neurons_per_rnn);
 
     log::info!("loading training dataset...");
 
@@ -62,7 +63,7 @@ fn main() -> Result {
     let algorithm_bar = ProgressBar::new(max_generations);
 
     // loop until stop criterial is met
-    log::info!("starting genetic algorithm");
+    log::info!("running genetic algorithm...");
     for _ in 0..max_generations {
         algorithm_bar.inc(1);
         // for each image in the dataset

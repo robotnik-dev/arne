@@ -1,7 +1,7 @@
 use crate::image_processing::Retina;
 use crate::utils::round2;
 use crate::{genetic_algorithm::Statistics, image_processing::Position, Result};
-use crate::{Error, CONFIG};
+use crate::{Error, CONFIG, Agent};
 use approx::AbsDiffEq;
 use petgraph::{dot::Dot, Graph};
 use plotters::prelude::*;
@@ -13,6 +13,7 @@ use std::{
     fs::OpenOptions,
     io::{Read, Write},
 };
+
 
 /// A short term memory that can be used to store the state of the network
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -931,9 +932,8 @@ mod tests {
 
         let mut rng = ChaCha8Rng::seed_from_u64(2);
 
-        let mut agent = Agent::new(&mut rng, 3);
-        agent
-            .genotype_mut()
+        let mut rnn = Rnn::new(&mut rng, 3);
+        rnn
             .neurons_mut()
             .iter_mut()
             .for_each(|neuron| {
@@ -950,12 +950,12 @@ mod tests {
                 neuron.set_bias(-0.6);
             });
 
-        let graph = Graph::<(usize, f32), f32>::from(agent.genotype().clone());
+        let graph = Graph::<(usize, f32), f32>::from(rnn.clone());
 
         graph.node_indices().for_each(|node| {
             graph.neighbors(node).for_each(|neighbor| {
                 // get weight from neuron at index "node" from the agent and the neuron at index "neighbor"
-                if let Some(correct_weight) = agent.genotype().neurons()[node.index()]
+                if let Some(correct_weight) = rnn.neurons()[node.index()]
                     .input_connections()
                     .iter()
                     .find(|(index, _)| *index == neighbor.index())
@@ -1044,7 +1044,7 @@ mod tests {
         });
 
         // back to smalles size
-        retina.set_size(5, &image).unwrap();
+        retina.set_size_override(5, &image);
         rnn.update_retina_size(5);
         rnn.update_inputs_from_retina(&retina);
 

@@ -153,9 +153,9 @@ pub struct Population {
 }
 
 impl Population {
-    pub fn new(rng: &mut dyn RngCore, size: usize, neurons_per_rnn: usize) -> Self {
+    pub fn new(rng: &mut dyn RngCore, size: usize, networks_per_agent: usize, neurons_per_rnn: usize) -> Self {
         let agents = (0..size)
-            .map(|_| Agent::new(rng, neurons_per_rnn))
+            .map(|_| Agent::new(rng, networks_per_agent, neurons_per_rnn))
             .collect();
         Population {
             agents,
@@ -209,9 +209,13 @@ impl Population {
     }
 }
 
+/// Conductor to control all networks. The idea is to set off multiple RNNs per update step and to collect the results.
+/// The maximum number of RNNs are set in the config file.
+/// Each RNN has a set number of Neurons, namely 7. It can detect either a resitor, capacitor, voltage source or ground.
+/// The fitness of the whole set of networks is determined instead of a single network.
 pub struct Agent {
     fitness: f32,
-    genotype: Rnn,
+    genotype: Rnn,  // TODO: mutliple networks per agent
     // for statistics purposes, we store the final images with the retina movement and all the short term memories here
     pub statistics: HashMap<ImageLabel, (Image, ShortTermMemory, Rnn)>,
 }
@@ -227,7 +231,7 @@ impl Clone for Agent {
 }
 
 impl Agent {
-    pub fn new(rng: &mut dyn RngCore, number_of_neurons: usize) -> Self {
+    pub fn new(rng: &mut dyn RngCore, networks_per_agent: usize, number_of_neurons: usize) -> Self {
         Agent {
             fitness: 0.0,
             genotype: Rnn::new(rng, number_of_neurons),
@@ -276,74 +280,6 @@ mod tests {
     use rand_chacha::ChaCha8Rng;
 
     use super::*;
-
-    // #[test]
-    // fn test_crossover_uniform() {
-    //     let mut rng = ChaCha8Rng::seed_from_u64(2);
-    //     let mut agent = Agent::new(&mut rng, 10);
-    //     let mut agent2 = Agent::new(&mut rng, 10);
-
-    //     agent
-    //         .genotype_mut()
-    //         .neurons_mut()
-    //         .iter_mut()
-    //         .for_each(|neuron| {
-    //             neuron
-    //                 .input_connections_mut()
-    //                 .iter_mut()
-    //                 .for_each(|(_, weight)| *weight = 0.5);
-    //             neuron.set_self_activation(0.1);
-    //             neuron.set_bias(1.);
-    //         });
-
-    //     agent2
-    //         .genotype_mut()
-    //         .neurons_mut()
-    //         .iter_mut()
-    //         .for_each(|neuron| {
-    //             neuron
-    //                 .input_connections_mut()
-    //                 .iter_mut()
-    //                 .for_each(|(_, weight)| *weight = -0.5);
-    //             neuron.set_self_activation(-0.1);
-    //             neuron.set_bias(-1.);
-    //         });
-
-    //     let offspring = agent.crossover(&mut rng, &agent2);
-
-    //     // check if the offspring is different from the parents
-    //     assert_ne!(agent.genotype(), offspring.genotype());
-    //     assert_ne!(agent2.genotype(), offspring.genotype());
-
-    //     // check if the number count of all negative numbers in the offsrping are approximately the saame as the psotive numbers
-    //     let negative_count = offspring
-    //         .genotype()
-    //         .neurons()
-    //         .iter()
-    //         .map(|neuron| {
-    //             neuron
-    //                 .input_connections()
-    //                 .iter()
-    //                 .filter(|(_, weight)| *weight < 0.0)
-    //                 .count()
-    //         })
-    //         .sum::<usize>();
-    //     let positive_count = offspring
-    //         .genotype()
-    //         .neurons()
-    //         .iter()
-    //         .map(|neuron| {
-    //             neuron
-    //                 .input_connections()
-    //                 .iter()
-    //                 .filter(|(_, weight)| *weight > 0.0)
-    //                 .count()
-    //         })
-    //         .sum::<usize>();
-
-    //     assert_eq!(positive_count, 40);
-    //     assert_eq!(negative_count, 50);
-    // }
 
     #[test]
     fn test_delete_neuron() {

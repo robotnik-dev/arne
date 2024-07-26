@@ -146,6 +146,7 @@ impl std::fmt::Display for Node {
 #[derive(Debug, PartialEq, Default)]
 pub struct Netlist {
     components: HashMap<String, Component>,
+    // TODO: keep a referecne of all nodes to know how many are in the network
 }
 
 impl Generate for Netlist {
@@ -202,6 +203,10 @@ mod tests {
 
     fn capacitor_ic2_5() -> Component {
         ComponentBuilder::new(ComponentType::Capacitor, String::from("1")).initial_voltage(2.5).build()
+    }
+
+    fn capacitor_noic() -> Component {
+        ComponentBuilder::new(ComponentType::Capacitor, String::from("1")).build()
     }
 
     fn voltagedc_9() -> Component {
@@ -271,7 +276,15 @@ mod tests {
     }
 
     #[test]
-    fn generate_capacitor() {
+    fn generate_capacitor_noic() {
+        let mut component = self::capacitor_noic();
+        component.add_node(Node(1), NodeType::In);
+        component.add_node(Node(2), NodeType::Out);
+        assert_eq!(component.generate(), "c1 1 2 0");
+    }
+
+    #[test]
+    fn generate_capacitor_ic() {
         let mut component = self::capacitor_ic2_5();
         component.add_node(Node(1), NodeType::In);
         component.add_node(Node(2), NodeType::Out);
