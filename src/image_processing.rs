@@ -351,22 +351,22 @@ impl Image {
             if index == 0 {
                 continue;
             }
-            // draw a line from the last retina position to the current retina position
-            let (line_begin, _) = &self.retina_positions[index - 1];
-            let line_end = retina_position;
-            draw_line_segment_mut(
-                &mut canvas,
-                ((line_begin.x as f32 - 0.5), (line_begin.y as f32 - 0.5)),
-                ((line_end.x as f32 - 0.5), (line_end.y as f32 - 0.5)),
-                Luma([127]),
-            );
+            // // draw a line from the last retina position to the current retina position
+            // let (line_begin, _) = &self.retina_positions[index - 1];
+            // let line_end = retina_position;
+            // draw_line_segment_mut(
+            //     &mut canvas,
+            //     ((line_begin.x as f32 - 0.5), (line_begin.y as f32 - 0.5)),
+            //     ((line_end.x as f32 - 0.5), (line_end.y as f32 - 0.5)),
+            //     Luma([127]),
+            // );
 
-            // draw at the end of the linesegment a circle
+            // draw in the middle a circle
             draw_filled_circle_mut(
                 &mut canvas,
                 (
-                    (line_end.x as f32 - 0.5) as i32,
-                    (line_end.y as f32 - 0.5) as i32,
+                    x as i32,
+                    y as i32,
                 ),
                 1_i32,
                 Luma([0]),
@@ -411,28 +411,28 @@ impl Image {
             if index == 0 {
                 continue;
             }
-            // draw a line from the last retina position to the current retina position
-            let (line_begin, _) = &self.retina_positions[index - 1];
-            let line_end = retina_position;
-            draw_line_segment_mut(
-                &mut canvas,
-                (
-                    (line_begin.x as f32 - 0.5) * scaling_factor_x,
-                    (line_begin.y as f32 - 0.5) * scaling_factor_y,
-                ),
-                (
-                    (line_end.x as f32 - 0.5) * scaling_factor_x,
-                    (line_end.y as f32 - 0.5) * scaling_factor_y,
-                ),
-                Rgba([127, 127, 127, 255]),
-            );
+            // // draw a line from the last retina position to the current retina position
+            // let (line_begin, _) = &self.retina_positions[index - 1];
+            // let line_end = retina_position;
+            // draw_line_segment_mut(
+            //     &mut canvas,
+            //     (
+            //         (line_begin.x as f32 - 0.5) * scaling_factor_x,
+            //         (line_begin.y as f32 - 0.5) * scaling_factor_y,
+            //     ),
+            //     (
+            //         (line_end.x as f32 - 0.5) * scaling_factor_x,
+            //         (line_end.y as f32 - 0.5) * scaling_factor_y,
+            //     ),
+            //     Rgba([127, 127, 127, 255]),
+            // );
 
-            // draw at the end of the linesegment a circle
+            // draw at the middle of the retina a circle
             draw_filled_circle_mut(
                 &mut canvas,
                 (
-                    ((line_end.x as f32 - 0.5) * scaling_factor_x) as i32,
-                    ((line_end.y as f32 - 0.5) * scaling_factor_y) as i32,
+                    (scaled_x) as i32,
+                    (scaled_y) as i32,
                 ),
                 circle_radius as i32,
                 Rgba([0, 255, 0, 255]),

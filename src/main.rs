@@ -74,7 +74,7 @@ fn main() -> Result {
             // evaluate the fitness of each individual of the population
             population.agents_mut().par_iter_mut().for_each(|agent| {
                 let fitness = agent
-                    .evaluate(label.clone(), &mut image.clone(), number_of_network_updates)
+                    .evaluate(&mut rng.clone(), label.clone(), &mut image.clone(), number_of_network_updates)
                     .unwrap();
                 agent.set_fitness(fitness);
             });
@@ -118,7 +118,7 @@ fn main() -> Result {
             agent
                 .statistics_mut()
                 .par_iter_mut()
-                .for_each(|(label, (image, stm, rnn))| {
+                .for_each(|(label, (image, genotype))| {
                     std::fs::create_dir_all(format!("{}/{}/{}", path_to_agents_dir, index, label))
                         .unwrap();
                     image
@@ -133,21 +133,28 @@ fn main() -> Result {
                             path_to_agents_dir, index, label
                         ))
                         .unwrap();
-                    stm.visualize(format!(
-                        "{}/{}/{}/memory.png",
-                        path_to_agents_dir, index, label
-                    ))
-                    .unwrap();
-                    rnn.to_json(format!(
-                        "{}/{}/{}/rnn.json",
-                        path_to_agents_dir, index, label
-                    ))
-                    .unwrap();
-                    rnn.to_dot(format!(
-                        "{}/{}/{}/rnn.dot",
-                        path_to_agents_dir, index, label
-                    ))
-                    .unwrap();
+                    genotype.networks_mut().iter_mut().enumerate().for_each(|(i, network)| {
+                        std::fs::create_dir_all(format!("{}/{}/{}/{}", path_to_agents_dir, index, label, i)).unwrap();
+                        network
+                            .short_term_memory()
+                            .visualize(format!(
+                                "{}/{}/{}/{}/memory.png",
+                                path_to_agents_dir, index, label, i
+                            ))
+                            .unwrap();
+                        network
+                            .to_json(format!(
+                                "{}/{}/{}/{}/network.json",
+                                path_to_agents_dir, index, label, i
+                            ))
+                            .unwrap();
+                        network
+                            .to_dot(format!(
+                                "{}/{}/{}/{}/network.dot",
+                                path_to_agents_dir, index, label, i
+                            ))
+                            .unwrap();
+                    });
                 });
             generating_files_bar.inc(1);
         });

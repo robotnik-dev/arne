@@ -8,17 +8,17 @@ goal_image_width = 320
 goal_image_height = 240
 initial_retina_size = 11
 min_retina_size = 5
-max_retina_size = 239
+max_retina_size = 33
 retina_circle_radius = 1.0
 sobel_threshold = 0.3
 erode_pixels = 1
 
 [neural_network]
-networks_per_agent = 10
-neurons_per_network = 7
-number_of_network_updates = 20
-retina_movement_speed = 2.0
-retina_resize_speed = 40.0
+networks_per_agent = 4
+neurons_per_network = 5
+number_of_network_updates = 10
+retina_movement_speed = 10.0
+retina_resize_speed = 2.0
 
 [neural_network.weight_bounds]
 neuron_lower = -1.0
@@ -28,20 +28,20 @@ retina_upper = 1.0
 
 [genetic_algorithm]
 with_seed = true
-seed = 120
+seed = 551
 population_size = 100
-max_generations = 100
+max_generations = 5
 tournament_size = 5
 take_agents = 3
 
 [genetic_algorithm.mutation_rates]
 variance = 0.2
 mean = 0.0
-delete_neuron = 0.1
-delete_weights = 0.1
-delete_bias = 0.1
+delete_neuron = 0.2
+delete_weights = 0.15
+delete_bias = 0.2
 delete_self_activation = 0.1
 mutate_neuron = 0.2
 mutate_weights = 0.2
-mutate_bias = 0.1
+mutate_bias = 0.2
 mutate_self_activation = 0.1
