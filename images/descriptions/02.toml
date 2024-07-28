@@ -1,0 +1,4 @@
+[components]
+resistor = 2
+capacitor = 0
+source_dc = 1

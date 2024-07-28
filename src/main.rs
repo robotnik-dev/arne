@@ -1,4 +1,7 @@
+use std::fs::write;
+
 use indicatif::ProgressBar;
+use netlist::Generate;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
@@ -34,6 +37,7 @@ fn main() -> Result {
     let seed = CONFIG.genetic_algorithm.seed as u64;
     let with_seed = CONFIG.genetic_algorithm.with_seed;
     let path_to_training_data = CONFIG.image_processing.path_to_training_data as &str;
+    let path_to_image_descriptions = CONFIG.image_processing.path_to_image_descriptions as &str;
     let neurons_per_rnn = CONFIG.neural_network.neurons_per_network as usize;
     let population_size = CONFIG.genetic_algorithm.population_size as usize;
     let number_of_network_updates = CONFIG.neural_network.number_of_network_updates as usize;
@@ -53,12 +57,20 @@ fn main() -> Result {
     log::info!("initializing population...");
 
     // intialize population
-    let mut population = Population::new(&mut rng, population_size, networks_per_agent, neurons_per_rnn);
+    let mut population = Population::new(
+        &mut rng,
+        population_size,
+        networks_per_agent,
+        neurons_per_rnn,
+    );
 
     log::info!("loading training dataset...");
 
     // create a reader to buffer training dataset
-    let image_reader = ImageReader::from_path(path_to_training_data.to_string())?;
+    let image_reader = ImageReader::from_path(
+        path_to_training_data.to_string(),
+        path_to_image_descriptions.to_string(),
+    )?;
 
     let algorithm_bar = ProgressBar::new(max_generations);
 
@@ -69,12 +81,18 @@ fn main() -> Result {
         // for each image in the dataset
         for index in 0..image_reader.images().len() {
             // load image
-            let (label, image) = image_reader.get_image(index)?;
+            let (label, image, description) = image_reader.get_image(index)?;
 
             // evaluate the fitness of each individual of the population
             population.agents_mut().par_iter_mut().for_each(|agent| {
                 let fitness = agent
-                    .evaluate(&mut rng.clone(), label.clone(), &mut image.clone(), number_of_network_updates)
+                    .evaluate(
+                        &mut rng.clone(),
+                        label.clone(),
+                        &mut image.clone(),
+                        description.clone(),
+                        number_of_network_updates,
+                    )
                     .unwrap();
                 agent.set_fitness(fitness);
             });
@@ -85,7 +103,7 @@ fn main() -> Result {
             .sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
 
         // select, crossover and mutate
-        let new_agents = (0..population.agents().len())
+        let mut new_agents = (0..population.agents().len())
             .map(|_| {
                 let (parent1, parent2) = population.select(&mut rng, SelectionMethod::Tournament);
                 let mut offspring = parent1.crossover(&mut rng, parent2);
@@ -93,6 +111,13 @@ fn main() -> Result {
                 offspring
             })
             .collect::<Vec<Agent>>();
+
+        // after 50 % of max generations, decrease the variance by 10 % each generation
+        if population.generation() > max_generations as u32 / 2 {
+            new_agents.iter_mut().for_each(|agent| {
+                agent.update_variance(agent.get_current_variance() * 0.90);
+            })
+        }
 
         // evolve the population
         population.evolve(new_agents);
@@ -102,7 +127,7 @@ fn main() -> Result {
     log::info!("stopped after {} generations", population.generation());
     log::info!("generating files for the best {} agents...", take_agents);
 
-    // remove 'best_agents' directory if it exists
+    // remove 'agents' directory if it exists
     std::fs::remove_dir_all(path_to_agents_dir).unwrap_or_default();
 
     let generating_files_bar = ProgressBar::new(take_agents as u64);
@@ -112,9 +137,11 @@ fn main() -> Result {
         .enumerate()
         .inspect(|(index, agent)| {
             log::debug!("agent {} fitness: {}", index, agent.fitness());
+            log::debug!("agent {} netlist: {:?}", index, agent.generate());
         })
         .take(take_agents)
         .for_each(|(index, agent)| {
+            let netlist = agent.generate();
             agent
                 .statistics_mut()
                 .par_iter_mut()
@@ -133,28 +160,44 @@ fn main() -> Result {
                             path_to_agents_dir, index, label
                         ))
                         .unwrap();
-                    genotype.networks_mut().iter_mut().enumerate().for_each(|(i, network)| {
-                        std::fs::create_dir_all(format!("{}/{}/{}/{}", path_to_agents_dir, index, label, i)).unwrap();
-                        network
-                            .short_term_memory()
-                            .visualize(format!(
-                                "{}/{}/{}/{}/memory.png",
+
+                    // save netlist
+                    std::fs::write(
+                        format!("{}/{}/{}/netlist.net", path_to_agents_dir, index, label),
+                        netlist.clone(),
+                    )
+                    .unwrap();
+
+                    genotype
+                        .networks_mut()
+                        .iter_mut()
+                        .enumerate()
+                        .for_each(|(i, network)| {
+                            std::fs::create_dir_all(format!(
+                                "{}/{}/{}/{}",
                                 path_to_agents_dir, index, label, i
                             ))
                             .unwrap();
-                        network
-                            .to_json(format!(
-                                "{}/{}/{}/{}/network.json",
-                                path_to_agents_dir, index, label, i
-                            ))
-                            .unwrap();
-                        network
-                            .to_dot(format!(
-                                "{}/{}/{}/{}/network.dot",
-                                path_to_agents_dir, index, label, i
-                            ))
-                            .unwrap();
-                    });
+                            network
+                                .short_term_memory()
+                                .visualize(format!(
+                                    "{}/{}/{}/{}/memory.png",
+                                    path_to_agents_dir, index, label, i
+                                ))
+                                .unwrap();
+                            network
+                                .to_json(format!(
+                                    "{}/{}/{}/{}/network.json",
+                                    path_to_agents_dir, index, label, i
+                                ))
+                                .unwrap();
+                            network
+                                .to_dot(format!(
+                                    "{}/{}/{}/{}/network.dot",
+                                    path_to_agents_dir, index, label, i
+                                ))
+                                .unwrap();
+                        });
                 });
             generating_files_bar.inc(1);
         });

@@ -1,7 +1,9 @@
 use image::imageops::resize;
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
-use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
+use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut};
+use log::debug;
 use nalgebra::clamp;
+use serde::Deserialize;
 use std::ops::{Add, Sub};
 use std::{fmt::Debug, ops::AddAssign};
 
@@ -19,21 +21,46 @@ impl std::fmt::Display for ImageLabel {
     }
 }
 
+#[derive(Deserialize, Clone, Debug)]
+pub struct ImageDescription {
+    pub components: Components,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct Components {
+    pub resistor: u32,
+    pub capacitor: u32,
+    pub source_dc: u32,
+}
+
 pub struct ImageReader {
-    images: Vec<(ImageLabel, Image)>,
+    images: Vec<(ImageLabel, Image, ImageDescription)>,
 }
 
 impl ImageReader {
     /// reads a directory and returns a list of all images in it (preprocessed)
-    pub fn from_path(path: String) -> std::result::Result<Self, Error> {
+    /// also loads the image descriptions with it
+    pub fn from_path(path: String, description_path: String) -> std::result::Result<Self, Error> {
         let mut images = vec![];
+
         for entry in std::fs::read_dir(path)? {
             let path = entry?.path();
             if let Some(to_str) = path.to_str() {
                 let path_str = to_str.to_string();
                 let image = Image::from_path(path_str.clone())?;
                 if let Some(label) = get_label_from_path(path_str) {
-                    images.push((ImageLabel(label), image.clone()));
+                    // load description
+                    let desc_entry = std::fs::read_dir(description_path.clone())?
+                        .last()
+                        .ok_or("ValueError: could not get description path")??;
+                    let desc_str = std::fs::read_to_string(desc_entry.path())?;
+                    let description: ImageDescription = toml::from_str(&desc_str)?;
+                    debug!(
+                        "loaded image: label: {:?}, description: {:?}",
+                        label.clone(),
+                        description.clone()
+                    );
+                    images.push((ImageLabel(label), image.clone(), description));
                 } else {
                     return Err("ValueError: could not get label from path".into());
                 }
@@ -44,14 +71,17 @@ impl ImageReader {
         Ok(ImageReader { images })
     }
 
-    pub fn get_image(&self, index: usize) -> std::result::Result<&(ImageLabel, Image), Error> {
+    pub fn get_image(
+        &self,
+        index: usize,
+    ) -> std::result::Result<&(ImageLabel, Image, ImageDescription), Error> {
         if index >= self.images.len() {
             return Err("IndexError: index out of bounds".into());
         }
         Ok(&self.images[index])
     }
 
-    pub fn images(&self) -> &Vec<(ImageLabel, Image)> {
+    pub fn images(&self) -> &Vec<(ImageLabel, Image, ImageDescription)> {
         &self.images
     }
 }
@@ -362,15 +392,7 @@ impl Image {
             // );
 
             // draw in the middle a circle
-            draw_filled_circle_mut(
-                &mut canvas,
-                (
-                    x as i32,
-                    y as i32,
-                ),
-                1_i32,
-                Luma([0]),
-            );
+            draw_filled_circle_mut(&mut canvas, (x as i32, y as i32), 1_i32, Luma([0]));
         }
         canvas.save(path)?;
 
@@ -430,10 +452,7 @@ impl Image {
             // draw at the middle of the retina a circle
             draw_filled_circle_mut(
                 &mut canvas,
-                (
-                    (scaled_x) as i32,
-                    (scaled_y) as i32,
-                ),
+                ((scaled_x) as i32, (scaled_y) as i32),
                 circle_radius as i32,
                 Rgba([0, 255, 0, 255]),
             );

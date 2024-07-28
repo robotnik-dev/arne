@@ -1,6 +1,5 @@
 # Ergebnisse der Experimente
 
-## 28.06.24
 initial_retina_size = 33
 min_retina_size = 5
 max_retina_size = 239

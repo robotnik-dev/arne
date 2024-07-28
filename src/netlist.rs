@@ -10,38 +10,38 @@
 // A line in the netlist will be a list of strings.
 
 // RESISTORS
-// General form: r[name] [node1] [node2] [value] Example: rload 23 15 3.3k 
+// General form: r[name] [node1] [node2] [value] Example: rload 23 15 3.3k
 
 // CAPACITORS
 // General form: c[name] [node1] [node2] [value] ic=[initial voltage] Example 1: c1 12 33 10u Example 2: c1 12 33 10u ic=3.5
 
 // VOLTAGE SOURCES (DC)
-// General form: v[name] [+node] [-node] dc [voltage] Example 1: v1 1 0 dc 12 
+// General form: v[name] [+node] [-node] dc [voltage] Example 1: v1 1 0 dc 12
 
-use std::{collections::HashMap, io::ErrorKind::NotFound};
 use crate::Result;
+use std::{collections::HashMap, io::ErrorKind::NotFound};
 
-trait Generate {
+pub trait Generate {
     fn generate(&self) -> String;
 }
 
 #[derive(Default, Debug, PartialEq)]
-enum ComponentType {
+pub enum ComponentType {
     #[default]
     Resistor,
     Capacitor,
     VoltageSourceDc,
 }
 
-enum NodeType {
+pub enum NodeType {
     In,
-    Out
+    Out,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-struct Component {
-    symbol: String,
-    name: String,
+pub struct Component {
+    pub symbol: String,
+    pub name: String,
     prefix: String,
     value: f64,
     in_nodes: Vec<Node>,
@@ -52,10 +52,28 @@ struct Component {
 
 impl Generate for Component {
     fn generate(&self) -> String {
-        let dc_symbol = if self.dc_symbol.is_some() { format!("{} ", self.dc_symbol.clone().unwrap()) } else { String::from("") };
-        let initial_voltage = if self.initial_voltage.is_some() { format!(" ic={}", self.initial_voltage.unwrap()) } else { String::from("") };
+        let dc_symbol = if self.dc_symbol.is_some() {
+            format!("{} ", self.dc_symbol.clone().unwrap())
+        } else {
+            String::from("")
+        };
+        let initial_voltage = if self.initial_voltage.is_some() {
+            format!(" ic={}", self.initial_voltage.unwrap())
+        } else {
+            String::from("")
+        };
         // just the first in and out node for simple circuits. Need to expand when doing transistor e.g.
-        format!("{}{} {} {} {}{}{}{}", self.symbol, self.name, self.in_nodes[0], self.out_nodes[0], dc_symbol, self.value, self.prefix, initial_voltage)
+        format!(
+            "{}{} {} {} {}{}{}{}",
+            self.symbol,
+            self.name,
+            self.in_nodes[0],
+            self.out_nodes[0],
+            dc_symbol,
+            self.value,
+            self.prefix,
+            initial_voltage
+        )
     }
 }
 
@@ -135,7 +153,7 @@ impl ComponentBuilder {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Default, Clone)]
-struct Node(u32);
+pub struct Node(pub u32);
 
 impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -145,7 +163,7 @@ impl std::fmt::Display for Node {
 
 #[derive(Debug, PartialEq, Default)]
 pub struct Netlist {
-    components: HashMap<String, Component>,
+    pub components: HashMap<String, Component>,
     // TODO: keep a referecne of all nodes to know how many are in the network
 }
 
@@ -172,16 +190,27 @@ impl Netlist {
 
     pub fn add_component(&mut self, component: Component, label: String) -> Result {
         if self.components.contains_key(&label) {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::AlreadyExists, format!("Component with label {} already exists", label))));
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("Component with label {} already exists", label),
+            )));
         };
         self.components.insert(label, component);
         Ok(())
     }
 
     /// adds a node to a component with the specified label
-    pub fn add_node_to_component(&mut self, node: Node, label: String, node_type: NodeType) -> Result {
+    pub fn add_node_to_component(
+        &mut self,
+        node: Node,
+        label: String,
+        node_type: NodeType,
+    ) -> Result {
         let Some(component) = self.components.get_mut(&label) else {
-            return Err(Box::new(std::io::Error::new(NotFound, format!("Component with label {} not found", label))));
+            return Err(Box::new(std::io::Error::new(
+                NotFound,
+                format!("Component with label {} not found", label),
+            )));
         };
         component.add_node(node, node_type);
         Ok(())
@@ -198,11 +227,15 @@ mod tests {
     use super::*;
 
     fn resistor3_3k() -> Component {
-        ComponentBuilder::new(ComponentType::Resistor, String::from("1")).value(3.3, Some(String::from("k"))).build()
+        ComponentBuilder::new(ComponentType::Resistor, String::from("1"))
+            .value(3.3, Some(String::from("k")))
+            .build()
     }
 
     fn capacitor_ic2_5() -> Component {
-        ComponentBuilder::new(ComponentType::Capacitor, String::from("1")).initial_voltage(2.5).build()
+        ComponentBuilder::new(ComponentType::Capacitor, String::from("1"))
+            .initial_voltage(2.5)
+            .build()
     }
 
     fn capacitor_noic() -> Component {
@@ -210,7 +243,9 @@ mod tests {
     }
 
     fn voltagedc_9() -> Component {
-        ComponentBuilder::new(ComponentType::VoltageSourceDc, String::from("1")).value(9., None).build()
+        ComponentBuilder::new(ComponentType::VoltageSourceDc, String::from("1"))
+            .value(9., None)
+            .build()
     }
 
     #[test]
@@ -225,9 +260,10 @@ mod tests {
             initial_voltage: None,
             dc_symbol: None,
         };
-        let resistor_from_builder = ComponentBuilder::new(ComponentType::Resistor, String::from("1"))
-            .value(3.3, Some(String::from("k")))
-            .build();
+        let resistor_from_builder =
+            ComponentBuilder::new(ComponentType::Resistor, String::from("1"))
+                .value(3.3, Some(String::from("k")))
+                .build();
         assert_eq!(resistor, resistor_from_builder);
     }
 
@@ -243,12 +279,13 @@ mod tests {
             initial_voltage: Some(3.5),
             dc_symbol: None,
         };
-        let capacitor_from_builder = ComponentBuilder::new(ComponentType::Capacitor, String::from("1"))
-            .initial_voltage(3.5)
-            .build();
+        let capacitor_from_builder =
+            ComponentBuilder::new(ComponentType::Capacitor, String::from("1"))
+                .initial_voltage(3.5)
+                .build();
         assert_eq!(capacitor, capacitor_from_builder);
     }
-    
+
     #[test]
     fn build_voltage_source_dc() {
         let voltage_source_dc = Component {
@@ -261,9 +298,10 @@ mod tests {
             initial_voltage: None,
             dc_symbol: Some(String::from("dc")),
         };
-        let voltage_source_dc_from_builder = ComponentBuilder::new(ComponentType::VoltageSourceDc, String::from("1"))
-            .value(9.0, None)
-            .build();
+        let voltage_source_dc_from_builder =
+            ComponentBuilder::new(ComponentType::VoltageSourceDc, String::from("1"))
+                .value(9.0, None)
+                .build();
         assert_eq!(voltage_source_dc, voltage_source_dc_from_builder);
     }
 
@@ -307,20 +345,38 @@ mod tests {
         let mut netlist = Netlist::new();
 
         // adding components to netlist
-        netlist.add_component(resistor, String::from("resistor")).unwrap();
-        netlist.add_component(capacitor, String::from("capacitor")).unwrap();
-        netlist.add_component(voltage_source_dc, String::from("voltage_source")).unwrap();
+        netlist
+            .add_component(resistor, String::from("resistor"))
+            .unwrap();
+        netlist
+            .add_component(capacitor, String::from("capacitor"))
+            .unwrap();
+        netlist
+            .add_component(voltage_source_dc, String::from("voltage_source"))
+            .unwrap();
 
         // adding nodes to components
-        netlist.add_node_to_component(Node(1), String::from("resistor"), NodeType::In).unwrap();
-        netlist.add_node_to_component(Node(2), String::from("resistor"), NodeType::Out).unwrap();
+        netlist
+            .add_node_to_component(Node(1), String::from("resistor"), NodeType::In)
+            .unwrap();
+        netlist
+            .add_node_to_component(Node(2), String::from("resistor"), NodeType::Out)
+            .unwrap();
 
-        netlist.add_node_to_component(Node(2), String::from("capacitor"), NodeType::In).unwrap();
-        netlist.add_node_to_component(Node(0), String::from("capacitor"), NodeType::Out).unwrap();
+        netlist
+            .add_node_to_component(Node(2), String::from("capacitor"), NodeType::In)
+            .unwrap();
+        netlist
+            .add_node_to_component(Node(0), String::from("capacitor"), NodeType::Out)
+            .unwrap();
 
-        netlist.add_node_to_component(Node(1), String::from("voltage_source"), NodeType::In).unwrap();
-        netlist.add_node_to_component(Node(0), String::from("voltage_source"), NodeType::Out).unwrap();
-        
+        netlist
+            .add_node_to_component(Node(1), String::from("voltage_source"), NodeType::In)
+            .unwrap();
+        netlist
+            .add_node_to_component(Node(0), String::from("voltage_source"), NodeType::Out)
+            .unwrap();
+
         let expected_resistor = "r1 1 2 3.3k";
         let expected_capacitor = "c1 2 0 0 ic=2.5";
         let expected_coltage_source = "v1 1 0 dc 9";
