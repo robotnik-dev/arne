@@ -1,5 +1,3 @@
-use std::fs::write;
-
 use indicatif::ProgressBar;
 use netlist::Generate;
 use rand::prelude::*;

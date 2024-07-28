@@ -1,5 +1,4 @@
 use approx::AbsDiffEq;
-use log::debug;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -79,8 +78,7 @@ impl FitnessCalculation for Agent {
             .genotype()
             .networks()
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 network.neurons()[resistor_neuron_idx]
                     .output()
                     .abs_diff_eq(&1.0, 0.01)
@@ -91,14 +89,14 @@ impl FitnessCalculation for Agent {
                         .output()
                         .abs_diff_eq(&0.0, 0.01)
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         let capacitor_networks = self
             .genotype()
             .networks()
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 network.neurons()[resistor_neuron_idx]
                     .output()
                     .abs_diff_eq(&0.0, 0.01)
@@ -109,14 +107,14 @@ impl FitnessCalculation for Agent {
                         .output()
                         .abs_diff_eq(&0.0, 0.01)
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         let source_dc_networks = self
             .genotype()
             .networks()
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 network.neurons()[resistor_neuron_idx]
                     .output()
                     .abs_diff_eq(&0.0, 0.01)
@@ -127,14 +125,14 @@ impl FitnessCalculation for Agent {
                         .output()
                         .abs_diff_eq(&1.0, 0.01)
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         // remove identical networks (comparison of the nodes)
         // only keep the ones that have unique outputs of in_nodes and out_nodes
         let resistor_networks = resistor_networks
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 let in_node_output = network.neurons()[in_node_neuron_idx].output();
                 let out_node_output = network.neurons()[out_node_neuron_idx].output();
                 resistor_networks.iter().all(|other_network| {
@@ -145,12 +143,12 @@ impl FitnessCalculation for Agent {
                         && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
                 })
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         let capacitor_networks = capacitor_networks
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 let in_node_output = network.neurons()[in_node_neuron_idx].output();
                 let out_node_output = network.neurons()[out_node_neuron_idx].output();
                 capacitor_networks.iter().all(|other_network| {
@@ -161,12 +159,12 @@ impl FitnessCalculation for Agent {
                         && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
                 })
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         let source_dc_networks = source_dc_networks
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 let in_node_output = network.neurons()[in_node_neuron_idx].output();
                 let out_node_output = network.neurons()[out_node_neuron_idx].output();
                 source_dc_networks.iter().all(|other_network| {
@@ -177,16 +175,16 @@ impl FitnessCalculation for Agent {
                         && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
                 })
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         // fitness is high when the count of the networks are close to the ImageDescription numbers
-        let fitness = 1.0
-            - (((resistor_networks.len() as f32 - resistors as f32).abs()
-                + (capacitor_networks.len() as f32 - capacitors as f32).abs()
-                + (source_dc_networks.len() as f32 - sources_dc as f32).abs())
-                / 3.0);
+
         // debug!("resistors: {}, capacitors: {}, sources_dc: {}, fitness: {}", resistor_networks.len() as f32, capacitor_networks.len() as f32, source_dc_networks.len() as f32, fitness);
-        fitness
+        1.0 - (((resistor_networks.len() as f32 - resistors as f32).abs()
+            + (capacitor_networks.len() as f32 - capacitors as f32).abs()
+            + (source_dc_networks.len() as f32 - sources_dc as f32).abs())
+            / 3.0)
     }
 }
 
@@ -204,9 +202,9 @@ impl AgentEvaluation for Agent {
         for _ in 0..self.genotype_mut().networks_mut().len() {
             let initial_retina_size = CONFIG.image_processing.initial_retina_size as usize;
             // create a retina at a random position
-            let low_x = 0 + initial_retina_size as i32;
+            let low_x = initial_retina_size as i32;
             let high_x = image.width() as i32 - initial_retina_size as i32;
-            let low_y = 0 + initial_retina_size as i32;
+            let low_y = initial_retina_size as i32;
             let high_y = image.height() as i32 - initial_retina_size as i32;
 
             let retina = image.create_retina_at(
@@ -227,7 +225,7 @@ impl AgentEvaluation for Agent {
                 .zip(retinas.iter_mut())
             {
                 // first location of the retina
-                image.update_retina_movement(&retina);
+                image.update_retina_movement(retina);
 
                 // calculate the next delta position of the retina, encoded in the neurons
                 let delta = network.next_delta_position();
@@ -240,14 +238,14 @@ impl AgentEvaluation for Agent {
                 }
 
                 // update all input connections to the retina from each neuron
-                network.update_inputs_from_retina(&retina);
+                network.update_inputs_from_retina(retina);
 
                 // do one update step
                 network.update();
 
                 // save retina movement in buffer
                 // image.update_retina_movement_mut(&retina);
-                image.update_retina_movement(&retina);
+                image.update_retina_movement(retina);
 
                 // creating snapshot of the network at the current time step
                 let outputs = network
@@ -417,8 +415,7 @@ impl Generate for Agent {
             .genotype()
             .networks()
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 network.neurons()[resistor_neuron_idx]
                     .output()
                     .abs_diff_eq(&1.0, 0.01)
@@ -429,14 +426,14 @@ impl Generate for Agent {
                         .output()
                         .abs_diff_eq(&0.0, 0.01)
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         let capacitor_networks = self
             .genotype()
             .networks()
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 network.neurons()[resistor_neuron_idx]
                     .output()
                     .abs_diff_eq(&0.0, 0.01)
@@ -447,14 +444,14 @@ impl Generate for Agent {
                         .output()
                         .abs_diff_eq(&0.0, 0.01)
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         let source_dc_networks = self
             .genotype()
             .networks()
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 network.neurons()[resistor_neuron_idx]
                     .output()
                     .abs_diff_eq(&0.0, 0.01)
@@ -465,14 +462,14 @@ impl Generate for Agent {
                         .output()
                         .abs_diff_eq(&1.0, 0.01)
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         // remove identical networks (comparison of the nodes)
         // only keep the ones that have unique outputs of in_nodes and out_nodes
         let resistor_networks = resistor_networks
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 let in_node_output = network.neurons()[in_node_neuron_idx].output();
                 let out_node_output = network.neurons()[out_node_neuron_idx].output();
                 resistor_networks.iter().all(|other_network| {
@@ -483,12 +480,12 @@ impl Generate for Agent {
                         && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
                 })
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         let capacitor_networks = capacitor_networks
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 let in_node_output = network.neurons()[in_node_neuron_idx].output();
                 let out_node_output = network.neurons()[out_node_neuron_idx].output();
                 capacitor_networks.iter().all(|other_network| {
@@ -499,12 +496,12 @@ impl Generate for Agent {
                         && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
                 })
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         let source_dc_networks = source_dc_networks
             .iter()
-            .cloned()
-            .filter(|network| {
+            .filter(|&network| {
                 let in_node_output = network.neurons()[in_node_neuron_idx].output();
                 let out_node_output = network.neurons()[out_node_neuron_idx].output();
                 source_dc_networks.iter().all(|other_network| {
@@ -515,6 +512,7 @@ impl Generate for Agent {
                         && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
                 })
             })
+            .cloned()
             .collect::<Vec<Rnn>>();
 
         // creating netlist
