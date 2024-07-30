@@ -55,12 +55,14 @@ fn main() -> Result {
     log::info!("initializing population...");
 
     // intialize population
+    let population_bar = ProgressBar::new(population_size as u64);
     let mut population = Population::new(
-        &mut rng,
+        &population_bar,
         population_size,
         networks_per_agent,
         neurons_per_rnn,
     );
+    population_bar.finish();
 
     log::info!("loading training dataset...");
 
@@ -100,8 +102,21 @@ fn main() -> Result {
             .agents_mut()
             .sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
 
+        // check stop criteria:
+        // - if any agent has a fitness of near 1.0
+        if population.agents().iter().any(|agent| agent.fitness() > 0.99) {
+            break;
+        }
+
+        // after 50 % of max generations, decrease the variance by 10 % each generation
+        if population.generation() > max_generations as u32 / 2 {
+            population.agents_mut().iter_mut().for_each(|agent| {
+                agent.update_variance(agent.get_current_variance() * 0.90);
+            })
+        }
+
         // select, crossover and mutate
-        let mut new_agents = (0..population.agents().len())
+        let new_agents = (0..population.agents().len())
             .map(|_| {
                 let (parent1, parent2) = population.select(&mut rng, SelectionMethod::Tournament);
                 let mut offspring = parent1.crossover(&mut rng, parent2);
@@ -109,13 +124,6 @@ fn main() -> Result {
                 offspring
             })
             .collect::<Vec<Agent>>();
-
-        // after 50 % of max generations, decrease the variance by 10 % each generation
-        if population.generation() > max_generations as u32 / 2 {
-            new_agents.iter_mut().for_each(|agent| {
-                agent.update_variance(agent.get_current_variance() * 0.90);
-            })
-        }
 
         // evolve the population
         population.evolve(new_agents);

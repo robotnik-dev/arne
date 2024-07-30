@@ -7,9 +7,9 @@ input_image_width = 4032
 input_image_height = 3024
 goal_image_width = 320
 goal_image_height = 240
-initial_retina_size = 33
-min_retina_size = 5
-max_retina_size = 67
+initial_retina_size = 3
+min_retina_size = 3
+max_retina_size = 3
 retina_circle_radius = 1.0
 sobel_threshold = 0.3
 erode_pixels = 1
@@ -18,7 +18,7 @@ erode_pixels = 1
 # maximum components the network can regognize
 networks_per_agent = 10
 neurons_per_network = 8
-number_of_network_updates = 20
+number_of_network_updates = 40
 retina_movement_speed = 30.0
 retina_resize_speed = 1.5
 
@@ -29,15 +29,15 @@ retina_lower = -1.0
 retina_upper = 1.0
 
 [genetic_algorithm]
-with_seed = false
-seed = 551
+with_seed = true
+seed = 1024
 population_size = 100
-max_generations = 500
+max_generations = 1000
 tournament_size = 5
-take_agents = 3
+take_agents = 30
 
 [genetic_algorithm.mutation_rates]
-variance = 0.4
+variance = 0.2
 mean = 0.0
 delete_neuron = 0.1
 delete_weights = 0.15

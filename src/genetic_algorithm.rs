@@ -1,7 +1,10 @@
 use approx::AbsDiffEq;
 use rand::prelude::*;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use indicatif::ProgressBar;
+use rand_chacha::ChaCha8Rng;
 
 use crate::image_processing::{Image, ImageDescription, ImageLabel, Position};
 use crate::netlist::{ComponentBuilder, ComponentType, Generate, Netlist, Node, NodeType};
@@ -279,13 +282,17 @@ pub struct Population {
 
 impl Population {
     pub fn new(
-        rng: &mut dyn RngCore,
+        progress_bar: &ProgressBar,
         size: usize,
         networks_per_agent: usize,
         neurons_per_rnn: usize,
     ) -> Self {
         let agents = (0..size)
-            .map(|_| Agent::new(rng, networks_per_agent, neurons_per_rnn))
+            .into_par_iter()
+            .map(|_| {
+                progress_bar.inc(1);
+                Agent::new(networks_per_agent, neurons_per_rnn)
+            })
             .collect();
         Population {
             agents,
@@ -570,10 +577,11 @@ impl Generate for Agent {
 }
 
 impl Agent {
-    pub fn new(rng: &mut dyn RngCore, networks_per_agent: usize, number_of_neurons: usize) -> Self {
+    pub fn new(networks_per_agent: usize, number_of_neurons: usize) -> Self {
+        let mut rng = ChaCha8Rng::from_entropy();
         Agent {
             fitness: 0.0,
-            genotype: Genotype::new(rng, networks_per_agent, number_of_neurons),
+            genotype: Genotype::new(&mut rng, networks_per_agent, number_of_neurons),
             statistics: HashMap::new(),
         }
     }
