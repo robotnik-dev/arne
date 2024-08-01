@@ -76,7 +76,7 @@ fn main() -> Result {
 
     // loop until stop criterial is met
     log::info!("running genetic algorithm...");
-    for _ in 0..max_generations {
+    loop {
         algorithm_bar.inc(1);
         // for each image in the dataset
         for index in 0..image_reader.images().len() {
@@ -104,7 +104,9 @@ fn main() -> Result {
 
         // check stop criteria:
         // - if any agent has a fitness of near 1.0
-        if population.agents().iter().any(|agent| agent.fitness() > 0.99) {
+        // - if the maximum number of generations has been reached
+        if population.agents().iter().any(|agent| agent.fitness() > 0.99) 
+            || population.generation() >= max_generations as u32{
             break;
         }
 

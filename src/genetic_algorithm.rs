@@ -1,4 +1,5 @@
 use approx::AbsDiffEq;
+use log::debug;
 use rand::prelude::*;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
@@ -181,13 +182,23 @@ impl FitnessCalculation for Agent {
             .cloned()
             .collect::<Vec<Rnn>>();
 
-        // fitness is high when the count of the networks are close to the ImageDescription numbers
+        // filter all the networks that see only white pixel in this time step
+        let blank_networks_count = self.genotype()
+            .networks()
+            .iter()
+            .filter(|&network| {
+                network.neurons().iter().all(|neuron| neuron.retina_inputs().iter().all(|&input| input > 0.5))
+            }).count();
 
-        // debug!("resistors: {}, capacitors: {}, sources_dc: {}, fitness: {}", resistor_networks.len() as f32, capacitor_networks.len() as f32, source_dc_networks.len() as f32, fitness);
-        1.0 - (((resistor_networks.len() as f32 - resistors as f32).abs()
+        // fitness is high when the count of the networks are close to the ImageDescription numbers
+        // Additionally the fitness gets lower the more blank_networks exists in this time step
+        let max_networks = CONFIG.neural_network.networks_per_agent as f32;
+        1.0 - ((
+            (resistor_networks.len() as f32 - resistors as f32).abs()
             + (capacitor_networks.len() as f32 - capacitors as f32).abs()
-            + (source_dc_networks.len() as f32 - sources_dc as f32).abs())
-            / 3.0)
+            + (source_dc_networks.len() as f32 - sources_dc as f32).abs()
+            + (blank_networks_count as f32 / max_networks)
+        ) / 4.0)
     }
 }
 

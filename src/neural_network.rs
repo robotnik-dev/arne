@@ -465,9 +465,9 @@ impl Rnn {
             neuron.self_activation = 0.0;
             neuron.bias = 0.0;
             neuron
-                .retina_inputs_mut()
+                .retina_weights_mut()
                 .iter_mut()
-                .for_each(|input| *input = 0.0);
+                .for_each(|weight| *weight = 0.0);
         };
     }
 
@@ -479,9 +479,9 @@ impl Rnn {
                 .iter_mut()
                 .for_each(|(_, weight)| *weight = 0.0);
             neuron
-                .retina_inputs_mut()
+                .retina_weights_mut()
                 .iter_mut()
-                .for_each(|input| *input = 0.0);
+                .for_each(|weight| *weight = 0.0);
         };
     }
 
@@ -510,8 +510,8 @@ impl Rnn {
             });
             neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng);
             neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng);
-            if let Some(input) = neuron.retina_inputs_mut().iter_mut().choose(rng) {
-                *input = Normal::new(mean, std_dev).unwrap().sample(rng)
+            if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+                *weight = Normal::new(mean, std_dev).unwrap().sample(rng)
             };
         };
     }
@@ -527,8 +527,8 @@ impl Rnn {
                 .input_connections
                 .iter_mut()
                 .for_each(|(_, weight)| *weight = Normal::new(mean, std_dev).unwrap().sample(rng));
-            if let Some(input) = neuron.retina_inputs_mut().iter_mut().choose(rng) {
-                *input = Normal::new(mean, std_dev).unwrap().sample(rng)
+            if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+                *weight = Normal::new(mean, std_dev).unwrap().sample(rng)
             };
         };
     }
@@ -739,6 +739,10 @@ impl Neuron {
 
     pub fn retina_weights(&self) -> &Vec<f32> {
         &self.retina_weights
+    }
+
+    pub fn retina_weights_mut(&mut self) -> &mut Vec<f32> {
+        &mut self.retina_weights
     }
 
     pub fn add_retina_input(&mut self, input: f32) {
