@@ -1,0 +1,48 @@
+[image_processing]
+path_to_training_data = "images/training"
+path_to_test_data = "images/test"
+path_to_agents_dir= "agents"
+path_to_image_descriptions = "images/descriptions"
+input_image_width = 4032
+input_image_height = 3024
+goal_image_width = 320
+goal_image_height = 240
+initial_retina_size = 23
+min_retina_size = 23
+max_retina_size = 23
+retina_circle_radius = 1.0
+sobel_threshold = 0.3
+erode_pixels = 1
+
+[neural_network]
+networks_per_agent = 10
+neurons_per_network = 8
+number_of_network_updates = 40
+retina_movement_speed = 30.0
+retina_resize_speed = 1.5
+
+[neural_network.weight_bounds]
+neuron_lower = -1.0
+neuron_upper = 1.0
+retina_lower = -1.0
+retina_upper = 1.0
+
+[genetic_algorithm]
+with_seed = false
+seed = 1024
+population_size = 100
+max_generations = 50
+tournament_size = 5
+take_agents = 30
+
+[genetic_algorithm.mutation_rates]
+variance = 0.2
+mean = 0.0
+delete_neuron = 0.1
+delete_weights = 0.15
+delete_bias = 0.2
+delete_self_activation = 0.1
+mutate_neuron = 0.1
+mutate_weights = 0.15
+mutate_bias = 0.2
+mutate_self_activation = 0.1

@@ -1,0 +1,4 @@
+.SUBCKT main
+v0 7 7 dc 0
+.ENDS
+.END

@@ -1,0 +1,5 @@
+.SUBCKT main
+r0 21 21 0
+v0 6 6 dc 0
+.ENDS
+.END
