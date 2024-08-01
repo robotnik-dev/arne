@@ -42,6 +42,7 @@ fn main() -> Result {
     let take_agents = CONFIG.genetic_algorithm.take_agents as usize;
     let path_to_agents_dir = CONFIG.image_processing.path_to_agents_dir as &str;
     let networks_per_agent = CONFIG.neural_network.networks_per_agent as usize;
+    let variance_decay = CONFIG.genetic_algorithm.mutation_rates.variance_decay as f32;
 
     log::info!("setting up rng");
 
@@ -113,7 +114,7 @@ fn main() -> Result {
         // after 50 % of max generations, decrease the variance by 10 % each generation
         if population.generation() > max_generations as u32 / 2 {
             population.agents_mut().iter_mut().for_each(|agent| {
-                agent.update_variance(agent.get_current_variance() * 0.90);
+                agent.update_variance(agent.get_current_variance() * variance_decay);
             })
         }
 

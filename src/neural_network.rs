@@ -471,17 +471,18 @@ impl Rnn {
         };
     }
 
-    /// setting all incoming weights to 0 from a random neuron
+    /// setting one weight to 0 from a random neuron
     pub fn delete_weights(&mut self, rng: &mut dyn RngCore) {
         if let Some(neuron) = self.neurons.iter_mut().choose(rng) {
-            neuron
-                .input_connections
-                .iter_mut()
-                .for_each(|(_, weight)| *weight = 0.0);
-            neuron
-                .retina_weights_mut()
-                .iter_mut()
-                .for_each(|weight| *weight = 0.0);
+            if rng.gen_bool(0.5) {
+                if let Some((_, weight)) = neuron.input_connections.iter_mut().choose(rng) {
+                    *weight = 0.0;
+                }
+            } else {
+                if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+                    *weight = 0.0;
+                }
+            } 
         };
     }
 
@@ -499,37 +500,39 @@ impl Rnn {
         };
     }
 
-    /// randomize the weights self activation and bias from a random neuron
-    /// randomize with a normal distribution with mean 0 and variance 0.2
+    /// randomize one weight, self activation and bias from a random neuron
     pub fn mutate_neuron(&mut self, rng: &mut dyn RngCore) {
         let std_dev = self.mutation_variance;
         let mean = self.mean;
         if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
-            neuron.input_connections.iter_mut().for_each(|(_, weight)| {
-                *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
-            });
             neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng);
             neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng);
-            if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
-                *weight = Normal::new(mean, std_dev).unwrap().sample(rng)
-            };
+            if rng.gen_bool(0.5) {
+                if let Some((_, weight)) = neuron.input_connections.iter_mut().choose(rng) {
+                    *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+                }
+            } else {
+                if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+                    *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+                }
+            }
         };
     }
 
-    /// randomize all incoming weights from a random neuron
-    /// randomize with a normal distribution with mean 0 and variance 0.2
-    /// Update also one random weight from the retina inputs
+    /// randomize one incoming weight from a random neuron
     pub fn mutate_weights(&mut self, rng: &mut dyn RngCore) {
         let std_dev = self.mutation_variance;
         let mean = self.mean;
         if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
-            neuron
-                .input_connections
-                .iter_mut()
-                .for_each(|(_, weight)| *weight = Normal::new(mean, std_dev).unwrap().sample(rng));
-            if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
-                *weight = Normal::new(mean, std_dev).unwrap().sample(rng)
-            };
+            if rng.gen_bool(0.5) {
+                if let Some((_, weight)) = neuron.input_connections.iter_mut().choose(rng) {
+                    *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+                }
+            } else {
+                if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+                    *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+                }
+            }
         };
     }
 

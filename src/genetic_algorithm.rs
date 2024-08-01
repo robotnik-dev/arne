@@ -68,18 +68,20 @@ pub trait AgentEvaluation {
 
 impl FitnessCalculation for Agent {
     fn calculate_fitness(&self, description: ImageDescription) -> f32 {
-        let resistors = description.components.resistor.unwrap_or(0);
-        let resistor_nodes = description.nodes.resistor.unwrap_or(Vec::new());
-        let capacitors = description.components.capacitor.unwrap_or(0);
-        let capacitors_nodes = description.nodes.capacitor.unwrap_or(Vec::new());
-        let sources_dc = description.components.source_dc.unwrap_or(0);
-        let sources_dc_nodes = description.nodes.source_dc.unwrap_or(Vec::new());
+        let resistors = description.components.resistor.unwrap_or_default();
+        let resistor_nodes = description.nodes.resistor.unwrap_or_default();
+        let capacitors = description.components.capacitor.unwrap_or_default();
+        let capacitors_nodes = description.nodes.capacitor.unwrap_or_default();
+        let sources_dc = description.components.source_dc.unwrap_or_default();
+        let sources_dc_nodes = description.nodes.source_dc.unwrap_or_default();
 
         let resistor_neuron_idx = 4usize;
         let capacitor_neuron_idx = 5usize;
         let source_dc_neuron_idx = 3usize;
         let in_node_neuron_idx = 6usize;
         let out_node_neuron_idx = 6usize;
+
+        let max_networks = self.genotype().networks().len() as f32;
 
         // collect all networks that 'see' some component
         let resistor_networks = self
@@ -185,23 +187,31 @@ impl FitnessCalculation for Agent {
             })
             .cloned()
             .collect::<Vec<Rnn>>();
-
-        // filter all the networks that see only white pixel in this time step
-        let blank_networks_count = self.genotype()
+        
+        // fitness reward for less white pixels
+        let max_pixel_count = self
+            .genotype()
             .networks()
             .iter()
-            .filter(|&network| {
-                network.neurons().iter().all(|neuron| neuron.retina_inputs().iter().all(|&input| input > 0.5))
-            }).count();
+            .fold(0, |acc, network| {
+                acc + network.neurons()[0].retina_inputs().len()
+            });
+
+        let white_pixel_count = self
+            .genotype()
+            .networks()
+            .iter()
+            .fold(0, |acc, network| {
+                acc + network.neurons()[0].retina_inputs().iter().filter(|&pixel| pixel > &0.5).count()
+            });
 
         // fitness is high when the count of the networks are close to the ImageDescription numbers
         // Additionally the fitness gets lower the more blank_networks exists in this time step
-        let max_networks = self.genotype().networks().len() as f32;
         1.0 - ((
-            (resistor_networks.len() as f32 - resistors as f32).abs() / max_networks
-            + (capacitor_networks.len() as f32 - capacitors as f32).abs() / max_networks
-            + (source_dc_networks.len() as f32 - sources_dc as f32).abs() / max_networks
-            + (blank_networks_count as f32 / max_networks)
+            ((resistor_networks.len() as f32 - resistors as f32).abs() / max_networks) * 0.2
+            + ((capacitor_networks.len() as f32 - capacitors as f32).abs() / max_networks) * 0.2
+            + ((source_dc_networks.len() as f32 - sources_dc as f32).abs() / max_networks) * 0.2
+            + (white_pixel_count as f32 / max_pixel_count as f32) * 0.4
         ) / 4.0)
     }
 }
@@ -220,13 +230,18 @@ impl AgentEvaluation for Agent {
         for i in 0..self.genotype_mut().networks_mut().len() {
             let initial_retina_size = CONFIG.image_processing.initial_retina_size as usize;
             // create a retina at a random position
-            let low_x = initial_retina_size as i32;
-            let high_x = image.width() as i32 - initial_retina_size as i32;
-            let low_y = initial_retina_size as i32;
-            let high_y = image.height() as i32 - initial_retina_size as i32;
+            // let low_x = initial_retina_size as i32;
+            // let high_x = image.width() as i32 - initial_retina_size as i32;
+            // let low_y = initial_retina_size as i32;
+            // let high_y = image.height() as i32 - initial_retina_size as i32;
 
+            let image_center_position = Position::new(
+                (image.width() / 2) as i32,
+                (image.height() / 2) as i32,
+            );
+            
             let retina = image.create_retina_at(
-                self.get_starting_position(rng, low_x, high_x, low_y, high_y),
+                image_center_position,
                 initial_retina_size,
                 i.to_string(),
             )?;
