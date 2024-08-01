@@ -213,7 +213,7 @@ impl AgentEvaluation for Agent {
     ) -> std::result::Result<f32, Error> {
         let mut retinas = vec![];
         // initialize networks with retinas
-        for _ in 0..self.genotype_mut().networks_mut().len() {
+        for i in 0..self.genotype_mut().networks_mut().len() {
             let initial_retina_size = CONFIG.image_processing.initial_retina_size as usize;
             // create a retina at a random position
             let low_x = initial_retina_size as i32;
@@ -224,6 +224,7 @@ impl AgentEvaluation for Agent {
             let retina = image.create_retina_at(
                 self.get_starting_position(rng, low_x, high_x, low_y, high_y),
                 initial_retina_size,
+                i.to_string(),
             )?;
             retinas.push(retina);
         }

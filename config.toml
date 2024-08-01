@@ -11,6 +11,7 @@ initial_retina_size = 23
 min_retina_size = 23
 max_retina_size = 23
 retina_circle_radius = 1.0
+retina_label_scale = 12.0
 sobel_threshold = 0.3
 erode_pixels = 1
 
@@ -31,7 +32,7 @@ retina_upper = 1.0
 [genetic_algorithm]
 with_seed = false
 seed = 1024
-population_size = 5
+population_size = 10
 max_generations = 2
 tournament_size = 5
 take_agents = 30

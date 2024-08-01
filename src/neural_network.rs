@@ -969,7 +969,7 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
         let image = Image::from_vec(vec![0.0; 320 * 320]).unwrap();
-        let mut retina = image.create_retina_at(Position::new(160, 120), 5).unwrap();
+        let mut retina = image.create_retina_at(Position::new(160, 120), 5, "test".to_string()).unwrap();
         rnn.update_inputs_from_retina(&retina);
         // resize to maximum size
         retina.set_size(239, &image).unwrap();
@@ -1003,7 +1003,7 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
-        let retina = image.create_retina_at(Position::new(3, 13), 5).unwrap();
+        let retina = image.create_retina_at(Position::new(3, 13), 5, "test".to_string()).unwrap();
 
         rnn.update_retina_size(5);
         rnn.update_inputs_from_retina(&retina);
@@ -1017,7 +1017,7 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
         let image = Image::from_vec(vec![0.0; 320 * 320]).unwrap();
-        let mut retina = image.create_retina_at(Position::new(160, 120), 5).unwrap();
+        let mut retina = image.create_retina_at(Position::new(160, 120), 5, "test".to_string()).unwrap();
         rnn.update_inputs_from_retina(&retina);
         rnn.update();
         retina.set_size(51, &image).unwrap();

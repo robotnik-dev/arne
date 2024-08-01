@@ -1,6 +1,7 @@
 use image::imageops::resize;
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
-use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut};
+use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_text_mut};
+use rusttype::{Font, Scale};
 use log::debug;
 use nalgebra::clamp;
 use serde::Deserialize;
@@ -168,8 +169,8 @@ pub struct Image {
     grey: GrayImage,
     width: u32,
     height: u32,
-    /// used to visualize the retina movement on an upscaled image (Position, size of retina)
-    retina_positions: Vec<(Position, usize)>,
+    /// used to visualize the retina movement on an upscaled image (Position, size of retina, label)
+    retina_positions: Vec<(Position, usize, String)>,
 }
 
 impl Image {
@@ -313,6 +314,7 @@ impl Image {
         &self,
         position: Position,
         size: usize,
+        label: String,
     ) -> std::result::Result<Retina, Error> {
         // make sure size is odd number
         if size % 2 == 0 {
@@ -339,6 +341,7 @@ impl Image {
         Ok(Retina {
             data,
             size,
+            label,
             center_position: position,
             current_delta_position: Position::new(0, 0),
             last_delta_position: Position::new(0, 0),
@@ -347,7 +350,7 @@ impl Image {
 
     pub fn update_retina_movement(&mut self, retina: &Retina) {
         self.retina_positions
-            .push((retina.get_center_position(), retina.size()));
+            .push((retina.get_center_position(), retina.size(), retina.label.clone()));
     }
 
     pub fn save_rgba(&mut self, path: String) -> std::result::Result<&mut Self, Error> {
@@ -362,7 +365,7 @@ impl Image {
 
     pub fn save_with_retina(&self, path: String) -> Result {
         let mut canvas = self.grey().clone();
-        for (index, (retina_position, retina_size)) in self.retina_positions.iter().enumerate() {
+        for (index, (retina_position, retina_size, label)) in self.retina_positions.iter().enumerate() {
             let scaled_size = *retina_size as f32;
             let x = retina_position.x as f32 - 0.5;
             let y = retina_position.y as f32 - 0.5;
@@ -393,6 +396,15 @@ impl Image {
 
             // draw in the middle a circle
             draw_filled_circle_mut(&mut canvas, (x as i32, y as i32), 1_i32, Luma([0]));
+
+            // add a label to the retina
+            let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
+            let Some(font) = Font::try_from_bytes(font_data) else {
+                return Err("Could not load font".into());
+            };
+            let scale = Scale { x: CONFIG.image_processing.retina_label_scale as f32, y: CONFIG.image_processing.retina_label_scale as f32 };
+            let color = Luma([0]);
+            draw_text_mut(&mut canvas, color, x as i32, y as i32, scale, &font, &label);
         }
         canvas.save(path)?;
 
@@ -414,7 +426,7 @@ impl Image {
             upscaled_height,
             image::imageops::FilterType::Nearest,
         );
-        for (index, (retina_position, retina_size)) in self.retina_positions.iter().enumerate() {
+        for (index, (retina_position, retina_size, label)) in self.retina_positions.iter().enumerate() {
             let scaled_size = *retina_size as f32 * scaling_factor_x;
             let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;
@@ -456,6 +468,15 @@ impl Image {
                 circle_radius as i32,
                 Rgba([0, 255, 0, 255]),
             );
+
+            // add a label to the retina
+            let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
+            let Some(font) = Font::try_from_bytes(font_data) else {
+                return Err("Could not load font".into());
+            };
+            let scale = Scale { x: CONFIG.image_processing.retina_label_scale as f32, y: CONFIG.image_processing.retina_label_scale as f32 };
+            let color = Rgba([0, 0, 0, 255]);
+            draw_text_mut(&mut canvas, color, scaled_x as i32, scaled_y as i32, scale, &font, &label);
         }
         canvas.save(path)?;
 
@@ -467,6 +488,7 @@ pub struct Retina {
     // color data stored in a vector
     data: Vec<f32>,
     size: usize,
+    label: String,
     last_delta_position: Position,
     current_delta_position: Position,
     /// this is only for visualization purpose, the Rnn does not know this information
@@ -623,7 +645,7 @@ mod tests {
     fn test_get_retina_out_of_bounds() {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         // getting the first pixel in the top left corner should give an error
-        let retina = image.create_retina_at(Position::new(1, 1), 5 as usize);
+        let retina = image.create_retina_at(Position::new(1, 1), 5 as usize, "test".to_string());
         assert!(retina.is_err());
     }
 
@@ -631,7 +653,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_right() {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(5, 13), 5 as usize)
+            .create_retina_at(Position::new(5, 13), 5 as usize, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(80, 0), &image);
@@ -642,7 +664,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_left() {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(5, 13), 5 as usize)
+            .create_retina_at(Position::new(5, 13), 5 as usize, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(-80, 0), &image);
@@ -653,7 +675,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_top() {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(5, 13), 5 as usize)
+            .create_retina_at(Position::new(5, 13), 5 as usize, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(0, -80), &image);
@@ -664,7 +686,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_bottom() {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(5, 13), 5 as usize)
+            .create_retina_at(Position::new(5, 13), 5 as usize, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(0, 80), &image);
@@ -674,7 +696,7 @@ mod tests {
     #[test]
     fn test_retina_movement() {
         let mut image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
-        let mut retina = image.create_retina_at(Position::new(5, 5), 5).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 5), 5, "test".to_string()).unwrap();
         image.update_retina_movement(&retina);
         retina.move_mut(&Position::new(1, 1), &image);
         image.update_retina_movement(&retina);
@@ -695,7 +717,7 @@ mod tests {
     #[should_panic]
     fn test_invalid_retina_size() {
         let image = Image::from_vec(vec![0.0; 9 * 9]).unwrap();
-        let mut retina = image.create_retina_at(Position::new(5, 5), 5).unwrap();
+        let mut retina = image.create_retina_at(Position::new(5, 5), 5, "test".to_string()).unwrap();
         retina.set_size(10, &image).unwrap();
     }
 }
