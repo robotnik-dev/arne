@@ -68,9 +68,12 @@ pub trait AgentEvaluation {
 
 impl FitnessCalculation for Agent {
     fn calculate_fitness(&self, description: ImageDescription) -> f32 {
-        let resistors = description.components.resistor;
-        let capacitors = description.components.capacitor;
-        let sources_dc = description.components.source_dc;
+        let resistors = description.components.resistor.unwrap_or(0);
+        let resistor_nodes = description.nodes.resistor.unwrap_or(Vec::new());
+        let capacitors = description.components.capacitor.unwrap_or(0);
+        let capacitors_nodes = description.nodes.capacitor.unwrap_or(Vec::new());
+        let sources_dc = description.components.source_dc.unwrap_or(0);
+        let sources_dc_nodes = description.nodes.source_dc.unwrap_or(Vec::new());
 
         let resistor_neuron_idx = 4usize;
         let capacitor_neuron_idx = 5usize;
@@ -78,6 +81,7 @@ impl FitnessCalculation for Agent {
         let in_node_neuron_idx = 6usize;
         let out_node_neuron_idx = 6usize;
 
+        // collect all networks that 'see' some component
         let resistor_networks = self
             .genotype()
             .networks()
@@ -192,11 +196,11 @@ impl FitnessCalculation for Agent {
 
         // fitness is high when the count of the networks are close to the ImageDescription numbers
         // Additionally the fitness gets lower the more blank_networks exists in this time step
-        let max_networks = CONFIG.neural_network.networks_per_agent as f32;
+        let max_networks = self.genotype().networks().len() as f32;
         1.0 - ((
-            (resistor_networks.len() as f32 - resistors as f32).abs()
-            + (capacitor_networks.len() as f32 - capacitors as f32).abs()
-            + (source_dc_networks.len() as f32 - sources_dc as f32).abs()
+            (resistor_networks.len() as f32 - resistors as f32).abs() / max_networks
+            + (capacitor_networks.len() as f32 - capacitors as f32).abs() / max_networks
+            + (source_dc_networks.len() as f32 - sources_dc as f32).abs() / max_networks
             + (blank_networks_count as f32 / max_networks)
         ) / 4.0)
     }
@@ -574,7 +578,9 @@ impl Generate for Agent {
             .for_each(|(i, network)| {
                 let mut component =
                     ComponentBuilder::new(ComponentType::VoltageSourceDc, i.to_string()).build();
-                let in_node = network.neurons()[in_node_neuron_idx].output().abs() * 100.0;
+                // let in_node = network.neurons()[in_node_neuron_idx].output().abs() * 100.0;
+                // one node is always ground
+                let in_node = 0.0f32;
                 let out_node = network.neurons()[out_node_neuron_idx].output().abs() * 100.0;
                 component.add_node(Node(in_node as u32), NodeType::In);
                 component.add_node(Node(out_node as u32), NodeType::Out);

@@ -25,13 +25,21 @@ impl std::fmt::Display for ImageLabel {
 #[derive(Deserialize, Clone, Debug)]
 pub struct ImageDescription {
     pub components: Components,
+    pub nodes: Nodes
 }
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Components {
-    pub resistor: u32,
-    pub capacitor: u32,
-    pub source_dc: u32,
+    pub resistor: Option<u32>,
+    pub capacitor: Option<u32>,
+    pub source_dc: Option<u32>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct Nodes {
+    pub resistor: Option<Vec<Vec<u32>>>,
+    pub capacitor: Option<Vec<Vec<u32>>>,
+    pub source_dc: Option<Vec<Vec<u32>>>,
 }
 
 pub struct ImageReader {

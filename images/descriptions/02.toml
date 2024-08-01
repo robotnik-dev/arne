@@ -1,4 +1,7 @@
 [components]
 resistor = 2
-capacitor = 0
 source_dc = 1
+
+[nodes]
+resistor = [ [1, 2], [2, 0] ]
+source_dc = [ [0, 1] ]
