@@ -6,7 +6,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::image_processing::{Image, ImageDescription, ImageLabel, Position};
+use crate::image_processing::{Image, ImageDescription, ImageLabel, Position, Retina};
 use crate::netlist::{ComponentBuilder, ComponentType, Generate, Netlist, Node, NodeType};
 use crate::neural_network::Rnn;
 use crate::{Error, CONFIG};
@@ -49,7 +49,7 @@ pub enum SelectionMethod {
 }
 
 trait FitnessCalculation {
-    fn calculate_fitness(&self, description: ImageDescription) -> f32;
+    fn calculate_fitness(&self, description: ImageDescription, retinas: Vec<Retina>) -> f32;
 }
 
 pub trait AgentEvaluation {
@@ -64,7 +64,7 @@ pub trait AgentEvaluation {
 }
 
 impl FitnessCalculation for Agent {
-    fn calculate_fitness(&self, description: ImageDescription) -> f32 {
+    fn calculate_fitness(&self, description: ImageDescription, retinas: Vec<Retina>) -> f32 {
         let resistors = description.components.resistor.unwrap_or_default();
         let resistor_nodes = description.nodes.resistor.unwrap_or_default();
         let capacitors = description.components.capacitor.unwrap_or_default();
@@ -77,8 +77,6 @@ impl FitnessCalculation for Agent {
         let source_dc_neuron_idx = 3usize;
         let in_node_neuron_idx = 6usize;
         let out_node_neuron_idx = 6usize;
-
-        let max_networks = self.genotype().networks().len() as f32;
 
         // collect all networks that 'see' some component
         let resistor_networks = self
@@ -231,14 +229,23 @@ impl FitnessCalculation for Agent {
             })
         });
 
-        // fitness is high when the count of the networks are close to the ImageDescription numbers
+        // reward more movement of the retinas
+        let movement_reward = retinas.iter().fold(0.0, |acc, retina| {
+            acc + retina.get_current_delta_position().len() as f32
+        }) / retinas.len() as f32 / CONFIG.neural_network.retina_movement_speed as f32;
+
+        // fitness is high when the count of the networks are exactly the ImageDescription numbers
         // Additionally the fitness gets lower the more blank_networks exists in this time step
+        let resistor_fitness = if resistor_networks.len() == resistors as usize { 1.0 } else { 0.0 };
+        let capacitor_fitness = if capacitor_networks.len() == capacitors as usize { 1.0 } else { 0.0 };
+        let source_dc_fitness = if source_dc_networks.len() == sources_dc as usize { 1.0 } else { 0.0 };
         1.0 - (
-            (((resistor_networks.len() as f32 - resistors as f32).abs() / max_networks) * 0.175)
-            + (((capacitor_networks.len() as f32 - capacitors as f32).abs() / max_networks) * 0.175)
-            + (((source_dc_networks.len() as f32 - sources_dc as f32).abs() / max_networks) * 0.175)
-            + ((white_pixel_count as f32 / max_pixel_count as f32) * 0.15)
-            + (1.0 - (correct_nodes as f32 / maximum_nodes as f32) * 0.325)
+            (1.0 - resistor_fitness * 0.2) as f32
+            + (1.0 - capacitor_fitness * 0.2) as f32
+            + (1.0 - source_dc_fitness * 0.2) as f32
+            + (1.0 - (correct_nodes as f32 / maximum_nodes as f32) * 0.15)
+            + ((white_pixel_count as f32 / max_pixel_count as f32) * 0.1)
+            + (1.0 - movement_reward * 0.15) as f32
         ) / 5.0
     }
 }
@@ -259,13 +266,12 @@ impl AgentEvaluation for Agent {
             // create a retina at a random position
             let top_left = Position::new(initial_retina_size as i32, initial_retina_size as i32);
             let bottom_right = Position::new(image.width() as i32 - initial_retina_size as i32,image.height() as i32 - initial_retina_size as i32);
-            let random_position = Position::random(rng, top_left, bottom_right);
 
-            let image_center_position =
+            let _random_position = Position::random(rng, top_left, bottom_right);
+            let _image_center_position =
                 Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
-
             let retina = image.create_retina_at(
-                random_position,
+                _image_center_position,
                 initial_retina_size,
                 i.to_string(),
             )?;
@@ -315,7 +321,7 @@ impl AgentEvaluation for Agent {
                 network.add_snapshot(outputs, time_step);
             }
             // calculate the fitness of the genotype (all networks)
-            local_fitness += self.calculate_fitness(desciption.clone());
+            local_fitness += self.calculate_fitness(desciption.clone(), retinas.clone());
         }
         // save the image in the hashmap of the agent with label
         let image = image.clone();
@@ -638,6 +644,11 @@ impl Agent {
             genotype: Genotype::new(&mut rng, networks_per_agent, number_of_neurons),
             statistics: HashMap::new(),
         }
+    }
+
+    /// adds the fitness to the current fitness of the agent
+    pub fn add_to_fitness(&mut self, fitness: f32) {
+        self.fitness += fitness;
     }
 
     pub fn fitness(&self) -> f32 {

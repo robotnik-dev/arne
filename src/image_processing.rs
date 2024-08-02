@@ -520,6 +520,7 @@ impl Image {
     }
 }
 
+#[derive(Clone)]
 pub struct Retina {
     // color data stored in a vector
     data: Vec<f32>,

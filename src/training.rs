@@ -71,9 +71,15 @@ pub fn train_agents() -> Result {
                         number_of_network_updates,
                     )
                     .unwrap();
-                agent.set_fitness(fitness);
+                agent.add_to_fitness(fitness);
             });
         }
+
+        // avarage each agents fitness over the number of images
+        population.agents_mut().par_iter_mut().for_each(|agent| {
+            agent.set_fitness(agent.fitness() / image_reader.images().len() as f32);
+        });
+
         // sort the population by fitness
         population
             .agents_mut()
