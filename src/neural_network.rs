@@ -257,8 +257,6 @@ impl Rnn {
         }
 
         // connect all neurons with each other
-        // with the Xavier initialization
-        // let (lower, upper) = (-1.0 / (neuron_count as f32).sqrt(), 1.0 / (neuron_count as f32).sqrt());
         let (lower, upper) = (
             CONFIG.neural_network.weight_bounds.neuron_lower as f32,
             CONFIG.neural_network.weight_bounds.neuron_upper as f32,
@@ -627,8 +625,6 @@ impl From<Rnn> for Graph<(usize, f32), f32> {
 pub struct Neuron {
     // a unique identifier for the neuron
     index: usize,
-    /// the activation of the neuron
-    // activation: f32,
     /// output of the neuron after activation_function is applied
     output: f32,
     /// the indices of the neurons that are connected to this neuron and the weight of the connection

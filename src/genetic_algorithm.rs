@@ -48,8 +48,6 @@ pub enum SelectionMethod {
     Weighted,
 }
 
-/// The actual mapping between the genotype and the phenotype.
-/// Need to be implemented for each invdividual marker type like FollowLine
 trait FitnessCalculation {
     fn calculate_fitness(&self, description: ImageDescription) -> f32;
 }
@@ -200,13 +198,48 @@ impl FitnessCalculation for Agent {
                 .count()
         });
 
+        // for each correct determined node in the corresponding network, it gets a point
+        // then the points are accumulated, normalized and weighted to add to the fitness calculation
+        let mut correct_nodes = 0u32;
+        let maximum_nodes = resistor_nodes
+            .iter()
+            .chain(capacitors_nodes.iter())
+            .chain(sources_dc_nodes.iter())
+            .count() as u32 * 2;
+        resistor_networks.iter().for_each(|network| {
+            let in_node = network.neurons()[in_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+            let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+            resistor_nodes.iter().for_each(|pair| {
+                if in_node as u32 == pair[0] { correct_nodes += 1 };
+                if out_node as u32 == pair[1] { correct_nodes += 1 };
+            })
+        });
+        capacitor_networks.iter().for_each(|network| {
+            let in_node = network.neurons()[in_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+            let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+            capacitors_nodes.iter().for_each(|pair| {
+                if in_node as u32 == pair[0] { correct_nodes += 1 };
+                if out_node as u32 == pair[1] { correct_nodes += 1 };
+            })
+        });
+        source_dc_networks.iter().for_each(|network| {
+            let in_node = network.neurons()[in_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+            let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+            sources_dc_nodes.iter().for_each(|pair| {
+                if in_node as u32 == pair[0] { correct_nodes += 1 };
+                if out_node as u32 == pair[1] { correct_nodes += 1 };
+            })
+        });
+
         // fitness is high when the count of the networks are close to the ImageDescription numbers
         // Additionally the fitness gets lower the more blank_networks exists in this time step
-        1.0 - ((((resistor_networks.len() as f32 - resistors as f32).abs() / max_networks) * 0.2
-            + ((capacitor_networks.len() as f32 - capacitors as f32).abs() / max_networks) * 0.2
-            + ((source_dc_networks.len() as f32 - sources_dc as f32).abs() / max_networks) * 0.2
-            + (white_pixel_count as f32 / max_pixel_count as f32) * 0.4)
-            / 4.0)
+        1.0 - (
+            (((resistor_networks.len() as f32 - resistors as f32).abs() / max_networks) * 0.175)
+            + (((capacitor_networks.len() as f32 - capacitors as f32).abs() / max_networks) * 0.175)
+            + (((source_dc_networks.len() as f32 - sources_dc as f32).abs() / max_networks) * 0.175)
+            + ((white_pixel_count as f32 / max_pixel_count as f32) * 0.15)
+            + (1.0 - (correct_nodes as f32 / maximum_nodes as f32) * 0.325)
+        ) / 5.0
     }
 }
 
@@ -224,16 +257,15 @@ impl AgentEvaluation for Agent {
         for i in 0..self.genotype_mut().networks_mut().len() {
             let initial_retina_size = CONFIG.image_processing.initial_retina_size as usize;
             // create a retina at a random position
-            // let low_x = initial_retina_size as i32;
-            // let high_x = image.width() as i32 - initial_retina_size as i32;
-            // let low_y = initial_retina_size as i32;
-            // let high_y = image.height() as i32 - initial_retina_size as i32;
+            let top_left = Position::new(initial_retina_size as i32, initial_retina_size as i32);
+            let bottom_right = Position::new(image.width() as i32 - initial_retina_size as i32,image.height() as i32 - initial_retina_size as i32);
+            let random_position = Position::random(rng, top_left, bottom_right);
 
             let image_center_position =
                 Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
 
             let retina = image.create_retina_at(
-                image_center_position,
+                random_position,
                 initial_retina_size,
                 i.to_string(),
             )?;
@@ -284,8 +316,6 @@ impl AgentEvaluation for Agent {
             }
             // calculate the fitness of the genotype (all networks)
             local_fitness += self.calculate_fitness(desciption.clone());
-            // TODO: for statistics
-            // self.update_fitness(fitness);
         }
         // save the image in the hashmap of the agent with label
         let image = image.clone();
@@ -412,14 +442,14 @@ impl Genotype {
         }
     }
 }
+
 /// Conductor to control all networks. The idea is to set off multiple RNNs per update step and to collect the results.
 /// The maximum number of RNNs are set in the config file.
-/// Each RNN has a set number of Neurons, namely 7. It can detect either a resitor, capacitor, voltage source or ground.
+/// Each RNN has a set number of Neurons. It can detect either a resitor, capacitor or voltage source for now.
 /// The fitness of the whole set of networks is determined instead of a single network.
 pub struct Agent {
     fitness: f32,
     genotype: Genotype,
-    // for statistics purposes, we store the final images with the retina movement and all the short term memories here
     pub statistics: HashMap<ImageLabel, (Image, Genotype)>,
 }
 
@@ -555,8 +585,8 @@ impl Generate for Agent {
             .for_each(|(i, network)| {
                 let mut component =
                     ComponentBuilder::new(ComponentType::Resistor, i.to_string()).build();
-                let in_node = network.neurons()[in_node_neuron_idx].output().abs() * 100.0;
-                let out_node = network.neurons()[out_node_neuron_idx].output().abs() * 100.0;
+                let in_node = network.neurons()[in_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+                let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
                 component.add_node(Node(in_node as u32), NodeType::In);
                 component.add_node(Node(out_node as u32), NodeType::Out);
                 let _ = netlist.add_component(
@@ -570,8 +600,8 @@ impl Generate for Agent {
             .for_each(|(i, network)| {
                 let mut component =
                     ComponentBuilder::new(ComponentType::Capacitor, i.to_string()).build();
-                let in_node = network.neurons()[in_node_neuron_idx].output().abs() * 100.0;
-                let out_node = network.neurons()[out_node_neuron_idx].output().abs() * 100.0;
+                let in_node = network.neurons()[in_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+                let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
                 component.add_node(Node(in_node as u32), NodeType::In);
                 component.add_node(Node(out_node as u32), NodeType::Out);
                 let _ = netlist.add_component(
@@ -585,10 +615,9 @@ impl Generate for Agent {
             .for_each(|(i, network)| {
                 let mut component =
                     ComponentBuilder::new(ComponentType::VoltageSourceDc, i.to_string()).build();
-                // let in_node = network.neurons()[in_node_neuron_idx].output().abs() * 100.0;
-                // one node is always ground
+                // the in_node is always ground
                 let in_node = 0.0f32;
-                let out_node = network.neurons()[out_node_neuron_idx].output().abs() * 100.0;
+                let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
                 component.add_node(Node(in_node as u32), NodeType::In);
                 component.add_node(Node(out_node as u32), NodeType::Out);
                 let _ = netlist.add_component(

@@ -3,6 +3,7 @@ use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_text_mut};
 use log::debug;
 use nalgebra::clamp;
+use rand::prelude::*;
 use rusttype::{Font, Scale};
 use serde::Deserialize;
 use std::ops::{Add, Sub};
@@ -138,6 +139,12 @@ impl Position {
             x: -self.x,
             y: -self.y,
         }
+    }
+
+    pub fn random(rng: &mut dyn RngCore, top_left: Position, bottom_right: Position) -> Position {
+        let x = rng.gen_range(top_left.x..bottom_right.x);
+        let y = rng.gen_range(top_left.y..bottom_right.y);
+        Position { x, y }
     }
 }
 
