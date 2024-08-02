@@ -93,7 +93,6 @@ pub struct ComponentBuilder {
     prefix: Option<String>,
     value: Option<f64>,
     initial_voltage: Option<f64>,
-    dc_symbol: Option<String>,
 }
 
 impl ComponentBuilder {
@@ -105,12 +104,14 @@ impl ComponentBuilder {
         }
     }
 
+    #[allow(unused)]
     pub fn value(mut self, value: f64, prefix: Option<String>) -> ComponentBuilder {
         self.value = Some(value);
         self.prefix = prefix;
         self
     }
 
+    #[allow(unused)]
     pub fn initial_voltage(mut self, initial_voltage: f64) -> ComponentBuilder {
         self.initial_voltage = Some(initial_voltage);
         self
@@ -164,7 +165,6 @@ impl std::fmt::Display for Node {
 #[derive(Debug, PartialEq, Default)]
 pub struct Netlist {
     pub components: HashMap<String, Component>,
-    // TODO: keep a referecne of all nodes to know how many are in the network
 }
 
 impl Generate for Netlist {
@@ -200,6 +200,7 @@ impl Netlist {
     }
 
     /// adds a node to a component with the specified label
+    #[allow(unused)]
     pub fn add_node_to_component(
         &mut self,
         node: Node,
@@ -216,6 +217,7 @@ impl Netlist {
         Ok(())
     }
 
+    #[allow(unused)]
     pub fn get_component_with_label(&self, label: String) -> Option<&Component> {
         self.components.get(&label)
     }
