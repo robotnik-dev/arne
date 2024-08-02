@@ -1,11 +1,10 @@
 use approx::AbsDiffEq;
-use log::debug;
+use indicatif::ProgressBar;
 use rand::prelude::*;
+use rand_chacha::ChaCha8Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use indicatif::ProgressBar;
-use rand_chacha::ChaCha8Rng;
 
 use crate::image_processing::{Image, ImageDescription, ImageLabel, Position};
 use crate::netlist::{ComponentBuilder, ComponentType, Generate, Netlist, Node, NodeType};
@@ -187,32 +186,27 @@ impl FitnessCalculation for Agent {
             })
             .cloned()
             .collect::<Vec<Rnn>>();
-        
-        // fitness reward for less white pixels
-        let max_pixel_count = self
-            .genotype()
-            .networks()
-            .iter()
-            .fold(0, |acc, network| {
-                acc + network.neurons()[0].retina_inputs().len()
-            });
 
-        let white_pixel_count = self
-            .genotype()
-            .networks()
-            .iter()
-            .fold(0, |acc, network| {
-                acc + network.neurons()[0].retina_inputs().iter().filter(|&pixel| pixel > &0.5).count()
-            });
+        // fitness reward for less white pixels
+        let max_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
+            acc + network.neurons()[0].retina_inputs().len()
+        });
+
+        let white_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
+            acc + network.neurons()[0]
+                .retina_inputs()
+                .iter()
+                .filter(|&pixel| pixel > &0.5)
+                .count()
+        });
 
         // fitness is high when the count of the networks are close to the ImageDescription numbers
         // Additionally the fitness gets lower the more blank_networks exists in this time step
-        1.0 - ((
-            ((resistor_networks.len() as f32 - resistors as f32).abs() / max_networks) * 0.2
+        1.0 - ((((resistor_networks.len() as f32 - resistors as f32).abs() / max_networks) * 0.2
             + ((capacitor_networks.len() as f32 - capacitors as f32).abs() / max_networks) * 0.2
             + ((source_dc_networks.len() as f32 - sources_dc as f32).abs() / max_networks) * 0.2
-            + (white_pixel_count as f32 / max_pixel_count as f32) * 0.4
-        ) / 4.0)
+            + (white_pixel_count as f32 / max_pixel_count as f32) * 0.4)
+            / 4.0)
     }
 }
 
@@ -235,11 +229,9 @@ impl AgentEvaluation for Agent {
             // let low_y = initial_retina_size as i32;
             // let high_y = image.height() as i32 - initial_retina_size as i32;
 
-            let image_center_position = Position::new(
-                (image.width() / 2) as i32,
-                (image.height() / 2) as i32,
-            );
-            
+            let image_center_position =
+                Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
+
             let retina = image.create_retina_at(
                 image_center_position,
                 initial_retina_size,

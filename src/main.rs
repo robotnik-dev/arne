@@ -106,8 +106,12 @@ fn main() -> Result {
         // check stop criteria:
         // - if any agent has a fitness of near 1.0
         // - if the maximum number of generations has been reached
-        if population.agents().iter().any(|agent| agent.fitness() > 0.99) 
-            || population.generation() >= max_generations as u32{
+        if population
+            .agents()
+            .iter()
+            .any(|agent| agent.fitness() > 0.99)
+            || population.generation() >= max_generations as u32
+        {
             break;
         }
 

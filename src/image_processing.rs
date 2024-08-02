@@ -1,9 +1,9 @@
 use image::imageops::resize;
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_text_mut};
-use rusttype::{Font, Scale};
 use log::debug;
 use nalgebra::clamp;
+use rusttype::{Font, Scale};
 use serde::Deserialize;
 use std::ops::{Add, Sub};
 use std::{fmt::Debug, ops::AddAssign};
@@ -25,7 +25,7 @@ impl std::fmt::Display for ImageLabel {
 #[derive(Deserialize, Clone, Debug)]
 pub struct ImageDescription {
     pub components: Components,
-    pub nodes: Nodes
+    pub nodes: Nodes,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -357,8 +357,11 @@ impl Image {
     }
 
     pub fn update_retina_movement(&mut self, retina: &Retina) {
-        self.retina_positions
-            .push((retina.get_center_position(), retina.size(), retina.label.clone()));
+        self.retina_positions.push((
+            retina.get_center_position(),
+            retina.size(),
+            retina.label.clone(),
+        ));
     }
 
     pub fn save_rgba(&mut self, path: String) -> std::result::Result<&mut Self, Error> {
@@ -373,7 +376,9 @@ impl Image {
 
     pub fn save_with_retina(&self, path: String) -> Result {
         let mut canvas = self.grey().clone();
-        for (index, (retina_position, retina_size, label)) in self.retina_positions.iter().enumerate() {
+        for (index, (retina_position, retina_size, label)) in
+            self.retina_positions.iter().enumerate()
+        {
             let scaled_size = *retina_size as f32;
             let x = retina_position.x as f32 - 0.5;
             let y = retina_position.y as f32 - 0.5;
@@ -406,13 +411,16 @@ impl Image {
             draw_filled_circle_mut(&mut canvas, (x as i32, y as i32), 1_i32, Luma([0]));
 
             // add a label to the retina
-            let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
+            let font_data = include_bytes!("../assets/Roboto-Regular.ttf");
             let Some(font) = Font::try_from_bytes(font_data) else {
                 return Err("Could not load font".into());
             };
-            let scale = Scale { x: CONFIG.image_processing.retina_label_scale as f32, y: CONFIG.image_processing.retina_label_scale as f32 };
+            let scale = Scale {
+                x: CONFIG.image_processing.retina_label_scale as f32,
+                y: CONFIG.image_processing.retina_label_scale as f32,
+            };
             let color = Luma([0]);
-            draw_text_mut(&mut canvas, color, x as i32, y as i32, scale, &font, &label);
+            draw_text_mut(&mut canvas, color, x as i32, y as i32, scale, &font, label);
         }
         canvas.save(path)?;
 
@@ -434,7 +442,9 @@ impl Image {
             upscaled_height,
             image::imageops::FilterType::Nearest,
         );
-        for (index, (retina_position, retina_size, label)) in self.retina_positions.iter().enumerate() {
+        for (index, (retina_position, retina_size, label)) in
+            self.retina_positions.iter().enumerate()
+        {
             let scaled_size = *retina_size as f32 * scaling_factor_x;
             let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;
@@ -482,9 +492,20 @@ impl Image {
             let Some(font) = Font::try_from_bytes(font_data) else {
                 return Err("Could not load font".into());
             };
-            let scale = Scale { x: CONFIG.image_processing.retina_label_scale as f32, y: CONFIG.image_processing.retina_label_scale as f32 };
+            let scale = Scale {
+                x: CONFIG.image_processing.retina_label_scale as f32,
+                y: CONFIG.image_processing.retina_label_scale as f32,
+            };
             let color = Rgba([0, 0, 0, 255]);
-            draw_text_mut(&mut canvas, color, scaled_x as i32, scaled_y as i32, scale, &font, &label);
+            draw_text_mut(
+                &mut canvas,
+                color,
+                scaled_x as i32,
+                scaled_y as i32,
+                scale,
+                &font,
+                label,
+            );
         }
         canvas.save(path)?;
 
@@ -704,7 +725,9 @@ mod tests {
     #[test]
     fn test_retina_movement() {
         let mut image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
-        let mut retina = image.create_retina_at(Position::new(5, 5), 5, "test".to_string()).unwrap();
+        let mut retina = image
+            .create_retina_at(Position::new(5, 5), 5, "test".to_string())
+            .unwrap();
         image.update_retina_movement(&retina);
         retina.move_mut(&Position::new(1, 1), &image);
         image.update_retina_movement(&retina);
@@ -725,7 +748,9 @@ mod tests {
     #[should_panic]
     fn test_invalid_retina_size() {
         let image = Image::from_vec(vec![0.0; 9 * 9]).unwrap();
-        let mut retina = image.create_retina_at(Position::new(5, 5), 5, "test".to_string()).unwrap();
+        let mut retina = image
+            .create_retina_at(Position::new(5, 5), 5, "test".to_string())
+            .unwrap();
         retina.set_size(10, &image).unwrap();
     }
 }
