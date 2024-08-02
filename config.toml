@@ -33,7 +33,7 @@ retina_upper = 1.0
 with_seed = false
 seed = 1024
 population_size = 100
-max_generations = 500
+max_generations = 100
 tournament_size = 5
 # multiplier for a node output. ranges from 0 to node_range
 node_range = 10
