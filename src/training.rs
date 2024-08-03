@@ -1,16 +1,18 @@
 use indicatif::ProgressBar;
 use rand::prelude::*;
 use rayon::prelude::*;
+use crate::image_processing::TrainingStage;
 use crate::{Result, CONFIG, Population, ImageReader, Agent, AgentEvaluation, SelectionMethod, ChaCha8Rng};
 use crate::netlist::Generate;
 
-pub fn train_agents() -> Result {
+pub fn train_agents(stage: TrainingStage) -> Result {
+    log::info!("starting training stage {:?}", stage);
+
     log::info!("loading training config variables");
 
     let max_generations = CONFIG.genetic_algorithm.max_generations as u64;
     let seed = CONFIG.genetic_algorithm.seed as u64;
     let with_seed = CONFIG.genetic_algorithm.with_seed;
-    let path_to_training_data = CONFIG.image_processing.path_to_training_data as &str;
     let path_to_image_descriptions = CONFIG.image_processing.path_to_image_descriptions as &str;
     let neurons_per_rnn = CONFIG.neural_network.neurons_per_network as usize;
     let population_size = CONFIG.genetic_algorithm.population_size as usize;
@@ -44,9 +46,15 @@ pub fn train_agents() -> Result {
     log::info!("loading training dataset...");
 
     // create a reader to buffer training dataset
+    let image_path = match stage {
+        TrainingStage::Artificial => CONFIG.image_processing.path_to_training_artificial as &str,
+        TrainingStage::RealBinarized => CONFIG.image_processing.path_to_training_binarized as &str,
+        TrainingStage::Real => CONFIG.image_processing.path_to_analysis_stage as &str,
+    };
     let image_reader = ImageReader::from_path(
-        path_to_training_data.to_string(),
+        image_path.to_string(),
         path_to_image_descriptions.to_string(),
+        stage,
     )?;
 
     let algorithm_bar = ProgressBar::new(max_generations);
@@ -61,7 +69,7 @@ pub fn train_agents() -> Result {
             let (label, image, description) = image_reader.get_image(index)?;
 
             // evaluate the fitness of each individual of the population
-            population.agents_mut().par_iter_mut().for_each(|agent| {
+            population.agents_mut().par_iter_mut().enumerate().for_each(|(_, agent)| {
                 let fitness = agent
                     .evaluate(
                         &mut rng.clone(),
@@ -75,8 +83,8 @@ pub fn train_agents() -> Result {
             });
         }
 
-        // avarage each agents fitness over the number of images
-        population.agents_mut().par_iter_mut().for_each(|agent| {
+        // average each agents fitness over the number of images
+        population.agents_mut().par_iter_mut().enumerate().for_each(|(_, agent)| {
             agent.set_fitness(agent.fitness() / image_reader.images().len() as f32);
         });
 

@@ -184,11 +184,11 @@ impl FitnessCalculation for Agent {
             .collect::<Vec<Rnn>>();
 
         // fitness reward for less white pixels
-        let max_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
+        let _max_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
             acc + network.neurons()[0].retina_inputs().len()
         });
 
-        let white_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
+        let _white_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
             acc + network.neurons()[0]
                 .retina_inputs()
                 .iter()
@@ -230,23 +230,23 @@ impl FitnessCalculation for Agent {
         });
 
         // reward more movement of the retinas
-        let movement_reward = retinas.iter().fold(0.0, |acc, retina| {
+        let _movement_reward = retinas.iter().fold(0.0, |acc, retina| {
             acc + retina.get_current_delta_position().len() as f32
         }) / retinas.len() as f32 / CONFIG.neural_network.retina_movement_speed as f32;
 
         // fitness is high when the count of the networks are exactly the ImageDescription numbers
         // Additionally the fitness gets lower the more blank_networks exists in this time step
-        let resistor_fitness = if resistor_networks.len() == resistors as usize { 1.0 } else { 0.0 };
-        let capacitor_fitness = if capacitor_networks.len() == capacitors as usize { 1.0 } else { 0.0 };
-        let source_dc_fitness = if source_dc_networks.len() == sources_dc as usize { 1.0 } else { 0.0 };
+        let resistor_fitness = if resistor_networks.len() == resistors as usize { 0.0 } else { 1.0 };
+        let capacitor_fitness = if capacitor_networks.len() == capacitors as usize { 0.0 } else { 1.0 };
+        let source_dc_fitness = if source_dc_networks.len() == sources_dc as usize { 0.0 } else { 1.0 };
         1.0 - (
-            (1.0 - resistor_fitness * 0.2) as f32
-            + (1.0 - capacitor_fitness * 0.2) as f32
-            + (1.0 - source_dc_fitness * 0.2) as f32
-            + (1.0 - (correct_nodes as f32 / maximum_nodes as f32) * 0.15)
-            + ((white_pixel_count as f32 / max_pixel_count as f32) * 0.1)
-            + (1.0 - movement_reward * 0.15) as f32
-        ) / 5.0
+            (resistor_fitness * 0.2) as f32
+            + (capacitor_fitness * 0.2) as f32
+            + (source_dc_fitness * 0.2) as f32
+            + (1.0 - (correct_nodes as f32 / maximum_nodes as f32)) * 0.4
+            // + ((white_pixel_count as f32 / max_pixel_count as f32) * 0.1)
+            // + (1.0 - movement_reward * 0.15) as f32
+        ) / 3.0
     }
 }
 

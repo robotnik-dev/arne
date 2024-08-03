@@ -43,21 +43,32 @@ pub struct Nodes {
     pub source_dc: Option<Vec<Vec<u32>>>,
 }
 
+#[derive(Debug, Clone)]
+pub enum TrainingStage {
+    Artificial,
+    RealBinarized,
+    Real,
+}
+
 pub struct ImageReader {
     images: Vec<(ImageLabel, Image, ImageDescription)>,
 }
 
 impl ImageReader {
-    /// reads a directory and returns a list of all images in it (preprocessed)
+    /// reads a directory and returns a list of all images in it
     /// also loads the image descriptions with it
-    pub fn from_path(path: String, description_path: String) -> std::result::Result<Self, Error> {
+    pub fn from_path(path: String, description_path: String, stage: TrainingStage) -> std::result::Result<Self, Error> {
         let mut images = vec![];
 
         for entry in std::fs::read_dir(path)? {
             let path = entry?.path();
             if let Some(to_str) = path.to_str() {
                 let path_str = to_str.to_string();
-                let image = Image::from_path(path_str.clone())?;
+                let image = match stage {
+                    TrainingStage::Artificial => Image::from_path_raw(path_str.clone())?,
+                    TrainingStage::RealBinarized => Image::from_path(path_str.clone())?,
+                    TrainingStage::Real => Image::from_path(path_str.clone())?,
+                };
                 if let Some(label) = get_label_from_path(path_str) {
                     // load description
                     let desc_entry = std::fs::read_dir(description_path.clone())?
@@ -261,6 +272,24 @@ impl Image {
                 CONFIG.image_processing.erode_pixels as u8,
             )?;
 
+        Ok(image)
+    }
+
+    /// load from a path and return an image without preprocessing
+    pub fn from_path_raw(path: String) -> std::result::Result<Self, Error> {
+        let rgba = image::io::Reader::open(path.clone())?
+            .decode()?
+            .into_rgba8();
+        let grey = image::io::Reader::open(path)?.decode()?.into_luma8();
+        let width = rgba.width();
+        let height = rgba.height();
+        let image = Image {
+            rgba,
+            grey,
+            width,
+            height,
+            retina_positions: vec![],
+        };
         Ok(image)
     }
 

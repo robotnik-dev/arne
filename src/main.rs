@@ -1,3 +1,4 @@
+use image_processing::TrainingStage;
 use static_toml::static_toml;
 pub use rand_chacha::ChaCha8Rng;
 
@@ -26,7 +27,7 @@ static_toml! {
 fn main() -> Result {
     env_logger::init();
 
-    training::train_agents()?;
+    training::train_agents(TrainingStage::Artificial)?;
 
     Ok(())
 }
