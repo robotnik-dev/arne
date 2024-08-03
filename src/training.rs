@@ -99,7 +99,7 @@ pub fn train_agents(stage: TrainingStage) -> Result {
         if population
             .agents()
             .iter()
-            .any(|agent| agent.fitness() > 0.9)
+            .any(|agent| agent.fitness() > 0.99)
             || population.generation() >= max_generations as u32
         {
             break;

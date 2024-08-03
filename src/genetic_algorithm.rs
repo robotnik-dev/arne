@@ -1,5 +1,6 @@
 use approx::AbsDiffEq;
 use indicatif::ProgressBar;
+use log::debug;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -236,17 +237,30 @@ impl FitnessCalculation for Agent {
 
         // fitness is high when the count of the networks are exactly the ImageDescription numbers
         // Additionally the fitness gets lower the more blank_networks exists in this time step
-        let resistor_fitness = if resistor_networks.len() == resistors as usize { 0.0 } else { 1.0 };
-        let capacitor_fitness = if capacitor_networks.len() == capacitors as usize { 0.0 } else { 1.0 };
-        let source_dc_fitness = if source_dc_networks.len() == sources_dc as usize { 0.0 } else { 1.0 };
-        1.0 - (
-            (resistor_fitness * 0.2) as f32
-            + (capacitor_fitness * 0.2) as f32
-            + (source_dc_fitness * 0.2) as f32
-            + (1.0 - (correct_nodes as f32 / maximum_nodes as f32)) * 0.4
-            // + ((white_pixel_count as f32 / max_pixel_count as f32) * 0.1)
-            // + (1.0 - movement_reward * 0.15) as f32
-        ) / 3.0
+        
+        // if there are no components of this kind, the fitness is not so much weighted
+        let resistor_fitness = if resistors == 0 {
+            if resistor_networks.len() == resistors as usize { 0.25 } else { 0.0 }
+        } else {
+            if resistor_networks.len() == resistors as usize { 1.0 } else { 0.0 }
+        };
+        let capacitor_fitness = if capacitors == 0 {
+            if capacitor_networks.len() == capacitors as usize { 0.25 } else { 0.0 }
+        } else {
+            if capacitor_networks.len() == capacitors as usize { 1.0 } else { 0.0 }
+        };
+        let source_dc_fitness = if sources_dc == 0 {
+            if source_dc_networks.len() == sources_dc as usize { 0.25 } else { 0.0 }
+        } else {
+            if source_dc_networks.len() == sources_dc as usize { 1.0 } else { 0.0 }
+        };
+        let network_fitness = (resistor_fitness + capacitor_fitness + source_dc_fitness) / 3.0;
+        let node_fitness = 1.0 - (correct_nodes as f32 / maximum_nodes as f32);
+        
+        let fitness = (network_fitness * 0.7 + node_fitness * 0.3) / 2.0;
+        // + ((white_pixel_count as f32 / max_pixel_count as f32) * 0.1)
+        // + (1.0 - movement_reward * 0.15) as f32
+        fitness
     }
 }
 
