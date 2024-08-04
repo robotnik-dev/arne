@@ -1,6 +1,5 @@
 use approx::AbsDiffEq;
 use indicatif::ProgressBar;
-use log::debug;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
