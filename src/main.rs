@@ -29,11 +29,15 @@ fn main() -> Result {
 
     let agent_path = CONFIG.image_processing.path_to_agents_dir as &str;
 
-    training::train_agents(
-        TrainingStage::Artificial,
-        Some(agent_path.to_string()),
-        String::from("agents_after_phase_1"),
-    )?;
+    for i in 0..3 {
+        let load_path = if i == 0 { agent_path.to_string() } else { format!("agents_stage_{}", i-1) };
+        log::info!("starting iteration {} of  stage {:?}", i+1, TrainingStage::Artificial);
+        training::train_agents(
+            TrainingStage::Artificial,
+            Some(load_path),
+            format!("agents_stage_{}", i),
+        )?;
+    }
 
     Ok(())
 }

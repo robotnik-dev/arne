@@ -188,11 +188,11 @@ impl FitnessCalculation for Agent {
             .collect::<Vec<Rnn>>();
 
         // fitness reward for less white pixels
-        let _max_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
+        let max_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
             acc + network.neurons()[0].retina_inputs().len()
         });
 
-        let _white_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
+        let white_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
             acc + network.neurons()[0]
                 .retina_inputs()
                 .iter()
@@ -303,10 +303,10 @@ impl FitnessCalculation for Agent {
         };
         let network_fitness = (resistor_fitness + capacitor_fitness + source_dc_fitness) / 3.0;
         let node_fitness = 1.0 - (correct_nodes as f32 / maximum_nodes as f32);
-
-        let fitness = (network_fitness * 0.7 + node_fitness * 0.3) / 2.0;
-        // + ((white_pixel_count as f32 / max_pixel_count as f32) * 0.1)
+        let follow_pixel_fitness = 1.0 - (white_pixel_count as f32 / max_pixel_count as f32);
         // + (1.0 - movement_reward * 0.15) as f32
+
+        let fitness = (network_fitness * 0.5 + node_fitness * 0.25 + follow_pixel_fitness * 0.25) / 3.0;
         fitness
     }
 }

@@ -17,7 +17,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     let with_seed = CONFIG.genetic_algorithm.with_seed;
     let path_to_image_descriptions = CONFIG.image_processing.path_to_image_descriptions as &str;
     let neurons_per_rnn = CONFIG.neural_network.neurons_per_network as usize;
-    let population_size = CONFIG.genetic_algorithm.population_size as usize;
+    let population_size = CONFIG.genetic_algorithm.initial_population_size as usize;
     let number_of_network_updates = CONFIG.neural_network.number_of_network_updates as usize;
     let take_agents = CONFIG.genetic_algorithm.take_agents as usize;
     let networks_per_agent = CONFIG.neural_network.networks_per_agent as usize;
