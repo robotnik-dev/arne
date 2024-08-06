@@ -57,7 +57,11 @@ pub struct ImageReader {
 impl ImageReader {
     /// reads a directory and returns a list of all images in it
     /// also loads the image descriptions with it
-    pub fn from_path(path: String, description_path: String, stage: TrainingStage) -> std::result::Result<Self, Error> {
+    pub fn from_path(
+        path: String,
+        description_path: String,
+        stage: TrainingStage,
+    ) -> std::result::Result<Self, Error> {
         let mut images = vec![];
 
         for entry in std::fs::read_dir(path)? {

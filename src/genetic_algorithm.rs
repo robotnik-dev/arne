@@ -5,6 +5,10 @@ use rand_chacha::ChaCha8Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::fs::{self, OpenOptions};
+use std::io::Read;
+use std::path::PathBuf;
 
 use crate::image_processing::{Image, ImageDescription, ImageLabel, Position, Retina};
 use crate::netlist::{ComponentBuilder, ComponentType, Generate, Netlist, Node, NodeType};
@@ -203,59 +207,103 @@ impl FitnessCalculation for Agent {
             .iter()
             .chain(capacitors_nodes.iter())
             .chain(sources_dc_nodes.iter())
-            .count() as u32 * 2;
+            .count() as u32
+            * 2;
         resistor_networks.iter().for_each(|network| {
-            let in_node = network.neurons()[in_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
-            let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+            let in_node = network.neurons()[in_node_neuron_idx].output().abs()
+                * CONFIG.genetic_algorithm.node_range as f32;
+            let out_node = network.neurons()[out_node_neuron_idx].output().abs()
+                * CONFIG.genetic_algorithm.node_range as f32;
             resistor_nodes.iter().for_each(|pair| {
-                if in_node as u32 == pair[0] { correct_nodes += 1 };
-                if out_node as u32 == pair[1] { correct_nodes += 1 };
+                if in_node as u32 == pair[0] {
+                    correct_nodes += 1
+                };
+                if out_node as u32 == pair[1] {
+                    correct_nodes += 1
+                };
             })
         });
         capacitor_networks.iter().for_each(|network| {
-            let in_node = network.neurons()[in_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
-            let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+            let in_node = network.neurons()[in_node_neuron_idx].output().abs()
+                * CONFIG.genetic_algorithm.node_range as f32;
+            let out_node = network.neurons()[out_node_neuron_idx].output().abs()
+                * CONFIG.genetic_algorithm.node_range as f32;
             capacitors_nodes.iter().for_each(|pair| {
-                if in_node as u32 == pair[0] { correct_nodes += 1 };
-                if out_node as u32 == pair[1] { correct_nodes += 1 };
+                if in_node as u32 == pair[0] {
+                    correct_nodes += 1
+                };
+                if out_node as u32 == pair[1] {
+                    correct_nodes += 1
+                };
             })
         });
         source_dc_networks.iter().for_each(|network| {
-            let in_node = network.neurons()[in_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
-            let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+            let in_node = network.neurons()[in_node_neuron_idx].output().abs()
+                * CONFIG.genetic_algorithm.node_range as f32;
+            let out_node = network.neurons()[out_node_neuron_idx].output().abs()
+                * CONFIG.genetic_algorithm.node_range as f32;
             sources_dc_nodes.iter().for_each(|pair| {
-                if in_node as u32 == pair[0] { correct_nodes += 1 };
-                if out_node as u32 == pair[1] { correct_nodes += 1 };
+                if in_node as u32 == pair[0] {
+                    correct_nodes += 1
+                };
+                if out_node as u32 == pair[1] {
+                    correct_nodes += 1
+                };
             })
         });
 
         // reward more movement of the retinas
         let _movement_reward = retinas.iter().fold(0.0, |acc, retina| {
             acc + retina.get_current_delta_position().len() as f32
-        }) / retinas.len() as f32 / CONFIG.neural_network.retina_movement_speed as f32;
+        }) / retinas.len() as f32
+            / CONFIG.neural_network.retina_movement_speed as f32;
 
         // fitness is high when the count of the networks are exactly the ImageDescription numbers
         // Additionally the fitness gets lower the more blank_networks exists in this time step
-        
+
         // if there are no components of this kind, the fitness is not so much weighted
         let resistor_fitness = if resistors == 0 {
-            if resistor_networks.len() == resistors as usize { 0.25 } else { 0.0 }
+            if resistor_networks.len() == resistors as usize {
+                0.25
+            } else {
+                0.0
+            }
         } else {
-            if resistor_networks.len() == resistors as usize { 1.0 } else { 0.0 }
+            if resistor_networks.len() == resistors as usize {
+                1.0
+            } else {
+                0.0
+            }
         };
         let capacitor_fitness = if capacitors == 0 {
-            if capacitor_networks.len() == capacitors as usize { 0.25 } else { 0.0 }
+            if capacitor_networks.len() == capacitors as usize {
+                0.25
+            } else {
+                0.0
+            }
         } else {
-            if capacitor_networks.len() == capacitors as usize { 1.0 } else { 0.0 }
+            if capacitor_networks.len() == capacitors as usize {
+                1.0
+            } else {
+                0.0
+            }
         };
         let source_dc_fitness = if sources_dc == 0 {
-            if source_dc_networks.len() == sources_dc as usize { 0.25 } else { 0.0 }
+            if source_dc_networks.len() == sources_dc as usize {
+                0.25
+            } else {
+                0.0
+            }
         } else {
-            if source_dc_networks.len() == sources_dc as usize { 1.0 } else { 0.0 }
+            if source_dc_networks.len() == sources_dc as usize {
+                1.0
+            } else {
+                0.0
+            }
         };
         let network_fitness = (resistor_fitness + capacitor_fitness + source_dc_fitness) / 3.0;
         let node_fitness = 1.0 - (correct_nodes as f32 / maximum_nodes as f32);
-        
+
         let fitness = (network_fitness * 0.7 + node_fitness * 0.3) / 2.0;
         // + ((white_pixel_count as f32 / max_pixel_count as f32) * 0.1)
         // + (1.0 - movement_reward * 0.15) as f32
@@ -278,7 +326,10 @@ impl AgentEvaluation for Agent {
             let initial_retina_size = CONFIG.image_processing.initial_retina_size as usize;
             // create a retina at a random position
             let top_left = Position::new(initial_retina_size as i32, initial_retina_size as i32);
-            let bottom_right = Position::new(image.width() as i32 - initial_retina_size as i32,image.height() as i32 - initial_retina_size as i32);
+            let bottom_right = Position::new(
+                image.width() as i32 - initial_retina_size as i32,
+                image.height() as i32 - initial_retina_size as i32,
+            );
 
             let _random_position = Position::random(rng, top_left, bottom_right);
             let _image_center_position =
@@ -372,6 +423,29 @@ impl Population {
         }
     }
 
+    /// load agents from a path to work with these as the first generation
+    pub fn from_path(path: String) -> std::result::Result<Self, Error> {
+        let mut agents = vec![];
+        fs::read_dir(path).unwrap().for_each(|entry| {
+            // entry => the actual agent index
+            fs::read_dir(entry.unwrap().path())
+                .unwrap()
+                .take(1)
+                .for_each(|first_img_folder| {
+                    // first_img_folder => only the first, because all jsons are the same
+                    let path_buf = first_img_folder.unwrap().path();
+                    let agent = Agent::from_path(path_buf).unwrap();
+                    agents.push(agent);
+                })
+        });
+
+        let population = Population {
+            agents,
+            generation: 0,
+        };
+        Ok(population)
+    }
+
     pub fn agents(&self) -> &Vec<Agent> {
         &self.agents
     }
@@ -462,27 +536,7 @@ impl Genotype {
     }
 }
 
-/// Conductor to control all networks. The idea is to set off multiple RNNs per update step and to collect the results.
-/// The maximum number of RNNs are set in the config file.
-/// Each RNN has a set number of Neurons. It can detect either a resitor, capacitor or voltage source for now.
-/// The fitness of the whole set of networks is determined instead of a single network.
-pub struct Agent {
-    fitness: f32,
-    genotype: Genotype,
-    pub statistics: HashMap<ImageLabel, (Image, Genotype)>,
-}
-
-impl Clone for Agent {
-    fn clone(&self) -> Self {
-        Agent {
-            fitness: self.fitness,
-            genotype: self.genotype.clone(),
-            statistics: self.statistics.clone(),
-        }
-    }
-}
-
-impl Generate for Agent {
+impl Generate for Genotype {
     fn generate(&self) -> String {
         let resistor_neuron_idx = 4usize;
         let capacitor_neuron_idx = 5usize;
@@ -491,7 +545,6 @@ impl Generate for Agent {
         let out_node_neuron_idx = 6usize;
 
         let resistor_networks = self
-            .genotype()
             .networks()
             .iter()
             .filter(|&network| {
@@ -509,7 +562,6 @@ impl Generate for Agent {
             .collect::<Vec<Rnn>>();
 
         let capacitor_networks = self
-            .genotype()
             .networks()
             .iter()
             .filter(|&network| {
@@ -527,7 +579,6 @@ impl Generate for Agent {
             .collect::<Vec<Rnn>>();
 
         let source_dc_networks = self
-            .genotype()
             .networks()
             .iter()
             .filter(|&network| {
@@ -604,8 +655,10 @@ impl Generate for Agent {
             .for_each(|(i, network)| {
                 let mut component =
                     ComponentBuilder::new(ComponentType::Resistor, i.to_string()).build();
-                let in_node = network.neurons()[in_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
-                let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+                let in_node = network.neurons()[in_node_neuron_idx].output().abs()
+                    * CONFIG.genetic_algorithm.node_range as f32;
+                let out_node = network.neurons()[out_node_neuron_idx].output().abs()
+                    * CONFIG.genetic_algorithm.node_range as f32;
                 component.add_node(Node(in_node as u32), NodeType::In);
                 component.add_node(Node(out_node as u32), NodeType::Out);
                 let _ = netlist.add_component(
@@ -619,8 +672,10 @@ impl Generate for Agent {
             .for_each(|(i, network)| {
                 let mut component =
                     ComponentBuilder::new(ComponentType::Capacitor, i.to_string()).build();
-                let in_node = network.neurons()[in_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
-                let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+                let in_node = network.neurons()[in_node_neuron_idx].output().abs()
+                    * CONFIG.genetic_algorithm.node_range as f32;
+                let out_node = network.neurons()[out_node_neuron_idx].output().abs()
+                    * CONFIG.genetic_algorithm.node_range as f32;
                 component.add_node(Node(in_node as u32), NodeType::In);
                 component.add_node(Node(out_node as u32), NodeType::Out);
                 let _ = netlist.add_component(
@@ -636,7 +691,8 @@ impl Generate for Agent {
                     ComponentBuilder::new(ComponentType::VoltageSourceDc, i.to_string()).build();
                 // the in_node is always ground
                 let in_node = 0.0f32;
-                let out_node = network.neurons()[out_node_neuron_idx].output().abs() * CONFIG.genetic_algorithm.node_range as f32;
+                let out_node = network.neurons()[out_node_neuron_idx].output().abs()
+                    * CONFIG.genetic_algorithm.node_range as f32;
                 component.add_node(Node(in_node as u32), NodeType::In);
                 component.add_node(Node(out_node as u32), NodeType::Out);
                 let _ = netlist.add_component(
@@ -649,6 +705,26 @@ impl Generate for Agent {
     }
 }
 
+/// Conductor to control all networks. The idea is to set off multiple RNNs per update step and to collect the results.
+/// The maximum number of RNNs are set in the config file.
+/// Each RNN has a set number of Neurons. It can detect either a resitor, capacitor or voltage source for now.
+/// The fitness of the whole set of networks is determined instead of a single network.
+pub struct Agent {
+    fitness: f32,
+    genotype: Genotype,
+    pub statistics: HashMap<ImageLabel, (Image, Genotype)>,
+}
+
+impl Clone for Agent {
+    fn clone(&self) -> Self {
+        Agent {
+            fitness: self.fitness,
+            genotype: self.genotype.clone(),
+            statistics: self.statistics.clone(),
+        }
+    }
+}
+
 impl Agent {
     pub fn new(networks_per_agent: usize, number_of_neurons: usize) -> Self {
         let mut rng = ChaCha8Rng::from_entropy();
@@ -657,6 +733,34 @@ impl Agent {
             genotype: Genotype::new(&mut rng, networks_per_agent, number_of_neurons),
             statistics: HashMap::new(),
         }
+    }
+
+    /// builds a new Aegnt from a multiple json files located at 'path'
+    pub fn from_path(path: PathBuf) -> std::result::Result<Self, Error> {
+        let mut rnns = vec![];
+        fs::read_dir(path.clone()).unwrap().for_each(|entry| {
+            let network_path = entry.unwrap().path();
+            if network_path.is_dir() {
+                fs::read_dir(network_path.clone())
+                    .unwrap()
+                    .for_each(|file| {
+                        let file_path = file.unwrap().path();
+                        if Some(OsStr::new("network.json")) == file_path.file_name() {
+                            let mut file = OpenOptions::new().read(true).open(file_path).unwrap();
+                            let mut buffer = String::new();
+                            file.read_to_string(&mut buffer).unwrap();
+                            let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
+                            rnns.push(rnn);
+                        }
+                    })
+            }
+        });
+        let genotype = Genotype { networks: rnns };
+        Ok(Agent {
+            fitness: 0.0,
+            genotype,
+            statistics: HashMap::new(),
+        })
     }
 
     /// adds the fitness to the current fitness of the agent

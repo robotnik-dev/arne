@@ -1,6 +1,6 @@
 use image_processing::TrainingStage;
-use static_toml::static_toml;
 pub use rand_chacha::ChaCha8Rng;
+use static_toml::static_toml;
 
 mod utils;
 pub use utils::round2;
@@ -27,7 +27,13 @@ static_toml! {
 fn main() -> Result {
     env_logger::init();
 
-    training::train_agents(TrainingStage::Artificial)?;
+    let agent_path = CONFIG.image_processing.path_to_agents_dir as &str;
+
+    training::train_agents(
+        TrainingStage::Artificial,
+        Some(agent_path.to_string()),
+        String::from("agents_after_phase_1"),
+    )?;
 
     Ok(())
 }

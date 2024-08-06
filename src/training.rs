@@ -1,11 +1,13 @@
+use crate::image_processing::TrainingStage;
+use crate::netlist::Generate;
+use crate::{
+    Agent, AgentEvaluation, ChaCha8Rng, ImageReader, Population, Result, SelectionMethod, CONFIG,
+};
 use indicatif::ProgressBar;
 use rand::prelude::*;
 use rayon::prelude::*;
-use crate::image_processing::TrainingStage;
-use crate::{Result, CONFIG, Population, ImageReader, Agent, AgentEvaluation, SelectionMethod, ChaCha8Rng};
-use crate::netlist::Generate;
 
-pub fn train_agents(stage: TrainingStage) -> Result {
+pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: String) -> Result {
     log::info!("starting training stage {:?}", stage);
 
     log::info!("loading training config variables");
@@ -18,7 +20,6 @@ pub fn train_agents(stage: TrainingStage) -> Result {
     let population_size = CONFIG.genetic_algorithm.population_size as usize;
     let number_of_network_updates = CONFIG.neural_network.number_of_network_updates as usize;
     let take_agents = CONFIG.genetic_algorithm.take_agents as usize;
-    let path_to_agents_dir = CONFIG.image_processing.path_to_agents_dir as &str;
     let networks_per_agent = CONFIG.neural_network.networks_per_agent as usize;
     let variance_decay = CONFIG.genetic_algorithm.mutation_rates.variance_decay as f32;
 
@@ -35,12 +36,16 @@ pub fn train_agents(stage: TrainingStage) -> Result {
 
     // intialize population
     let population_bar = ProgressBar::new(population_size as u64);
-    let mut population = Population::new(
-        &population_bar,
-        population_size,
-        networks_per_agent,
-        neurons_per_rnn,
-    );
+    let mut population = if load_path.is_some() {
+        Population::from_path(load_path.unwrap())?
+    } else {
+        Population::new(
+            &population_bar,
+            population_size,
+            networks_per_agent,
+            neurons_per_rnn,
+        )
+    };
     population_bar.finish();
 
     log::info!("loading training dataset...");
@@ -69,24 +74,32 @@ pub fn train_agents(stage: TrainingStage) -> Result {
             let (label, image, description) = image_reader.get_image(index)?;
 
             // evaluate the fitness of each individual of the population
-            population.agents_mut().par_iter_mut().enumerate().for_each(|(_, agent)| {
-                let fitness = agent
-                    .evaluate(
-                        &mut rng.clone(),
-                        label.clone(),
-                        &mut image.clone(),
-                        description.clone(),
-                        number_of_network_updates,
-                    )
-                    .unwrap();
-                agent.add_to_fitness(fitness);
-            });
+            population
+                .agents_mut()
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(_, agent)| {
+                    let fitness = agent
+                        .evaluate(
+                            &mut rng.clone(),
+                            label.clone(),
+                            &mut image.clone(),
+                            description.clone(),
+                            number_of_network_updates,
+                        )
+                        .unwrap();
+                    agent.add_to_fitness(fitness);
+                });
         }
 
         // average each agents fitness over the number of images
-        population.agents_mut().par_iter_mut().enumerate().for_each(|(_, agent)| {
-            agent.set_fitness(agent.fitness() / image_reader.images().len() as f32);
-        });
+        population
+            .agents_mut()
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(_, agent)| {
+                agent.set_fitness(agent.fitness() / image_reader.images().len() as f32);
+            });
 
         // sort the population by fitness
         population
@@ -131,7 +144,7 @@ pub fn train_agents(stage: TrainingStage) -> Result {
     log::info!("generating files for the best {} agents...", take_agents);
 
     // remove 'agents' directory if it exists
-    std::fs::remove_dir_all(path_to_agents_dir).unwrap_or_default();
+    std::fs::remove_dir_all(save_path.clone()).unwrap_or_default();
 
     let generating_files_bar = ProgressBar::new(take_agents as u64);
     population
@@ -140,33 +153,30 @@ pub fn train_agents(stage: TrainingStage) -> Result {
         .enumerate()
         .inspect(|(index, agent)| {
             log::debug!("agent {} fitness: {}", index, agent.fitness());
-            log::debug!("agent {} netlist: {:?}", index, agent.generate());
         })
         .take(take_agents)
         .for_each(|(index, agent)| {
-            let netlist = agent.generate();
             agent
                 .statistics_mut()
                 .par_iter_mut()
                 .for_each(|(label, (image, genotype))| {
-                    std::fs::create_dir_all(format!("{}/{}/{}", path_to_agents_dir, index, label))
-                        .unwrap();
+                    std::fs::create_dir_all(format!("{}/{}/{}", save_path, index, label)).unwrap();
+
+                    // generate netlist
+                    let netlist = genotype.generate();
                     image
-                        .save_with_retina(format!(
-                            "{}/{}/{}/retina.png",
-                            path_to_agents_dir, index, label
-                        ))
+                        .save_with_retina(format!("{}/{}/{}/retina.png", save_path, index, label))
                         .unwrap();
                     image
                         .save_with_retina_upscaled(format!(
                             "{}/{}/{}/retina_orig.png",
-                            path_to_agents_dir, index, label
+                            save_path, index, label
                         ))
                         .unwrap();
 
                     // save netlist
                     std::fs::write(
-                        format!("{}/{}/{}/netlist.net", path_to_agents_dir, index, label),
+                        format!("{}/{}/{}/netlist.net", save_path, index, label),
                         netlist.clone(),
                     )
                     .unwrap();
@@ -178,26 +188,26 @@ pub fn train_agents(stage: TrainingStage) -> Result {
                         .for_each(|(i, network)| {
                             std::fs::create_dir_all(format!(
                                 "{}/{}/{}/{}",
-                                path_to_agents_dir, index, label, i
+                                save_path, index, label, i
                             ))
                             .unwrap();
                             network
                                 .short_term_memory()
                                 .visualize(format!(
                                     "{}/{}/{}/{}/memory.png",
-                                    path_to_agents_dir, index, label, i
+                                    save_path, index, label, i
                                 ))
                                 .unwrap();
                             network
                                 .to_json(format!(
                                     "{}/{}/{}/{}/network.json",
-                                    path_to_agents_dir, index, label, i
+                                    save_path, index, label, i
                                 ))
                                 .unwrap();
                             network
                                 .to_dot(format!(
                                     "{}/{}/{}/{}/network.dot",
-                                    path_to_agents_dir, index, label, i
+                                    save_path, index, label, i
                                 ))
                                 .unwrap();
                         });

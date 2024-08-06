@@ -657,9 +657,11 @@ impl PartialEq for Neuron {
                     .iter()
                     .any(|other_con| (con.0, round2(con.1)) == (other_con.0, round2(other_con.1)))
             })
-            && self.retina_weights.iter().zip(other.retina_weights.iter()).all(|(a, b)| {
-                round2(*a) == round2(*b)
-            })
+            && self
+                .retina_weights
+                .iter()
+                .zip(other.retina_weights.iter())
+                .all(|(a, b)| round2(*a) == round2(*b))
             && round2(self.bias) == round2(other.bias)
             && round2(self.self_activation) == round2(other.self_activation)
     }
