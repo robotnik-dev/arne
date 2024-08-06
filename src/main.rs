@@ -3,7 +3,7 @@ pub use rand_chacha::ChaCha8Rng;
 use static_toml::static_toml;
 
 mod utils;
-pub use utils::round2;
+pub use utils::{round2, round_to_decimal_places};
 
 mod image_processing;
 pub use image_processing::{ImageReader, Retina};
