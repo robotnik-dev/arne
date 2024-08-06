@@ -29,7 +29,7 @@ fn main() -> Result {
 
     let agent_path = CONFIG.image_processing.path_to_agents_dir as &str;
 
-    for i in 0..3 {
+    for i in 0..10 {
         let load_path = if i == 0 { agent_path.to_string() } else { format!("agents_stage_{}", i-1) };
         log::info!("starting iteration {} of  stage {:?}", i+1, TrainingStage::Artificial);
         training::train_agents(
