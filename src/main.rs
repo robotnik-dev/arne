@@ -27,16 +27,21 @@ static_toml! {
 fn main() -> Result {
     env_logger::init();
 
-    let agent_path = CONFIG.image_processing.path_to_agents_dir as &str;
+    // train first iteration of agents that stay on top of black pixels
+    training::train_agents(
+        TrainingStage::Artificial{stage: 0},
+        None,
+        format!("agents"),
+    )?;
 
+    let agent_path = CONFIG.image_processing.path_to_agents_dir as &str;
     for i in 1..10 {
-        log::info!("starting iteration {} of  stage {:?}", i, TrainingStage::Artificial);
         let load_path = if i == 1 { agent_path.to_string() } else { format!("agents_stage_{}", i-1) };
         let save_path = format!("agents_stage_{}", i);
         // deleting folder at save_path
         std::fs::remove_dir_all(save_path.clone())?;
         training::train_agents(
-            TrainingStage::Artificial,
+            TrainingStage::Artificial{stage: 0},
             Some(load_path),
             save_path,
         )?;

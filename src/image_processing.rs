@@ -45,7 +45,9 @@ pub struct Nodes {
 
 #[derive(Debug, Clone)]
 pub enum TrainingStage {
-    Artificial,
+    Artificial {
+        stage: u8,
+    },
     RealBinarized,
     Real,
 }
@@ -69,7 +71,7 @@ impl ImageReader {
             if let Some(to_str) = path.to_str() {
                 let path_str = to_str.to_string();
                 let image = match stage {
-                    TrainingStage::Artificial => Image::from_path_raw(path_str.clone())?,
+                    TrainingStage::Artificial{..} => Image::from_path_raw(path_str.clone())?,
                     TrainingStage::RealBinarized => Image::from_path(path_str.clone())?,
                     TrainingStage::Real => Image::from_path(path_str.clone())?,
                 };

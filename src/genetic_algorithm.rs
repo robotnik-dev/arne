@@ -52,13 +52,10 @@ pub enum SelectionMethod {
     Weighted,
 }
 
-trait FitnessCalculation {
-    fn calculate_fitness(&self, description: ImageDescription, retinas: Vec<Retina>) -> f32;
-}
-
 pub trait AgentEvaluation {
     fn evaluate(
         &mut self,
+        fitness_function: fn(agent: &mut Agent, description: ImageDescription, retinas: Vec<Retina>) -> f32,
         rng: &mut dyn RngCore,
         label: ImageLabel,
         image: &mut Image,
@@ -67,253 +64,10 @@ pub trait AgentEvaluation {
     ) -> std::result::Result<f32, Error>;
 }
 
-impl FitnessCalculation for Agent {
-    fn calculate_fitness(&self, description: ImageDescription, retinas: Vec<Retina>) -> f32 {
-        let resistors = description.components.resistor.unwrap_or_default();
-        let resistor_nodes = description.nodes.resistor.unwrap_or_default();
-        let capacitors = description.components.capacitor.unwrap_or_default();
-        let capacitors_nodes = description.nodes.capacitor.unwrap_or_default();
-        let sources_dc = description.components.source_dc.unwrap_or_default();
-        let sources_dc_nodes = description.nodes.source_dc.unwrap_or_default();
-
-        let resistor_neuron_idx = 4usize;
-        let capacitor_neuron_idx = 5usize;
-        let source_dc_neuron_idx = 3usize;
-        let in_node_neuron_idx = 6usize;
-        let out_node_neuron_idx = 6usize;
-
-        // collect all networks that 'see' some component
-        let resistor_networks = self
-            .genotype()
-            .networks()
-            .iter()
-            .filter(|&network| {
-                network.neurons()[resistor_neuron_idx]
-                    .output()
-                    .abs_diff_eq(&1.0, 0.01)
-                    && network.neurons()[capacitor_neuron_idx]
-                        .output()
-                        .abs_diff_eq(&0.0, 0.01)
-                    && network.neurons()[source_dc_neuron_idx]
-                        .output()
-                        .abs_diff_eq(&0.0, 0.01)
-            })
-            .cloned()
-            .collect::<Vec<Rnn>>();
-
-        let capacitor_networks = self
-            .genotype()
-            .networks()
-            .iter()
-            .filter(|&network| {
-                network.neurons()[resistor_neuron_idx]
-                    .output()
-                    .abs_diff_eq(&0.0, 0.01)
-                    && network.neurons()[capacitor_neuron_idx]
-                        .output()
-                        .abs_diff_eq(&1.0, 0.01)
-                    && network.neurons()[source_dc_neuron_idx]
-                        .output()
-                        .abs_diff_eq(&0.0, 0.01)
-            })
-            .cloned()
-            .collect::<Vec<Rnn>>();
-
-        let source_dc_networks = self
-            .genotype()
-            .networks()
-            .iter()
-            .filter(|&network| {
-                network.neurons()[resistor_neuron_idx]
-                    .output()
-                    .abs_diff_eq(&0.0, 0.01)
-                    && network.neurons()[capacitor_neuron_idx]
-                        .output()
-                        .abs_diff_eq(&0.0, 0.01)
-                    && network.neurons()[source_dc_neuron_idx]
-                        .output()
-                        .abs_diff_eq(&1.0, 0.01)
-            })
-            .cloned()
-            .collect::<Vec<Rnn>>();
-
-        // remove identical networks (comparison of the nodes)
-        // only keep the ones that have unique outputs of in_nodes and out_nodes
-        let resistor_networks = resistor_networks
-            .iter()
-            .filter(|&network| {
-                let in_node_output = network.neurons()[in_node_neuron_idx].output();
-                let out_node_output = network.neurons()[out_node_neuron_idx].output();
-                resistor_networks.iter().all(|other_network| {
-                    let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-                    let other_out_node_output =
-                        other_network.neurons()[out_node_neuron_idx].output();
-                    in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
-                        && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
-                })
-            })
-            .cloned()
-            .collect::<Vec<Rnn>>();
-
-        let capacitor_networks = capacitor_networks
-            .iter()
-            .filter(|&network| {
-                let in_node_output = network.neurons()[in_node_neuron_idx].output();
-                let out_node_output = network.neurons()[out_node_neuron_idx].output();
-                capacitor_networks.iter().all(|other_network| {
-                    let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-                    let other_out_node_output =
-                        other_network.neurons()[out_node_neuron_idx].output();
-                    in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
-                        && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
-                })
-            })
-            .cloned()
-            .collect::<Vec<Rnn>>();
-
-        let source_dc_networks = source_dc_networks
-            .iter()
-            .filter(|&network| {
-                let in_node_output = network.neurons()[in_node_neuron_idx].output();
-                let out_node_output = network.neurons()[out_node_neuron_idx].output();
-                source_dc_networks.iter().all(|other_network| {
-                    let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-                    let other_out_node_output =
-                        other_network.neurons()[out_node_neuron_idx].output();
-                    in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
-                        && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
-                })
-            })
-            .cloned()
-            .collect::<Vec<Rnn>>();
-
-        // fitness reward for less white pixels
-        let max_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
-            acc + network.neurons()[0].retina_inputs().len()
-        });
-
-        let white_pixel_count = self.genotype().networks().iter().fold(0, |acc, network| {
-            acc + network.neurons()[0]
-                .retina_inputs()
-                .iter()
-                .filter(|&pixel| pixel > &0.5)
-                .count()
-        });
-
-        // for each correct determined node in the corresponding network, it gets a point
-        // then the points are accumulated, normalized and weighted to add to the fitness calculation
-        let mut correct_nodes = 0u32;
-        let maximum_nodes = resistor_nodes
-            .iter()
-            .chain(capacitors_nodes.iter())
-            .chain(sources_dc_nodes.iter())
-            .count() as u32
-            * 2;
-        resistor_networks.iter().for_each(|network| {
-            let in_node = network.neurons()[in_node_neuron_idx].output().abs()
-                * CONFIG.genetic_algorithm.node_range as f32;
-            let out_node = network.neurons()[out_node_neuron_idx].output().abs()
-                * CONFIG.genetic_algorithm.node_range as f32;
-            resistor_nodes.iter().for_each(|pair| {
-                if in_node as u32 == pair[0] {
-                    correct_nodes += 1
-                };
-                if out_node as u32 == pair[1] {
-                    correct_nodes += 1
-                };
-            })
-        });
-        capacitor_networks.iter().for_each(|network| {
-            let in_node = network.neurons()[in_node_neuron_idx].output().abs()
-                * CONFIG.genetic_algorithm.node_range as f32;
-            let out_node = network.neurons()[out_node_neuron_idx].output().abs()
-                * CONFIG.genetic_algorithm.node_range as f32;
-            capacitors_nodes.iter().for_each(|pair| {
-                if in_node as u32 == pair[0] {
-                    correct_nodes += 1
-                };
-                if out_node as u32 == pair[1] {
-                    correct_nodes += 1
-                };
-            })
-        });
-        source_dc_networks.iter().for_each(|network| {
-            let in_node = network.neurons()[in_node_neuron_idx].output().abs()
-                * CONFIG.genetic_algorithm.node_range as f32;
-            let out_node = network.neurons()[out_node_neuron_idx].output().abs()
-                * CONFIG.genetic_algorithm.node_range as f32;
-            sources_dc_nodes.iter().for_each(|pair| {
-                if in_node as u32 == pair[0] {
-                    correct_nodes += 1
-                };
-                if out_node as u32 == pair[1] {
-                    correct_nodes += 1
-                };
-            })
-        });
-
-        // reward more movement of the retinas
-        let _movement_reward = retinas.iter().fold(0.0, |acc, retina| {
-            acc + retina.get_current_delta_position().len() as f32
-        }) / retinas.len() as f32
-            / CONFIG.neural_network.retina_movement_speed as f32;
-
-        // fitness is high when the count of the networks are exactly the ImageDescription numbers
-        // Additionally the fitness gets lower the more blank_networks exists in this time step
-
-        // if there are no components of this kind, the fitness is not so much weighted
-        let resistor_fitness = if resistors == 0 {
-            if resistor_networks.len() == resistors as usize {
-                0.25
-            } else {
-                0.0
-            }
-        } else {
-            if resistor_networks.len() == resistors as usize {
-                1.0
-            } else {
-                0.0
-            }
-        };
-        let capacitor_fitness = if capacitors == 0 {
-            if capacitor_networks.len() == capacitors as usize {
-                0.25
-            } else {
-                0.0
-            }
-        } else {
-            if capacitor_networks.len() == capacitors as usize {
-                1.0
-            } else {
-                0.0
-            }
-        };
-        let source_dc_fitness = if sources_dc == 0 {
-            if source_dc_networks.len() == sources_dc as usize {
-                0.25
-            } else {
-                0.0
-            }
-        } else {
-            if source_dc_networks.len() == sources_dc as usize {
-                1.0
-            } else {
-                0.0
-            }
-        };
-        let network_fitness = (resistor_fitness + capacitor_fitness + source_dc_fitness) / 3.0;
-        let node_fitness = 1.0 - (correct_nodes as f32 / maximum_nodes as f32);
-        let follow_pixel_fitness = 1.0 - (white_pixel_count as f32 / max_pixel_count as f32);
-        // + (1.0 - movement_reward * 0.15) as f32
-
-        let fitness = (network_fitness * 0.5 + node_fitness * 0.25 + follow_pixel_fitness * 0.25) / 3.0;
-        fitness
-    }
-}
-
 impl AgentEvaluation for Agent {
     fn evaluate(
         &mut self,
+        fitness_function: fn(agent: &mut Agent, description: ImageDescription, retinas: Vec<Retina>) -> f32,
         rng: &mut dyn RngCore,
         label: ImageLabel,
         image: &mut Image,
@@ -385,7 +139,7 @@ impl AgentEvaluation for Agent {
                 network.add_snapshot(outputs, time_step);
             }
             // calculate the fitness of the genotype (all networks)
-            local_fitness += self.calculate_fitness(desciption.clone(), retinas.clone());
+            local_fitness += fitness_function(self, desciption.clone(), retinas.clone());
         }
         // save the image in the hashmap of the agent with label
         let image = image.clone();
