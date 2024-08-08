@@ -89,7 +89,7 @@ impl AgentEvaluation for Agent {
             let _image_center_position =
                 Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
             let retina = image.create_retina_at(
-                _image_center_position,
+                _random_position,
                 initial_retina_size,
                 i.to_string(),
             )?;
@@ -145,7 +145,7 @@ impl AgentEvaluation for Agent {
         let image = image.clone();
         let genotype = self.genotype().clone();
         self.statistics_mut()
-            .insert(label.clone(), (image, genotype));
+            .insert(label.clone(), (image, genotype, String::new()));
 
         let fitness = local_fitness / number_of_updates as f32;
         Ok(fitness)
@@ -466,7 +466,8 @@ impl Generate for Genotype {
 pub struct Agent {
     fitness: f32,
     genotype: Genotype,
-    pub statistics: HashMap<ImageLabel, (Image, Genotype)>,
+    /// String -> netlist string
+    pub statistics: HashMap<ImageLabel, (Image, Genotype, String)>,
 }
 
 impl Clone for Agent {
@@ -538,11 +539,11 @@ impl Agent {
         &mut self.genotype
     }
 
-    pub fn statistics(&self) -> &HashMap<ImageLabel, (Image, Genotype)> {
+    pub fn statistics(&self) -> &HashMap<ImageLabel, (Image, Genotype, String)> {
         &self.statistics
     }
 
-    pub fn statistics_mut(&mut self) -> &mut HashMap<ImageLabel, (Image, Genotype)> {
+    pub fn statistics_mut(&mut self) -> &mut HashMap<ImageLabel, (Image, Genotype, String)> {
         &mut self.statistics
     }
 

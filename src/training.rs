@@ -27,9 +27,9 @@ fn fitness_pixel_follow(agent: &mut Agent, _: ImageDescription, retinas: Vec<Ret
 
     // reward more movement of the retinas
     let movement_fitness = retinas.iter().fold(0.0, |acc, retina| {
-        acc + retina.get_current_delta_position().len() as f32
-    }) / retinas.len() as f32
-        / CONFIG.neural_network.retina_movement_speed as f32;
+        acc + retina.get_current_delta_position().normalized_len() as f32
+    }) / retinas.len() as f32;
+        // / CONFIG.neural_network.retina_movement_speed as f32;
 
     let follow_pixel_fitness = 1.0 - (white_pixel_count as f32 / max_pixel_count as f32);
         
@@ -39,7 +39,7 @@ fn fitness_pixel_follow(agent: &mut Agent, _: ImageDescription, retinas: Vec<Ret
 }
 
 
-fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription, retinas: Vec<Retina>) -> f32 {
+fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription, _: Vec<Retina>) -> f32 {
     let resistors = description.components.resistor.unwrap_or_default();
     let resistor_nodes = description.nodes.resistor.unwrap_or_default();
     let capacitors = description.components.capacitor.unwrap_or_default();
@@ -158,19 +158,6 @@ fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription
         .cloned()
         .collect::<Vec<Rnn>>();
 
-    // fitness reward for less white pixels
-    let max_pixel_count = agent.genotype().networks().iter().fold(0, |acc, network| {
-        acc + network.neurons()[0].retina_inputs().len()
-    });
-
-    let white_pixel_count = agent.genotype().networks().iter().fold(0, |acc, network| {
-        acc + network.neurons()[0]
-            .retina_inputs()
-            .iter()
-            .filter(|&pixel| pixel > &0.5)
-            .count()
-    });
-
     // for each correct determined node in the corresponding network, it gets a point
     // then the points are accumulated, normalized and weighted to add to the fitness calculation
     let mut correct_nodes = 0u32;
@@ -222,29 +209,21 @@ fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription
             };
         })
     });
-
-    // reward more movement of the retinas
-    let _movement_reward = retinas.iter().fold(0.0, |acc, retina| {
-        acc + retina.get_current_delta_position().len() as f32
-    }) / retinas.len() as f32
-        / CONFIG.neural_network.retina_movement_speed as f32;
-
     // fitness is high when the count of the networks are exactly the ImageDescription numbers
     // Additionally the fitness gets lower the more blank_networks exists in this time step
 
     // if there are no components of this kind, the fitness is not so much weighted
+    let max_networks = CONFIG.neural_network.networks_per_agent as f32;
     let resistor_fitness = if resistors == 0 {
         if resistor_networks.len() == resistors as usize {
             0.25
         } else {
             0.0
         }
+    } else if resistor_networks.len() == resistors as usize {
+        1.0
     } else {
-        if resistor_networks.len() == resistors as usize {
-            1.0
-        } else {
-            0.0
-        }
+        1.0 - ((resistor_networks.len() as f32 - resistors as f32).abs() / max_networks)
     };
     let capacitor_fitness = if capacitors == 0 {
         if capacitor_networks.len() == capacitors as usize {
@@ -252,12 +231,10 @@ fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription
         } else {
             0.0
         }
+    } else if capacitor_networks.len() == capacitors as usize {
+        1.0
     } else {
-        if capacitor_networks.len() == capacitors as usize {
-            1.0
-        } else {
-            0.0
-        }
+        1.0 - ((capacitor_networks.len() as f32 - capacitors as f32).abs() / max_networks)
     };
     let source_dc_fitness = if sources_dc == 0 {
         if source_dc_networks.len() == sources_dc as usize {
@@ -265,19 +242,15 @@ fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription
         } else {
             0.0
         }
+    } else if source_dc_networks.len() == sources_dc as usize {
+        1.0
     } else {
-        if source_dc_networks.len() == sources_dc as usize {
-            1.0
-        } else {
-            0.0
-        }
+        1.0 - ((source_dc_networks.len() as f32 - sources_dc as f32).abs() / max_networks)
     };
     let network_fitness = (resistor_fitness + capacitor_fitness + source_dc_fitness) / 3.0;
     let node_fitness = 1.0 - (correct_nodes as f32 / maximum_nodes as f32);
-    let follow_pixel_fitness = 1.0 - (white_pixel_count as f32 / max_pixel_count as f32);
-    // + (1.0 - movement_reward * 0.15) as f32
 
-    let fitness = (network_fitness * 0.5 + node_fitness * 0.25 + follow_pixel_fitness * 0.25) / 3.0;
+    let fitness = (network_fitness * 0.4 + node_fitness * 0.6) / 2.0;
     fitness
 }
 
@@ -372,6 +345,17 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
                         .unwrap();
                     agent.add_to_fitness(fitness);
                 });
+            
+            // after one image was processed, save a netlist per image
+            population
+                .agents_mut()
+                .par_iter_mut()
+                .for_each(|agent| {
+                    let generated_netlist = agent.genotype().generate();
+                    if let Some((_, _, netlist)) = agent.statistics_mut().get_mut(&label.clone()) {
+                        *netlist = generated_netlist;
+                    }
+                })
         }
 
         // average each agents fitness over the number of images
@@ -441,11 +425,9 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
             agent
                 .statistics_mut()
                 .par_iter_mut()
-                .for_each(|(label, (image, genotype))| {
+                .for_each(|(label, (image, genotype, netlist))| {
                     std::fs::create_dir_all(format!("{}/{}/{}", save_path, index, label)).unwrap();
 
-                    // generate netlist
-                    let netlist = genotype.generate();
                     image
                         .save_with_retina(format!("{}/{}/{}/retina.png", save_path, index, label))
                         .unwrap();

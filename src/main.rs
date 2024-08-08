@@ -1,6 +1,7 @@
 use image_processing::TrainingStage;
 pub use rand_chacha::ChaCha8Rng;
 use static_toml::static_toml;
+use clap::Parser;
 
 mod utils;
 pub use utils::{round2, round_to_decimal_places};
@@ -24,28 +25,37 @@ static_toml! {
     pub static CONFIG = include_toml!("config.toml");
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// number of times the training should run, 0 for initilize agents_init
+    #[arg(short, long, default_value_t = 0)]
+    count: u8,
+}
+
 fn main() -> Result {
     env_logger::init();
 
-    // train first iteration of agents that stay on top of black pixels
-    training::train_agents(
-        TrainingStage::Artificial{stage: 0},
-        None,
-        format!("agents"),
-    )?;
+    let args = Args::parse();
 
-    let agent_path = CONFIG.image_processing.path_to_agents_dir as &str;
-    for i in 1..10 {
-        let load_path = if i == 1 { agent_path.to_string() } else { format!("agents_stage_{}", i-1) };
-        let save_path = format!("agents_stage_{}", i);
-        // deleting folder at save_path
-        std::fs::remove_dir_all(save_path.clone())?;
+    if args.count == 0 {
+        // train first iteration of agents that every other tage builds upon
         training::train_agents(
             TrainingStage::Artificial{stage: 0},
-            Some(load_path),
-            save_path,
+            None,
+            format!("agents_init"),
         )?;
+    } else {
+        std::fs::remove_dir_all(format!("agents_trained")).unwrap_or_default();
+        for i in 1..=args.count {
+            let load_path = if i == 1 { format!("agents_init") } else { format!("agents_trained/agents_stage_{}", i-1) };
+            let save_path = format!("agents_trained/agents_stage_{}", i);
+            training::train_agents(
+                TrainingStage::Artificial{stage: 1},
+                Some(load_path),
+                save_path,
+            )?;
+        }
     }
-
     Ok(())
 }

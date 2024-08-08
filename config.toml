@@ -1,5 +1,4 @@
 [image_processing]
-path_to_agents_dir= "agents"
 path_to_training_artificial = "images/training-stage-artificial"
 path_to_training_binarized = "images/training-stage-binarized"
 path_to_analysis_stage = "images/analysis-stage"
@@ -33,8 +32,8 @@ retina_upper = 10.0
 [genetic_algorithm]
 with_seed = false
 seed = 1024
-initial_population_size = 30
-max_generations = 100
+initial_population_size = 100
+max_generations = 500
 tournament_size = 5
 # multiplier for a node output. ranges from 0 to node_range
 node_range = 10
@@ -48,7 +47,7 @@ delete_neuron = 0.1
 delete_weights = 0.1
 delete_bias = 0.1
 delete_self_activation = 0.1
-mutate_neuron = 0.1
-mutate_weights = 0.1
-mutate_bias = 0.1
-mutate_self_activation = 0.1
+mutate_neuron = 0.2
+mutate_weights = 0.2
+mutate_bias = 0.2
+mutate_self_activation = 0.2

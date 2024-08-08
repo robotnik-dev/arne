@@ -162,7 +162,7 @@ impl std::fmt::Display for Node {
     }
 }
 
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, PartialEq, Default, Clone)]
 pub struct Netlist {
     pub components: HashMap<String, Component>,
 }
