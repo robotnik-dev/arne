@@ -1,0 +1,53 @@
+[image_processing]
+path_to_training_artificial = "images/training-stage-artificial"
+path_to_training_binarized = "images/training-stage-binarized"
+path_to_analysis_stage = "images/analysis-stage"
+path_to_image_descriptions = "images/descriptions"
+input_image_width = 4032
+input_image_height = 3024
+goal_image_width = 320
+goal_image_height = 240
+initial_retina_size = 33
+min_retina_size = 33
+max_retina_size = 33
+retina_circle_radius = 1.0
+retina_label_scale = 12.0
+sobel_threshold = 0.3
+erode_pixels = 1
+
+[neural_network]
+# maximum components the networks can regognize
+networks_per_agent = 10
+neurons_per_network = 8
+number_of_network_updates = 10
+retina_movement_speed = 20.0
+retina_resize_speed = 2.0
+
+[neural_network.weight_bounds]
+neuron_lower = -10.0
+neuron_upper = 10.0
+retina_lower = -10.0
+retina_upper = 10.0
+
+[genetic_algorithm]
+with_seed = false
+seed = 1024
+initial_population_size = 100
+max_generations = 250
+tournament_size = 5
+# multiplier for a node output. ranges from 0 to node_range
+node_range = 10
+take_agents = 30
+
+[genetic_algorithm.mutation_rates]
+variance = 0.2
+variance_decay = 0.99
+mean = 0.0
+delete_neuron = 0.1
+delete_weights = 0.1
+delete_bias = 0.1
+delete_self_activation = 0.1
+mutate_neuron = 0.1
+mutate_weights = 0.1
+mutate_bias = 0.1
+mutate_self_activation = 0.1

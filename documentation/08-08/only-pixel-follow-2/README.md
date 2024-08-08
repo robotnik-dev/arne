@@ -1,0 +1,1 @@
+Hier hab ich die fitness funktion genommen, die nur darauf achtet, dass die Retina schwarze Pixel sieht und sich mehr bewegt.
