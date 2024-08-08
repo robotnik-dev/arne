@@ -32,8 +32,9 @@ retina_upper = 10.0
 [genetic_algorithm]
 with_seed = false
 seed = 1024
-initial_population_size = 100
-max_generations = 10
+goal_fitness = 0.95
+initial_population_size = 150
+max_generations = 1000
 tournament_size = 5
 # multiplier for a node output. ranges from 0 to node_range
 node_range = 10
@@ -41,7 +42,7 @@ take_agents = 30
 
 [genetic_algorithm.mutation_rates]
 variance = 0.2
-variance_decay = 0.99
+variance_decay = 0.95
 mean = 0.0
 delete_neuron = 0.1
 delete_weights = 0.1

@@ -269,6 +269,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     let take_agents = CONFIG.genetic_algorithm.take_agents as usize;
     let networks_per_agent = CONFIG.neural_network.networks_per_agent as usize;
     let variance_decay = CONFIG.genetic_algorithm.mutation_rates.variance_decay as f32;
+    let goal_fitness = CONFIG.genetic_algorithm.goal_fitness as f32;
 
     log::info!("setting up rng");
 
@@ -378,7 +379,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         if population
             .agents()
             .iter()
-            .any(|agent| agent.fitness() > 0.99)
+            .any(|agent| agent.fitness() >= goal_fitness)
             || population.generation() >= max_generations as u32
         {
             break;
