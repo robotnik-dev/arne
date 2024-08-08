@@ -47,8 +47,8 @@ fn main() -> Result {
         )?;
     } else {
         std::fs::remove_dir_all(format!("agents_trained")).unwrap_or_default();
-        for i in 1..=args.count {
-            let load_path = if i == 1 { format!("agents_init") } else { format!("agents_trained/agents_stage_{}", i-1) };
+        for i in 0..args.count {
+            let load_path = if i == 0 { format!("agents_init") } else { format!("agents_trained/agents_stage_{}", i-1) };
             let save_path = format!("agents_trained/agents_stage_{}", i);
             training::train_agents(
                 TrainingStage::Artificial{stage: 1},

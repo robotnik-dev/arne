@@ -181,15 +181,16 @@ impl Population {
     pub fn from_path(path: String) -> std::result::Result<Self, Error> {
         let mut agents = vec![];
         fs::read_dir(path).unwrap().for_each(|entry| {
-            // entry => the actual agent index
+            // entry => the actual agent index 0, 1, etc
             fs::read_dir(entry.unwrap().path())
                 .unwrap()
-                .take(1)
-                .for_each(|first_img_folder| {
-                    // first_img_folder => only the first, because all jsons are the same
-                    let path_buf = first_img_folder.unwrap().path();
-                    let agent = Agent::from_path(path_buf).unwrap();
-                    agents.push(agent);
+                .for_each(|img_folder| {
+                    // the folder named "final" is the one we have to use
+                    let path_buf = img_folder.unwrap().path();
+                    if path_buf.file_name().unwrap().to_str().unwrap() == "final" {
+                        let agent = Agent::from_path(path_buf).unwrap();
+                        agents.push(agent);
+                    }
                 })
         });
 

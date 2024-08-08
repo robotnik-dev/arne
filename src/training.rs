@@ -476,6 +476,40 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
                                 .unwrap();
                         });
                 });
+            
+            // create a final version of the agent with the current network
+            agent
+                .genotype_mut()
+                .networks_mut()
+                .iter_mut()
+                .enumerate()
+                .for_each(|(i, network)| {
+                    std::fs::create_dir_all(format!(
+                        "{}/{}/final/{}",
+                        save_path, index, i
+                    ))
+                    .unwrap();
+                    network
+                        .short_term_memory()
+                        .visualize(format!(
+                            "{}/{}/final/{}/memory.png",
+                            save_path, index, i
+                        ))
+                        .unwrap();
+                    network
+                        .to_json(format!(
+                            "{}/{}/final/{}/network.json",
+                            save_path, index, i
+                        ))
+                        .unwrap();
+                    network
+                        .to_dot(format!(
+                            "{}/{}/final/{}/network.dot",
+                            save_path, index, i
+                        ))
+                        .unwrap();
+                });
+
             generating_files_bar.inc(1);
         });
     generating_files_bar.finish();
