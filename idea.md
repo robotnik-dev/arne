@@ -17,6 +17,7 @@ retina größe anpassen? 5x5 , 7x7
 3. mehr Bilder, training und testen
 
 otsu binarization!
+https://medium.com/@tharindad7/image-binarization-in-a-nutshell-b40b63c0228e
 
 50 update schritte oder mehr
 ___
