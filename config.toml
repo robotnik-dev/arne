@@ -19,15 +19,15 @@ erode_pixels = 1
 # maximum components the networks can regognize
 networks_per_agent = 10
 neurons_per_network = 8
-number_of_network_updates = 10
+number_of_network_updates = 50
 retina_movement_speed = 20.0
 retina_resize_speed = 2.0
 
 [neural_network.weight_bounds]
-neuron_lower = -10.0
-neuron_upper = 10.0
-retina_lower = -10.0
-retina_upper = 10.0
+neuron_lower = -4.0
+neuron_upper = 4.0
+retina_lower = -4.0
+retina_upper = 4.0
 
 [genetic_algorithm]
 with_seed = false

@@ -51,7 +51,7 @@ fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription
     let capacitor_neuron_idx = 5usize;
     let source_dc_neuron_idx = 3usize;
     let in_node_neuron_idx = 6usize;
-    let out_node_neuron_idx = 6usize;
+    let out_node_neuron_idx = 7usize;
 
     // collect all networks that 'see' some component
     let resistor_networks = agent
