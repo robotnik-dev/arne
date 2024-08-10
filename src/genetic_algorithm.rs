@@ -91,6 +91,7 @@ impl AgentEvaluation for Agent {
             let retina = image.create_retina_at(
                 _random_position,
                 initial_retina_size,
+                CONFIG.image_processing.superpixel_size as usize,
                 i.to_string(),
             )?;
             retinas.push(retina);

@@ -330,6 +330,8 @@ impl Rnn {
 
     /// each neuron has a connection to all of the retina pixels and these need to be updated each rnn update step
     pub fn update_inputs_from_retina(&mut self, retina: &Retina) {
+        // TODO
+        // i dont want to loop over every pixel of the retina. Instead i want to loop over every superpixel
         self.neurons_mut().iter_mut().for_each(|neuron| {
             neuron.retina_inputs_mut().clear();
             for i in 0..retina.size() {
@@ -974,7 +976,7 @@ mod tests {
         let mut rnn = Rnn::new(&mut rng, 3);
         let image = Image::from_vec(vec![0.0; 320 * 320]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(160, 120), 5, "test".to_string())
+            .create_retina_at(Position::new(160, 120), 5, 2, "test".to_string())
             .unwrap();
         rnn.update_inputs_from_retina(&retina);
         // resize to maximum size
@@ -1010,7 +1012,7 @@ mod tests {
         let mut rnn = Rnn::new(&mut rng, 3);
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let retina = image
-            .create_retina_at(Position::new(3, 13), 5, "test".to_string())
+            .create_retina_at(Position::new(3, 13), 5, 2, "test".to_string())
             .unwrap();
 
         rnn.update_retina_size(5);
@@ -1026,7 +1028,7 @@ mod tests {
         let mut rnn = Rnn::new(&mut rng, 3);
         let image = Image::from_vec(vec![0.0; 320 * 320]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(160, 120), 5, "test".to_string())
+            .create_retina_at(Position::new(160, 120), 5, 2, "test".to_string())
             .unwrap();
         rnn.update_inputs_from_retina(&retina);
         rnn.update();

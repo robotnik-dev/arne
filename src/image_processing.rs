@@ -378,16 +378,23 @@ impl Image {
         &self,
         position: Position,
         size: usize,
+        superpixel_size: usize,
         label: String,
     ) -> std::result::Result<Retina, Error> {
         // make sure size is odd number
         if size % 2 == 0 {
             return Err("ValueError: size must be an odd number".into());
         }
+
+        // TODO
+        let mut superpixels = vec![];
+        let superpixel_amount = (size / superpixel_size).pow(2);
+        let remainder = size % superpixel_size;
+        
         let mut data = vec![];
         let offset = size as i32 / 2 + 1;
-        for i in 0..size as i32 {
-            for j in 0..size as i32 {
+        for col in 0..size as i32 {
+            for row in 0..size as i32 {
                 // when going negative with this operation it means that we try to access a pixel that is outside of the image
                 // so we give back an error
                 if position.x >= self.width() as i32 + offset
@@ -397,15 +404,17 @@ impl Image {
                 {
                     return Err("IndexError: position is out of bounds".into());
                 }
-                let x = position.x - offset + j;
-                let y = position.y - offset + i;
+                let x = position.x - offset + row;
+                let y = position.y - offset + col;
                 data.push(self.get_pixel(x as u32, y as u32));
             }
-        }
+        };
         Ok(Retina {
             data,
             size,
             label,
+            superpixels,
+            superpixel_size,
             center_position: position,
             current_delta_position: Position::new(0, 0),
             last_delta_position: Position::new(0, 0),
@@ -575,9 +584,10 @@ pub struct Retina {
     data: Vec<f32>,
     size: usize,
     label: String,
+    superpixels: Vec<Superpixel>,
+    superpixel_size: usize,
     last_delta_position: Position,
     current_delta_position: Position,
-    /// this is only for visualization purpose, the Rnn does not know this information
     center_position: Position,
 }
 
@@ -601,6 +611,15 @@ impl Retina {
 
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    pub fn superpixel_size(&self) -> usize {
+        self.superpixel_size
+    }
+
+    /// averages the original pixel values in the bounds of given size and store them in the superpixels
+    pub fn fill_superpixels(&mut self) {
+        todo!()
     }
 
     pub fn set_size(&mut self, size: usize, image: &Image) -> Result {
@@ -723,6 +742,11 @@ impl Retina {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Superpixel {
+    value: f32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -731,7 +755,7 @@ mod tests {
     fn test_get_retina_out_of_bounds() {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         // getting the first pixel in the top left corner should give an error
-        let retina = image.create_retina_at(Position::new(1, 1), 5 as usize, "test".to_string());
+        let retina = image.create_retina_at(Position::new(1, 1), 5 as usize, 2, "test".to_string());
         assert!(retina.is_err());
     }
 
@@ -739,7 +763,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_right() {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(5, 13), 5 as usize, "test".to_string())
+            .create_retina_at(Position::new(5, 13), 5 as usize, 2, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(80, 0), &image);
@@ -750,7 +774,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_left() {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(5, 13), 5 as usize, "test".to_string())
+            .create_retina_at(Position::new(5, 13), 5 as usize, 2, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(-80, 0), &image);
@@ -761,7 +785,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_top() {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(5, 13), 5 as usize, "test".to_string())
+            .create_retina_at(Position::new(5, 13), 5 as usize, 2, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(0, -80), &image);
@@ -772,7 +796,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_bottom() {
         let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(5, 13), 5 as usize, "test".to_string())
+            .create_retina_at(Position::new(5, 13), 5 as usize, 2, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(0, 80), &image);
@@ -783,7 +807,7 @@ mod tests {
     fn test_retina_movement() {
         let mut image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(5, 5), 5, "test".to_string())
+            .create_retina_at(Position::new(5, 5), 5, 2, "test".to_string())
             .unwrap();
         image.update_retina_movement(&retina);
         retina.move_mut(&Position::new(1, 1), &image);
@@ -806,7 +830,7 @@ mod tests {
     fn test_invalid_retina_size() {
         let image = Image::from_vec(vec![0.0; 9 * 9]).unwrap();
         let mut retina = image
-            .create_retina_at(Position::new(5, 5), 5, "test".to_string())
+            .create_retina_at(Position::new(5, 5), 5, 2, "test".to_string())
             .unwrap();
         retina.set_size(10, &image).unwrap();
     }
@@ -849,5 +873,14 @@ mod tests {
         assert_eq!(positions.iter().filter(|pos|pos.x == 10 && pos.y == 0).count(), 1);
         assert_eq!(positions.iter().filter(|pos|pos.x == 25 && pos.y == 1).count(), 1);
         assert_eq!(positions.iter().filter(|pos|pos.x == 10 && pos.y == 2).count(), 1);
+    }
+
+    #[test]
+    fn superpixel_retina() {
+        let image = Image::from_vec(vec![0f32; 1024 * 1024]).unwrap();
+        let superpixel_size = 5;
+        let retina = image.create_retina_at(Position { x: 20, y: 20 }, 39, superpixel_size, String::from("1")).unwrap();
+
+        // assert_eq!(retina.data.len(), 39*39);
     }
 }
