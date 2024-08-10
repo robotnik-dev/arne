@@ -1,0 +1,400 @@
+{
+  "version": "5.2.0",
+  "flags": {},
+  "shapes": [
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "terminal",
+      "points": [
+        [
+          48.0,
+          332.0
+        ],
+        [
+          48.0,
+          392.0
+        ],
+        [
+          124.0,
+          392.0
+        ],
+        [
+          124.0,
+          332.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "resistor",
+      "points": [
+        [
+          223.0,
+          330.0
+        ],
+        [
+          223.0,
+          399.0
+        ],
+        [
+          388.0,
+          399.0
+        ],
+        [
+          388.0,
+          330.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "resistor",
+      "points": [
+        [
+          674.0,
+          24.0
+        ],
+        [
+          674.0,
+          91.0
+        ],
+        [
+          830.0,
+          91.0
+        ],
+        [
+          830.0,
+          24.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "junction",
+      "points": [
+        [
+          591.0,
+          132.0
+        ],
+        [
+          591.0,
+          182.0
+        ],
+        [
+          638.0,
+          182.0
+        ],
+        [
+          638.0,
+          132.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "junction",
+      "points": [
+        [
+          608.0,
+          535.0
+        ],
+        [
+          608.0,
+          586.0
+        ],
+        [
+          667.0,
+          586.0
+        ],
+        [
+          667.0,
+          535.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "transistor.bjt",
+      "points": [
+        [
+          498.0,
+          235.0
+        ],
+        [
+          498.0,
+          489.0
+        ],
+        [
+          661.0,
+          489.0
+        ],
+        [
+          661.0,
+          235.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "text",
+      "points": [
+        [
+          1104.0,
+          7.0
+        ],
+        [
+          1104.0,
+          66.0
+        ],
+        [
+          1239.0,
+          66.0
+        ],
+        [
+          1239.0,
+          7.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "text",
+      "points": [
+        [
+          1067.0,
+          103.0
+        ],
+        [
+          1067.0,
+          166.0
+        ],
+        [
+          1150.0,
+          166.0
+        ],
+        [
+          1150.0,
+          103.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "text",
+      "points": [
+        [
+          1060.0,
+          14.0
+        ],
+        [
+          1060.0,
+          60.0
+        ],
+        [
+          1098.0,
+          60.0
+        ],
+        [
+          1098.0,
+          14.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "junction",
+      "points": [
+        [
+          601.0,
+          49.0
+        ],
+        [
+          601.0,
+          79.0
+        ],
+        [
+          629.0,
+          79.0
+        ],
+        [
+          629.0,
+          49.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "terminal",
+      "points": [
+        [
+          971.0,
+          130.0
+        ],
+        [
+          971.0,
+          153.0
+        ],
+        [
+          997.0,
+          153.0
+        ],
+        [
+          997.0,
+          130.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "terminal",
+      "points": [
+        [
+          979.0,
+          42.0
+        ],
+        [
+          979.0,
+          67.0
+        ],
+        [
+          1001.0,
+          67.0
+        ],
+        [
+          1001.0,
+          42.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "terminal",
+      "points": [
+        [
+          1150.0,
+          542.0
+        ],
+        [
+          1150.0,
+          566.0
+        ],
+        [
+          1178.0,
+          566.0
+        ],
+        [
+          1178.0,
+          542.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    },
+    {
+      "line_color": null,
+      "fill_color": null,
+      "label": "terminal",
+      "points": [
+        [
+          488.0,
+          557.0
+        ],
+        [
+          488.0,
+          578.0
+        ],
+        [
+          509.0,
+          578.0
+        ],
+        [
+          509.0,
+          557.0
+        ]
+      ],
+      "group_id": null,
+      "description": null,
+      "shape_type": "polygon",
+      "flags": {}
+    }
+  ],
+  "imagePath": "../segmentation/C74_D2_P1.jpg",
+  "imageData": null,
+  "imageHeight": 628,
+  "imageWidth": 1356,
+  "lineColor": [
+    0,
+    255,
+    0,
+    128
+  ],
+  "fillColor": [
+    255,
+    0,
+    0,
+    128
+  ]
+}

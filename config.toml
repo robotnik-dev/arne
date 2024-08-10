@@ -34,8 +34,8 @@ retina_upper = 4.0
 with_seed = false
 seed = 1024
 goal_fitness = 0.95
-initial_population_size = 150
-max_generations = 150
+initial_population_size = 100
+max_generations = 100
 tournament_size = 5
 # multiplier for a node output. ranges from 0 to node_range
 node_range = 10

@@ -358,6 +358,20 @@ impl Image {
         Ok(self)
     }
 
+    /// Gives all the darker pixel in the image back, determined by the threshold between 0 and 1
+    pub fn dark_pixels(&self, threshold: f32) -> std::result::Result<Vec<Position>, Error> {
+        if threshold < 0.0 || threshold > 1.0 { return Err("Threshold must be between 0 and 1".into()) };
+        
+        let mut positions = vec![];
+        self.grey.enumerate_pixels().for_each(|(x, y, p)| {
+            if p.0[0] as f32 / 255.0 < threshold {
+                positions.push(Position::new(x as i32, y as i32));
+            }
+        });
+
+        Ok(positions)
+    }
+
     /// create a subview into the image with the given position with size
     /// if the ends of the retina would be outside the image, an index error is returned
     pub fn create_retina_at(
@@ -795,5 +809,45 @@ mod tests {
             .create_retina_at(Position::new(5, 5), 5, "test".to_string())
             .unwrap();
         retina.set_size(10, &image).unwrap();
+    }
+
+    #[test]
+    fn get_black_pixel_list() {
+        let image = Image::from_vec(vec![0f32; 1000 * 1000]).unwrap();
+
+        let positions = image.dark_pixels(0.5).unwrap();
+
+        assert_eq!(positions.len(), 1000*1000);
+
+        let image = Image::from_vec(vec![255f32; 1000 * 1000]).unwrap();
+
+        let positions = image.dark_pixels(0.5).unwrap();
+
+        assert_eq!(positions.len(), 0);
+
+        let count = 50;
+        let mut image = Image::from_vec(vec![0f32; count * count]).unwrap();
+        image.grey.iter_mut().take(count*count/2).for_each(|p| {
+            *p = 255;
+        });
+
+        let positions = image.dark_pixels(0.5).unwrap();
+
+        assert_eq!(positions.len(), count*count/2);
+
+        let count = 50;
+        let mut image = Image::from_vec(vec![255f32; count * count]).unwrap();
+        image.grey.iter_mut().enumerate().for_each(|(idx, p)| {
+            // insert three arbitrary dark pixel
+            if idx == 10 {*p = 0};
+            if idx == 75 {*p = 0};
+            if idx == 110 {*p = 0};
+        });
+
+        let positions = image.dark_pixels(0.5).unwrap();
+
+        assert_eq!(positions.iter().filter(|pos|pos.x == 10 && pos.y == 0).count(), 1);
+        assert_eq!(positions.iter().filter(|pos|pos.x == 25 && pos.y == 1).count(), 1);
+        assert_eq!(positions.iter().filter(|pos|pos.x == 10 && pos.y == 2).count(), 1);
     }
 }
