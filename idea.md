@@ -2,7 +2,7 @@ weights retina und neuronen -4 und 4
 
 - neuronen index out nodes bug
 
-- retina nicht auf ranod werte initilaisieren, eher fast alle 0, 10 % nicht
+- retina nicht auf rand werte initilaisieren, eher fast alle 0, 10 % nicht 0
 
 wie können nodes in and out in die netzlisten calculation rein?
 linien erkennung und über die position der netzwerke?

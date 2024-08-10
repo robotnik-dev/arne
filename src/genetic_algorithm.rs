@@ -111,13 +111,13 @@ impl AgentEvaluation for Agent {
 
                 // calculate the next delta position of the retina, encoded in the neurons
                 let delta = network.next_delta_position();
-                let new_size = (retina.size() as f32 + network.next_size_factor()) as usize;
+                // let new_size = (retina.size() as f32 + network.next_size_factor()) as usize;
 
                 // move the retina to the next position and scale up or down after the movement
                 retina.move_mut(&delta, image);
-                if retina.set_size(new_size, image).is_ok() {
-                    network.update_retina_size(new_size);
-                }
+                // if retina.set_size(new_size, image).is_ok() {
+                //     network.update_retina_size(new_size);
+                // }
 
                 // update all input connections to the retina from each neuron
                 network.update_inputs_from_retina(retina);

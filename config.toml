@@ -7,9 +7,10 @@ input_image_width = 4032
 input_image_height = 3024
 goal_image_width = 320
 goal_image_height = 240
+super_pixel_size = 3
 initial_retina_size = 33
-min_retina_size = 33
-max_retina_size = 33
+min_retina_size = 33 # deprecated
+max_retina_size = 33 # deprecated
 retina_circle_radius = 1.0
 retina_label_scale = 12.0
 sobel_threshold = 0.3
@@ -18,7 +19,7 @@ erode_pixels = 1
 [neural_network]
 # maximum components the networks can regognize
 networks_per_agent = 10
-neurons_per_network = 8
+neurons_per_network = 7
 number_of_network_updates = 50
 retina_movement_speed = 20.0
 retina_resize_speed = 2.0
@@ -34,7 +35,7 @@ with_seed = false
 seed = 1024
 goal_fitness = 0.95
 initial_population_size = 150
-max_generations = 1000
+max_generations = 150
 tournament_size = 5
 # multiplier for a node output. ranges from 0 to node_range
 node_range = 10
