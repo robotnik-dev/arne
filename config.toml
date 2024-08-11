@@ -7,8 +7,10 @@ input_image_width = 4032
 input_image_height = 3024
 goal_image_width = 320
 goal_image_height = 240
-superpixel_size = 3
-initial_retina_size = 33
+# dont change
+initial_retina_size = 35
+# either 5 or 7 for now possible
+superpixel_size = 5
 min_retina_size = 33 # deprecated
 max_retina_size = 33 # deprecated
 retina_circle_radius = 1.0
