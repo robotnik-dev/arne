@@ -434,17 +434,18 @@ impl Image {
                 (row * size) + superpixel_size / 2 + superpixel_size * row_idx
             };
 
-            let mut dg = vec![];
-            // collect the pixels data ad average it
+            let mut superpixel_value = 0f32;
+            // collect the pixels data and average it
             for row in 0..superpixel_size {
                 for col in 0..superpixel_size {
                     let offset = superpixel_size / 2;
                     let data_idx = center_idx - (size * offset) - offset + col + (row*size);
                     
-                    dg.push(data_idx);
+                    superpixel_value += data[data_idx];
                 }
             }
-            println!("{:?}", dg);
+            superpixel_value /= superpixel_size.pow(2) as f32;
+            superpixels.push(Superpixel::new(superpixel_value));
         }
 
         Ok(Retina {
@@ -785,9 +786,23 @@ struct Superpixel {
     value: f32,
 }
 
+impl Superpixel {
+    pub fn new(value: f32) -> Self {
+        Superpixel { value }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use rand_chacha::ChaCha8Rng;
+
     use super::*;
+
+    fn get_test_dir() -> String {
+        let dir = "tests/images".to_string();
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     #[test]
     fn test_get_retina_out_of_bounds() {
@@ -915,10 +930,19 @@ mod tests {
 
     #[test]
     fn superpixel_retina() {
-        let image = Image::from_vec(vec![0f32; 1024 * 1024]).unwrap();
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut pixels = vec![];
+        for _ in 0..100*100 {
+            pixels.push(if rng.gen_bool(0.5) {0f32} else {255f32});
+        }
+        let image = Image::from_vec(pixels).unwrap();
         let superpixel_size = 5;
-        let retina = image.create_retina_at(Position { x: 20, y: 20 }, 35, superpixel_size, String::from("1")).unwrap();
+        let retina = image.create_retina_at(Position { x: 18, y: 18 }, 35, superpixel_size, String::from("1")).unwrap();
 
-        // assert_eq!(retina.data.len(), 39*39);
+        let dir = get_test_dir();
+        let file = String::from("superpixel.png");
+        image.save_with_retina(format!("{}/{}", dir, file)).unwrap();
+
+        assert_eq!(retina.superpixels[0].value, 0.44);
     }
 }
