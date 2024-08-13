@@ -4,12 +4,13 @@ use std::u8;
 use crate::image_processing::{ImageDescription, TrainingStage};
 use crate::netlist::Generate;
 use crate::{
-    Agent, AgentEvaluation, ChaCha8Rng, ImageReader, Population, Result, Retina, Rnn, SelectionMethod, CONFIG
+    Agent, AgentEvaluation, ChaCha8Rng, ImageReader, Population, Result, Retina, Rnn,
+    SelectionMethod, CONFIG,
 };
+use approx::AbsDiffEq;
 use indicatif::ProgressBar;
 use rand::prelude::*;
 use rayon::prelude::*;
-use approx::AbsDiffEq;
 
 fn fitness_pixel_follow(agent: &mut Agent, _: ImageDescription, retinas: Vec<Retina>) -> f32 {
     // fitness reward for less white pixels
@@ -29,17 +30,20 @@ fn fitness_pixel_follow(agent: &mut Agent, _: ImageDescription, retinas: Vec<Ret
     let movement_fitness = retinas.iter().fold(0.0, |acc, retina| {
         acc + retina.get_current_delta_position().normalized_len() as f32
     }) / retinas.len() as f32;
-        // / CONFIG.neural_network.retina_movement_speed as f32;
+    // / CONFIG.neural_network.retina_movement_speed as f32;
 
     let follow_pixel_fitness = 1.0 - (white_pixel_count as f32 / max_pixel_count as f32);
-        
+
     assert!(movement_fitness >= 0. && movement_fitness <= 1.);
     let fitness = (follow_pixel_fitness + movement_fitness) / 2.0;
     fitness
 }
 
-
-fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription, _: Vec<Retina>) -> f32 {
+fn fitness_recognize_components(
+    agent: &mut Agent,
+    description: ImageDescription,
+    _: Vec<Retina>,
+) -> f32 {
     let resistors = description.components.resistor.unwrap_or_default();
     let resistor_nodes = description.nodes.resistor.unwrap_or_default();
     let capacitors = description.components.capacitor.unwrap_or_default();
@@ -117,8 +121,7 @@ fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription
             let out_node_output = network.neurons()[out_node_neuron_idx].output();
             resistor_networks.iter().all(|other_network| {
                 let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-                let other_out_node_output =
-                    other_network.neurons()[out_node_neuron_idx].output();
+                let other_out_node_output = other_network.neurons()[out_node_neuron_idx].output();
                 in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
                     && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
             })
@@ -133,8 +136,7 @@ fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription
             let out_node_output = network.neurons()[out_node_neuron_idx].output();
             capacitor_networks.iter().all(|other_network| {
                 let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-                let other_out_node_output =
-                    other_network.neurons()[out_node_neuron_idx].output();
+                let other_out_node_output = other_network.neurons()[out_node_neuron_idx].output();
                 in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
                     && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
             })
@@ -149,8 +151,7 @@ fn fitness_recognize_components(agent: &mut Agent, description: ImageDescription
             let out_node_output = network.neurons()[out_node_neuron_idx].output();
             source_dc_networks.iter().all(|other_network| {
                 let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-                let other_out_node_output =
-                    other_network.neurons()[out_node_neuron_idx].output();
+                let other_out_node_output = other_network.neurons()[out_node_neuron_idx].output();
                 in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
                     && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
             })
@@ -300,7 +301,9 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
 
     // create a reader to buffer training dataset
     let image_path = match stage {
-        TrainingStage::Artificial{..} => CONFIG.image_processing.path_to_training_artificial as &str,
+        TrainingStage::Artificial { .. } => {
+            CONFIG.image_processing.path_to_training_artificial as &str
+        }
         TrainingStage::RealBinarized => CONFIG.image_processing.path_to_training_binarized as &str,
         TrainingStage::Real => CONFIG.image_processing.path_to_analysis_stage as &str,
     };
@@ -346,17 +349,14 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
                         .unwrap();
                     agent.add_to_fitness(fitness);
                 });
-            
+
             // after one image was processed, save a netlist per image
-            population
-                .agents_mut()
-                .par_iter_mut()
-                .for_each(|agent| {
-                    let generated_netlist = agent.genotype().generate();
-                    if let Some((_, _, netlist)) = agent.statistics_mut().get_mut(&label.clone()) {
-                        *netlist = generated_netlist;
-                    }
-                })
+            population.agents_mut().par_iter_mut().for_each(|agent| {
+                let generated_netlist = agent.genotype().generate();
+                if let Some((_, _, netlist)) = agent.statistics_mut().get_mut(&label.clone()) {
+                    *netlist = generated_netlist;
+                }
+            })
         }
 
         // average each agents fitness over the number of images
@@ -423,10 +423,8 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         })
         .take(take_agents)
         .for_each(|(index, agent)| {
-            agent
-                .statistics_mut()
-                .par_iter_mut()
-                .for_each(|(label, (image, genotype, netlist))| {
+            agent.statistics_mut().par_iter_mut().for_each(
+                |(label, (image, genotype, netlist))| {
                     std::fs::create_dir_all(format!("{}/{}/{}", save_path, index, label)).unwrap();
 
                     image
@@ -476,8 +474,9 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
                                 ))
                                 .unwrap();
                         });
-                });
-            
+                },
+            );
+
             // create a final version of the agent with the current network
             agent
                 .genotype_mut()
@@ -485,29 +484,17 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
                 .iter_mut()
                 .enumerate()
                 .for_each(|(i, network)| {
-                    std::fs::create_dir_all(format!(
-                        "{}/{}/final/{}",
-                        save_path, index, i
-                    ))
-                    .unwrap();
+                    std::fs::create_dir_all(format!("{}/{}/final/{}", save_path, index, i))
+                        .unwrap();
                     network
                         .short_term_memory()
-                        .visualize(format!(
-                            "{}/{}/final/{}/memory.png",
-                            save_path, index, i
-                        ))
+                        .visualize(format!("{}/{}/final/{}/memory.png", save_path, index, i))
                         .unwrap();
                     network
-                        .to_json(format!(
-                            "{}/{}/final/{}/network.json",
-                            save_path, index, i
-                        ))
+                        .to_json(format!("{}/{}/final/{}/network.json", save_path, index, i))
                         .unwrap();
                     network
-                        .to_dot(format!(
-                            "{}/{}/final/{}/network.dot",
-                            save_path, index, i
-                        ))
+                        .to_dot(format!("{}/{}/final/{}/network.dot", save_path, index, i))
                         .unwrap();
                 });
 

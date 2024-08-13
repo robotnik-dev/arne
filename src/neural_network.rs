@@ -171,8 +171,6 @@ impl SnapShot {
 pub struct Rnn {
     neurons: Vec<Neuron>,
     short_term_memory: ShortTermMemory,
-    #[serde(skip)]
-    retina_weights_buffer: Vec<f32>,
     /// visual representation of the network
     graph: Graph<(usize, f32), f32>,
     statistics: Statistics,
@@ -227,7 +225,6 @@ impl From<Graph<(usize, f32), f32>> for Rnn {
         Rnn {
             neurons,
             short_term_memory: ShortTermMemory::new(),
-            retina_weights_buffer: vec![],
             graph,
             statistics: Statistics::new(),
             mutation_variance: CONFIG.genetic_algorithm.mutation_rates.variance as f32,
@@ -239,20 +236,9 @@ impl From<Graph<(usize, f32), f32>> for Rnn {
 impl Rnn {
     pub fn new(rng: &mut dyn RngCore, neuron_count: usize) -> Self {
         let mut neurons = vec![];
-        // genrate random weights for the retina weights
-        let (retina_lower, retina_upper) = (
-            CONFIG.neural_network.weight_bounds.retina_lower as f32,
-            CONFIG.neural_network.weight_bounds.retina_upper as f32,
-        );
-
-        // maximal retina size is goal image height^2
-        let retina_weights_buffer = (0..CONFIG.image_processing.goal_image_width
-            * CONFIG.image_processing.goal_image_height)
-            .map(|_| rng.gen_range(retina_lower..=retina_upper))
-            .collect::<Vec<f32>>();
 
         for i in 0..neuron_count {
-            let neuron = Neuron::new(rng, i, neuron_count, &retina_weights_buffer);
+            let neuron = Neuron::new(rng, i, neuron_count);
             neurons.push(neuron);
         }
 
@@ -274,7 +260,6 @@ impl Rnn {
         Rnn {
             neurons,
             short_term_memory: ShortTermMemory::new(),
-            retina_weights_buffer,
             graph: Graph::default(),
             statistics: Statistics::new(),
             mutation_variance: CONFIG.genetic_algorithm.mutation_rates.variance as f32,
@@ -334,23 +319,11 @@ impl Rnn {
         // i dont want to loop over every pixel of the retina. Instead i want to loop over every superpixel
         self.neurons_mut().iter_mut().for_each(|neuron| {
             neuron.retina_inputs_mut().clear();
-            for i in 0..retina.size() {
-                for j in 0..retina.size() {
-                    neuron.add_retina_input(retina.get_value(j, i));
+            for i in 0..retina.superpixel_size() {
+                for j in 0..retina.superpixel_size() {
+                    neuron.add_retina_input(retina.get_superpixel_value(j, i));
                 }
             }
-        });
-    }
-
-    pub fn update_retina_size(&mut self, size: usize) {
-        let new_retina_weights = self
-            .retina_weights_buffer
-            .iter()
-            .cloned()
-            .take(size * size)
-            .collect::<Vec<f32>>();
-        self.neurons_mut().iter_mut().for_each(|neuron| {
-            neuron.update_retina_weights(new_retina_weights.clone());
         });
     }
 
@@ -455,9 +428,14 @@ impl Rnn {
         self.clone()
     }
 
-    /// setting all incoming weights, self activation and bias to 0 from a random neuron
+    /// setting all incoming weights, self activation and bias to 0 from a random neuron that wasnt already deleted (all 0)
     pub fn delete_neuron(&mut self, rng: &mut dyn RngCore) {
-        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
+        if let Some(neuron) = self
+            .neurons_mut()
+            .iter_mut()
+            .filter(|n| !n.is_deleted())
+            .choose(rng)
+        {
             neuron
                 .input_connections
                 .iter_mut()
@@ -471,31 +449,51 @@ impl Rnn {
         };
     }
 
-    /// setting one weight to 0 from a random neuron
+    /// setting one weight to 0 from a random neuron which isnt already 0
     pub fn delete_weights(&mut self, rng: &mut dyn RngCore) {
         if let Some(neuron) = self.neurons.iter_mut().choose(rng) {
             if rng.gen_bool(0.5) {
-                if let Some((_, weight)) = neuron.input_connections.iter_mut().choose(rng) {
+                if let Some((_, weight)) = neuron
+                    .input_connections
+                    .iter_mut()
+                    .filter(|(_, w)| *w != 0.0)
+                    .choose(rng)
+                {
                     *weight = 0.0;
                 }
             } else {
-                if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+                if let Some(weight) = neuron
+                    .retina_weights_mut()
+                    .iter_mut()
+                    .filter(|w| *w != &0.0)
+                    .choose(rng)
+                {
                     *weight = 0.0;
                 }
             }
         };
     }
 
-    /// setting bias to 0 from a random neuron
+    /// setting bias to 0 from a random neuron that isnt already 0
     pub fn delete_bias(&mut self, rng: &mut dyn RngCore) {
-        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
+        if let Some(neuron) = self
+            .neurons_mut()
+            .iter_mut()
+            .filter(|n: &&mut Neuron| n.bias() != 0.0)
+            .choose(rng)
+        {
             neuron.bias = 0.0
         };
     }
 
-    /// setting self activation to 0 from a random neuron
+    /// setting self activation to 0 from a random neuron that isnt already 0
     pub fn delete_self_activation(&mut self, rng: &mut dyn RngCore) {
-        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
+        if let Some(neuron) = self
+            .neurons_mut()
+            .iter_mut()
+            .filter(|n| n.self_activation() != 0.0)
+            .choose(rng)
+        {
             neuron.self_activation = 0.0
         };
     }
@@ -642,7 +640,7 @@ pub struct Neuron {
     /// to represent the memory of the neuron, we append self activation to the input vector
     /// but store it separately
     self_activation: f32,
-    /// the pixel values of the retina
+    /// the superpixel values of the retina
     #[serde(skip)]
     retina_inputs: Vec<f32>,
     /// the weights of the retina inputs
@@ -670,20 +668,22 @@ impl PartialEq for Neuron {
 }
 
 impl Neuron {
-    pub fn new(
-        rng: &mut dyn RngCore,
-        index: usize,
-        _neuron_count: usize,
-        retina_weights_buffer: &[f32],
-    ) -> Self {
-        // intital retina weights are a vector of retina_siz^2
-        let retina_weights = retina_weights_buffer
-            .iter()
-            .cloned()
-            .take(
-                CONFIG.image_processing.initial_retina_size as usize
-                    * CONFIG.image_processing.initial_retina_size as usize,
-            )
+    pub fn new(rng: &mut dyn RngCore, index: usize, _neuron_count: usize) -> Self {
+        let (retina_lower, retina_upper) = (
+            CONFIG.neural_network.weight_bounds.retina_lower as f32,
+            CONFIG.neural_network.weight_bounds.retina_upper as f32,
+        );
+        // maximal buffer size is the superpixel_size^2
+        let retina_weights = (0..CONFIG.image_processing.superpixel_size
+            * CONFIG.image_processing.superpixel_size)
+            // set 90 % of retina weights to 0
+            .map(|_| {
+                if rng.gen_bool(0.1) {
+                    rng.gen_range(retina_lower..=retina_upper)
+                } else {
+                    0.0
+                }
+            })
             .collect::<Vec<f32>>();
 
         // let (lower, upper) = (-1.0 / (neuron_count as f32).sqrt(), 1.0 / (neuron_count as f32).sqrt());
@@ -759,6 +759,16 @@ impl Neuron {
     /// for the we need to take the first n weights from the retina_weights_buffer and overwrite the retina_weights
     pub fn update_retina_weights(&mut self, new_weights: Vec<f32>) {
         self.retina_weights = new_weights;
+    }
+
+    /// checks if every weights connections in or outgoing from this neuron is 0
+    pub fn is_deleted(&self) -> bool {
+        self.input_connections()
+            .iter()
+            .all(|(_, weight)| *weight == 0.0)
+            && self.self_activation == 0.0
+            && self.bias == 0.0
+            && self.retina_weights().iter().all(|weight| *weight == 0.0)
     }
 }
 
@@ -971,51 +981,19 @@ mod tests {
     }
 
     #[test]
-    fn test_retina_weights_and_inputs_same_size_after_change_in_size() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(&mut rng, 3);
-        let image = Image::from_vec(vec![0.0; 320 * 320]).unwrap();
-        let mut retina = image
-            .create_retina_at(Position::new(160, 120), 5, 2, "test".to_string())
-            .unwrap();
-        rnn.update_inputs_from_retina(&retina);
-        // resize to maximum size
-        retina.set_size(239, &image).unwrap();
-        rnn.update_retina_size(239);
-        rnn.update_inputs_from_retina(&retina);
-
-        rnn.neurons().iter().for_each(|neuron| {
-            assert_eq!(neuron.retina_inputs().len(), neuron.retina_weights().len());
-        });
-
-        // back to smalles size
-        retina.set_size_override(5, &image);
-        rnn.update_retina_size(5);
-        rnn.update_inputs_from_retina(&retina);
-
-        rnn.neurons().iter().for_each(|neuron| {
-            assert_eq!(neuron.retina_inputs().len(), neuron.retina_weights().len());
-        });
-    }
-
-    #[test]
-    fn test_retina_weights_buffer_length() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let rnn = Rnn::new(&mut rng, 3);
-
-        assert_eq!(rnn.retina_weights_buffer.len(), 320 * 240);
-    }
-
-    #[test]
     fn test_retina_weights_and_inputs_same_size() {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
-        let image = Image::from_vec(vec![0.0; 33 * 33]).unwrap();
+        let image = Image::from_vec(vec![0.0; 101 * 101]).unwrap();
         let retina = image
-            .create_retina_at(Position::new(3, 13), 5, 2, "test".to_string())
+            .create_retina_at(
+                Position::new(50, 50),
+                35,
+                CONFIG.image_processing.superpixel_size as usize,
+                "test".to_string(),
+            )
             .unwrap();
 
-        rnn.update_retina_size(5);
         rnn.update_inputs_from_retina(&retina);
         rnn.neurons().iter().for_each(|neuron| {
             assert_eq!(neuron.retina_inputs().len(), neuron.retina_weights().len());
@@ -1027,13 +1005,16 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
         let image = Image::from_vec(vec![0.0; 320 * 320]).unwrap();
-        let mut retina = image
-            .create_retina_at(Position::new(160, 120), 5, 2, "test".to_string())
+        let retina = image
+            .create_retina_at(
+                Position::new(160, 120),
+                35,
+                CONFIG.image_processing.superpixel_size as usize,
+                "test".to_string(),
+            )
             .unwrap();
         rnn.update_inputs_from_retina(&retina);
         rnn.update();
-        retina.set_size(51, &image).unwrap();
-        rnn.update_retina_size(51);
         rnn.update_inputs_from_retina(&retina);
         rnn.update();
 

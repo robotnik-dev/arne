@@ -55,7 +55,11 @@ pub enum SelectionMethod {
 pub trait AgentEvaluation {
     fn evaluate(
         &mut self,
-        fitness_function: fn(agent: &mut Agent, description: ImageDescription, retinas: Vec<Retina>) -> f32,
+        fitness_function: fn(
+            agent: &mut Agent,
+            description: ImageDescription,
+            retinas: Vec<Retina>,
+        ) -> f32,
         rng: &mut dyn RngCore,
         label: ImageLabel,
         image: &mut Image,
@@ -67,7 +71,11 @@ pub trait AgentEvaluation {
 impl AgentEvaluation for Agent {
     fn evaluate(
         &mut self,
-        fitness_function: fn(agent: &mut Agent, description: ImageDescription, retinas: Vec<Retina>) -> f32,
+        fitness_function: fn(
+            agent: &mut Agent,
+            description: ImageDescription,
+            retinas: Vec<Retina>,
+        ) -> f32,
         rng: &mut dyn RngCore,
         label: ImageLabel,
         image: &mut Image,
@@ -612,7 +620,7 @@ mod tests {
 
     #[test]
     fn test_delete_neuron() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rng = ChaCha8Rng::from_entropy();
         let mut rnn = Rnn::new(&mut rng, 3);
         let rnn2 = rnn.clone();
         rnn.delete_neuron(&mut rng);
@@ -622,7 +630,7 @@ mod tests {
 
     #[test]
     fn test_delete_weights() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rng = ChaCha8Rng::from_entropy();
         let mut rnn = Rnn::new(&mut rng, 3);
         let rnn2 = rnn.clone();
         rnn.delete_weights(&mut rng);
@@ -632,7 +640,7 @@ mod tests {
 
     #[test]
     fn test_delete_bias() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rng = ChaCha8Rng::from_entropy();
         let mut rnn = Rnn::new(&mut rng, 3);
         let rnn2 = rnn.clone();
         rnn.delete_bias(&mut rng);
@@ -642,7 +650,7 @@ mod tests {
 
     #[test]
     fn test_delete_self_activation() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rng = ChaCha8Rng::from_entropy();
         let mut rnn = Rnn::new(&mut rng, 3);
         let rnn2 = rnn.clone();
         rnn.delete_self_activation(&mut rng);
@@ -652,7 +660,7 @@ mod tests {
 
     #[test]
     fn test_mutate_neuron() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rng = ChaCha8Rng::from_entropy();
         let mut rnn = Rnn::new(&mut rng, 3);
         let rnn2 = rnn.clone();
 
@@ -664,7 +672,7 @@ mod tests {
 
     #[test]
     fn test_mutate_weights() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rng = ChaCha8Rng::from_entropy();
         let mut rnn = Rnn::new(&mut rng, 3);
         let rnn2 = rnn.clone();
 
@@ -676,7 +684,7 @@ mod tests {
 
     #[test]
     fn test_mutate_bias() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rng = ChaCha8Rng::from_entropy();
         let mut rnn = Rnn::new(&mut rng, 3);
         let rnn2 = rnn.clone();
 
@@ -688,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_mutate_self_activation() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut rng = ChaCha8Rng::from_entropy();
         let mut rnn = Rnn::new(&mut rng, 3);
         let rnn2 = rnn.clone();
 

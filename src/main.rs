@@ -1,7 +1,7 @@
+use clap::Parser;
 use image_processing::TrainingStage;
 pub use rand_chacha::ChaCha8Rng;
 use static_toml::static_toml;
-use clap::Parser;
 
 mod utils;
 pub use utils::{round2, round_to_decimal_places};
@@ -41,17 +41,21 @@ fn main() -> Result {
     if args.count == 0 {
         // train first iteration of agents that every other tage builds upon
         training::train_agents(
-            TrainingStage::Artificial{stage: 0},
+            TrainingStage::Artificial { stage: 0 },
             None,
             format!("agents_init"),
         )?;
     } else {
         std::fs::remove_dir_all(format!("agents_trained")).unwrap_or_default();
         for i in 0..args.count {
-            let load_path = if i == 0 { format!("agents_init") } else { format!("agents_trained/agents_stage_{}", i-1) };
+            let load_path = if i == 0 {
+                format!("agents_init")
+            } else {
+                format!("agents_trained/agents_stage_{}", i - 1)
+            };
             let save_path = format!("agents_trained/agents_stage_{}", i);
             training::train_agents(
-                TrainingStage::Artificial{stage: 1},
+                TrainingStage::Artificial { stage: 1 },
                 Some(load_path),
                 save_path,
             )?;
