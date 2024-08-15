@@ -313,10 +313,8 @@ impl Rnn {
         self.neurons()[2].output() * CONFIG.neural_network.retina_resize_speed as f32
     }
 
-    /// each neuron has a connection to all of the retina pixels and these need to be updated each rnn update step
+    /// each neuron has a connection to all of the retina SUPERpixels and these need to be updated each rnn update step
     pub fn update_inputs_from_retina(&mut self, retina: &Retina) {
-        // TODO
-        // i dont want to loop over every pixel of the retina. Instead i want to loop over every superpixel
         self.neurons_mut().iter_mut().for_each(|neuron| {
             neuron.retina_inputs_mut().clear();
             for i in 0..retina.superpixel_size() {
