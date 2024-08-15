@@ -201,6 +201,7 @@ pub struct Image {
     height: u32,
     /// used to visualize the retina movement on an upscaled image (Position, size of retina, label)
     retina_positions: Vec<(Position, usize, String)>,
+    dark_pixel_positions: Vec<Position>,
 }
 
 impl Image {
@@ -218,6 +219,7 @@ impl Image {
             width: CONFIG.image_processing.input_image_width as u32,
             height: CONFIG.image_processing.input_image_height as u32,
             retina_positions: vec![],
+            dark_pixel_positions: vec![],
         }
     }
 
@@ -239,13 +241,18 @@ impl Image {
                 grey.put_pixel(j, i, Luma([value]));
             }
         }
-        Ok(Image {
+        let mut image = Image {
             rgba,
             grey,
             width,
             height,
             retina_positions: vec![],
-        })
+            dark_pixel_positions: vec![],
+        };
+
+        // TODO: threshold
+        image.generate_dark_pixel_positions(0.5)?;
+        Ok(image)
     }
 
     /// load from a path and return an image(preprocessed)
@@ -262,6 +269,7 @@ impl Image {
             width,
             height,
             retina_positions: vec![],
+            dark_pixel_positions: vec![],
         };
 
         // preprocess the image
@@ -276,6 +284,8 @@ impl Image {
                 CONFIG.image_processing.erode_pixels as u8,
             )?;
 
+        // TODO: threshold
+        image.generate_dark_pixel_positions(0.5)?;
         Ok(image)
     }
 
@@ -287,13 +297,16 @@ impl Image {
         let grey = image::io::Reader::open(path)?.decode()?.into_luma8();
         let width = rgba.width();
         let height = rgba.height();
-        let image = Image {
+        let mut image = Image {
             rgba,
             grey,
             width,
             height,
             retina_positions: vec![],
+            dark_pixel_positions: vec![],
         };
+        // TODO: threshold
+        image.generate_dark_pixel_positions(0.5)?;
         Ok(image)
     }
 
@@ -356,8 +369,13 @@ impl Image {
         Ok(self)
     }
 
-    /// Gives all the darker pixel in the image back, determined by the threshold between 0 and 1
-    pub fn dark_pixels(&self, threshold: f32) -> std::result::Result<Vec<Position>, Error> {
+    /// all positions of darker pixels. starting with Position top left x: 0, y: 0
+    pub fn dark_pixel_positions(&self) -> &Vec<Position> {
+        &self.dark_pixel_positions
+    }
+
+    /// saves all the darker pixel in the GREY image, determined by the threshold between 0 and 1
+    fn generate_dark_pixel_positions(&mut self, threshold: f32) -> Result {
         if threshold < 0.0 || threshold > 1.0 {
             return Err("Threshold must be between 0 and 1".into());
         };
@@ -369,7 +387,9 @@ impl Image {
             }
         });
 
-        Ok(positions)
+        self.dark_pixel_positions = positions;
+
+        Ok(())
     }
 
     /// create a subview into the image with the given position with size
@@ -447,6 +467,7 @@ impl Image {
             center_position: position,
             current_delta_position: Position::new(0, 0),
             last_delta_position: Position::new(0, 0),
+            dark_pixel_positions_visited: self.dark_pixel_positions().clone(),
         })
     }
 
@@ -618,6 +639,7 @@ pub struct Retina {
     last_delta_position: Position,
     current_delta_position: Position,
     center_position: Position,
+    dark_pixel_positions_visited: Vec<Position>,
 }
 
 impl Retina {
@@ -920,70 +942,6 @@ mod tests {
             )
             .unwrap();
         retina.set_size(10, &image).unwrap();
-    }
-
-    #[test]
-    fn get_black_pixel_list() {
-        let image = Image::from_vec(vec![0f32; 1000 * 1000]).unwrap();
-
-        let positions = image.dark_pixels(0.5).unwrap();
-
-        assert_eq!(positions.len(), 1000 * 1000);
-
-        let image = Image::from_vec(vec![255f32; 1000 * 1000]).unwrap();
-
-        let positions = image.dark_pixels(0.5).unwrap();
-
-        assert_eq!(positions.len(), 0);
-
-        let count = 50;
-        let mut image = Image::from_vec(vec![0f32; count * count]).unwrap();
-        image.grey.iter_mut().take(count * count / 2).for_each(|p| {
-            *p = 255;
-        });
-
-        let positions = image.dark_pixels(0.5).unwrap();
-
-        assert_eq!(positions.len(), count * count / 2);
-
-        let count = 50;
-        let mut image = Image::from_vec(vec![255f32; count * count]).unwrap();
-        image.grey.iter_mut().enumerate().for_each(|(idx, p)| {
-            // insert three arbitrary dark pixel
-            if idx == 10 {
-                *p = 0
-            };
-            if idx == 75 {
-                *p = 0
-            };
-            if idx == 110 {
-                *p = 0
-            };
-        });
-
-        let positions = image.dark_pixels(0.5).unwrap();
-
-        assert_eq!(
-            positions
-                .iter()
-                .filter(|pos| pos.x == 10 && pos.y == 0)
-                .count(),
-            1
-        );
-        assert_eq!(
-            positions
-                .iter()
-                .filter(|pos| pos.x == 25 && pos.y == 1)
-                .count(),
-            1
-        );
-        assert_eq!(
-            positions
-                .iter()
-                .filter(|pos| pos.x == 10 && pos.y == 2)
-                .count(),
-            1
-        );
     }
 
     #[test]

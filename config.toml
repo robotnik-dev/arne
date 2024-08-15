@@ -19,9 +19,11 @@ sobel_threshold = 0.3
 erode_pixels = 1
 
 [neural_network]
-# maximum components the networks can regognize
-networks_per_agent = 10
-neurons_per_network = 7
+networks_per_agent = 2
+control_network_neurons = 2
+# The more neurons, the more components can be categorized
+categorize_network_neurons = 7
+neurons_per_network = 7 # depracated
 number_of_network_updates = 50
 retina_movement_speed = 20.0
 retina_resize_speed = 2.0
