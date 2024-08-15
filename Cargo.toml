@@ -28,6 +28,7 @@ netlist = "0.1.15"
 toml = "0.8.16"
 rusttype = "0.9.3"
 clap = { version = "4.5.13", features = ["derive"] }
+itertools = "0.13"
 
 [dependencies.petgraph]
 version = "0.6.5"

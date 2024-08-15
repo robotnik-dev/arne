@@ -12,46 +12,24 @@ use indicatif::ProgressBar;
 use rand::prelude::*;
 use rayon::prelude::*;
 
-fn fitness_pixel_follow(
-    agent: &mut Agent,
-    description: ImageDescription,
-    dark_pixel_positions: &Vec<Position>,
-    retina: &Retina,
-) -> f32 {
-    todo!()
-    // // fitness reward for less white pixels
-    // let max_pixel_count = agent.genotype().networks().iter().fold(0, |acc, network| {
-    //     acc + network.neurons()[0].retina_inputs().len()
-    // });
-
-    // let white_pixel_count = agent.genotype().networks().iter().fold(0, |acc, network| {
-    //     acc + network.neurons()[0]
-    //         .retina_inputs()
-    //         .iter()
-    //         .filter(|&pixel| pixel > &0.5)
-    //         .count()
-    // });
-
-    // // reward more movement of the retinas
-    // let movement_fitness = retinas.iter().fold(0.0, |acc, retina| {
-    //     acc + retina.get_current_delta_position().normalized_len() as f32
-    // }) / retinas.len() as f32;
-    // // / CONFIG.neural_network.retina_movement_speed as f32;
-
-    // let follow_pixel_fitness = 1.0 - (white_pixel_count as f32 / max_pixel_count as f32);
-
-    // assert!(movement_fitness >= 0. && movement_fitness <= 1.);
-    // let fitness = (follow_pixel_fitness + movement_fitness) / 2.0;
-    // fitness
+fn fitness_pixel_follow(agent: &mut Agent, description: ImageDescription, retina: &Retina) -> f32 {
+    // TODO: the categorize network is ignored for now
+    // log::debug!(
+    //     "all: {:?}; visited: {}, current frame: {}",
+    //     retina.dark_pixel_positions().len(),
+    //     retina.dark_pixel_positions_visited().len(),
+    //     retina.dark_pixel_positions_in_frame(0.5).len()
+    // );
+    retina.percentage_visited()
 }
 
 fn fitness_recognize_components(
     agent: &mut Agent,
     description: ImageDescription,
-    dark_pixel_positions: &Vec<Position>,
     retina: &Retina,
 ) -> f32 {
-    todo!()
+    unimplemented!()
+
     // let resistors = description.components.resistor.unwrap_or_default();
     // let resistor_nodes = description.nodes.resistor.unwrap_or_default();
     // let capacitors = description.components.capacitor.unwrap_or_default();

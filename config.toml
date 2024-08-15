@@ -8,11 +8,9 @@ input_image_height = 3024
 goal_image_width = 320
 goal_image_height = 240
 # dont change
-initial_retina_size = 35
+retina_size = 35
 # either 5 or 7 for now possible
-superpixel_size = 5
-min_retina_size = 33 # deprecated
-max_retina_size = 33 # deprecated
+superpixel_size = 7
 retina_circle_radius = 1.0
 retina_label_scale = 12.0
 sobel_threshold = 0.3
@@ -21,10 +19,9 @@ erode_pixels = 1
 [neural_network]
 control_network_neurons = 2
 # The more neurons, the more components can be categorized
-categorize_network_neurons = 7
+categorize_network_neurons = 1
 number_of_network_updates = 50
 retina_movement_speed = 20.0
-retina_resize_speed = 2.0
 
 [neural_network.weight_bounds]
 neuron_lower = -4.0
@@ -36,12 +33,10 @@ retina_upper = 4.0
 with_seed = false
 seed = 1024
 goal_fitness = 0.95
-initial_population_size = 100
+initial_population_size = 30
 max_generations = 100
 tournament_size = 5
-# multiplier for a node output. ranges from 0 to node_range
-node_range = 10
-take_agents = 30
+take_agents = 1
 
 [genetic_algorithm.mutation_rates]
 variance = 0.2

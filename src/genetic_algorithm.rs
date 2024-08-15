@@ -1,4 +1,3 @@
-use approx::AbsDiffEq;
 use indicatif::ProgressBar;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
@@ -58,7 +57,6 @@ pub trait AgentEvaluation {
         fitness_function: fn(
             agent: &mut Agent,
             description: ImageDescription,
-            dark_pixel_positions: &Vec<Position>,
             retina: &Retina,
         ) -> f32,
         rng: &mut dyn RngCore,
@@ -75,7 +73,6 @@ impl AgentEvaluation for Agent {
         fitness_function: fn(
             agent: &mut Agent,
             description: ImageDescription,
-            dark_pixel_positions: &Vec<Position>,
             retina: &Retina,
         ) -> f32,
         rng: &mut dyn RngCore,
@@ -85,12 +82,12 @@ impl AgentEvaluation for Agent {
         number_of_updates: usize,
     ) -> std::result::Result<f32, Error> {
         // initialize retina
-        let initial_retina_size = CONFIG.image_processing.initial_retina_size as usize;
+        let retina_size = CONFIG.image_processing.retina_size as usize;
         // create a retina at a random position
-        let top_left = Position::new(initial_retina_size as i32, initial_retina_size as i32);
+        let top_left = Position::new(retina_size as i32, retina_size as i32);
         let bottom_right = Position::new(
-            image.width() as i32 - initial_retina_size as i32,
-            image.height() as i32 - initial_retina_size as i32,
+            image.width() as i32 - retina_size as i32,
+            image.height() as i32 - retina_size as i32,
         );
 
         let _random_position = Position::random(rng, top_left, bottom_right);
@@ -98,7 +95,7 @@ impl AgentEvaluation for Agent {
             Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
         let mut retina = image.create_retina_at(
             _random_position,
-            initial_retina_size,
+            retina_size,
             CONFIG.image_processing.superpixel_size as usize,
             "".to_string(),
         )?;
@@ -110,26 +107,34 @@ impl AgentEvaluation for Agent {
             // first location of the retina
             image.update_retina_movement(&retina);
 
+            // update the list of visited dark pixels
+            retina.update_positions_visited();
+
             // calculate the next delta position of the retina, encoded in the neurons
             let delta = self
                 .genotype_mut()
                 .control_network_mut()
                 .next_delta_position();
 
-            // move the retina to the next position and scale up or down after the movement
+            // move the retina to the next position
+            // here gets the data updated the retina sees
             retina.move_mut(&delta, image);
 
             // update all super pixel input connections to each neuron
             self.genotype_mut()
-                .control_network_mut()
-                .update_inputs_from_retina(&retina);
-            self.genotype_mut()
-                .categorize_network_mut()
-                .update_inputs_from_retina(&retina);
+                .networks_mut()
+                .iter_mut()
+                .for_each(|network| {
+                    network.update_inputs_from_retina(&retina);
+                });
 
             // do one update step
-            self.genotype_mut().control_network_mut().update();
-            self.genotype_mut().categorize_network_mut().update();
+            self.genotype_mut()
+                .networks_mut()
+                .iter_mut()
+                .for_each(|network| {
+                    network.update();
+                });
 
             // save retina movement in buffer
             image.update_retina_movement(&retina);
@@ -158,12 +163,7 @@ impl AgentEvaluation for Agent {
                 .add_snapshot(categorize_outputs, time_step);
 
             // calculate the fitness of the genotype
-            local_fitness += fitness_function(
-                self,
-                description.clone(),
-                image.dark_pixel_positions(),
-                &retina,
-            );
+            local_fitness += fitness_function(self, description.clone(), &retina);
         }
         // save the image in the hashmap of the agent with label
         let image = image.clone();
@@ -335,7 +335,10 @@ impl Genotype {
 
 impl Generate for Genotype {
     fn generate(&self) -> String {
-        todo!()
+        // TODO: generate netlist for the genotype
+
+        String::from("")
+
         // let resistor_neuron_idx = 4usize;
         // let capacitor_neuron_idx = 5usize;
         // let source_dc_neuron_idx = 3usize;

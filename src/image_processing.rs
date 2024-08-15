@@ -1,6 +1,7 @@
 use image::imageops::resize;
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_text_mut};
+use itertools::Itertools;
 use log::debug;
 use nalgebra::clamp;
 use rand::prelude::*;
@@ -111,7 +112,8 @@ impl ImageReader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// Counted with one more than image idx. Image index 0 -> Position index 1.
+#[derive(Debug, Clone, Eq)]
 pub struct Position {
     x: i32,
     y: i32,
@@ -160,6 +162,12 @@ impl Position {
         let x = rng.gen_range(top_left.x..bottom_right.x);
         let y = rng.gen_range(top_left.y..bottom_right.y);
         Position { x, y }
+    }
+}
+
+impl PartialEq for Position {
+    fn eq(&self, other: &Self) -> bool {
+        self.x == other.x && self.y == other.y
     }
 }
 
@@ -369,7 +377,8 @@ impl Image {
         Ok(self)
     }
 
-    /// all positions of darker pixels. starting with Position top left x: 0, y: 0
+    /// all positions of darker pixels. starting with Position top left x: 1, y: 1
+    /// because of the Position conversion from Position to image indices!!
     pub fn dark_pixel_positions(&self) -> &Vec<Position> {
         &self.dark_pixel_positions
     }
@@ -383,7 +392,7 @@ impl Image {
         let mut positions = vec![];
         self.grey.enumerate_pixels().for_each(|(x, y, p)| {
             if p.0[0] as f32 / 255.0 < threshold {
-                positions.push(Position::new(x as i32, y as i32));
+                positions.push(Position::new((x + 1) as i32, (y + 1) as i32));
             }
         });
 
@@ -448,7 +457,6 @@ impl Image {
                 for col in 0..superpixel_size {
                     let offset = superpixel_size / 2;
                     let data_idx = center_idx - (size * offset) - offset + col + (row * size);
-
                     superpixel_value += data[data_idx];
                 }
             }
@@ -467,7 +475,8 @@ impl Image {
             center_position: position,
             current_delta_position: Position::new(0, 0),
             last_delta_position: Position::new(0, 0),
-            dark_pixel_positions_visited: self.dark_pixel_positions().clone(),
+            dark_pixel_positions: self.dark_pixel_positions().clone(),
+            dark_pixel_positions_visited: vec![],
         })
     }
 
@@ -639,6 +648,7 @@ pub struct Retina {
     last_delta_position: Position,
     current_delta_position: Position,
     center_position: Position,
+    dark_pixel_positions: Vec<Position>,
     dark_pixel_positions_visited: Vec<Position>,
 }
 
@@ -650,7 +660,7 @@ impl Retina {
 
     /// acces the superpixel value at given position, counting from 0.
     pub fn get_superpixel_value(&self, x: usize, y: usize) -> f32 {
-        self.superpixels[y * self.superpixel_size + x].value
+        self.superpixels[y * self.superpixel_rows_or_col() + x].value
     }
 
     pub fn get_center_value(&self) -> f32 {
@@ -673,79 +683,82 @@ impl Retina {
         self.superpixel_size
     }
 
-    /// averages the original pixel values in the bounds of given size and store them in the superpixels
-    pub fn fill_superpixels(&mut self) {
-        todo!()
+    /// amount of the rows and the coloumns of superpixels
+    pub fn superpixel_rows_or_col(&self) -> usize {
+        self.size() / self.superpixel_size()
     }
 
-    pub fn set_size(&mut self, size: usize, image: &Image) -> Result {
-        if CONFIG.image_processing.min_retina_size as usize > size {
-            return Err("ValueError: size is smaller than the minimum retina size".into());
-        }
-
-        if size % 2 == 0 {
-            return Err("ValueError: size must be an odd number".into());
-        }
-
-        if self.size == size {
-            return Err("ValueError: cannot set size, it's the same".into());
-        }
-
-        // make sure that the new size does not exceed the image boundaries
-        let offset = size as i32 / 2 + 1;
-        let x = self.get_center_position().x;
-        let y = self.get_center_position().y;
-        if x - offset < 0
-            || y - offset < 0
-            || x + offset >= image.width() as i32
-            || y + offset >= image.height() as i32
-        {
-            return Err("IndexError: new size exceeds image boundaries".into());
-        }
-
-        // update the data vector with the new values
-        let mut new_data = vec![];
-        for i in 0..size as i32 {
-            for j in 0..size as i32 {
-                let x = x - offset + j;
-                let y = y - offset + i;
-                new_data.push(image.get_pixel(x as u32, y as u32));
-            }
-        }
-        self.size = size;
-        self.set_data(new_data);
-        Ok(())
+    pub fn dark_pixel_positions_visited(&self) -> &Vec<Position> {
+        &self.dark_pixel_positions_visited
     }
 
-    /// same as set_size but ignores all bounds. Can panic
-    pub fn set_size_override(&mut self, size: usize, image: &Image) {
-        // make sure that the new size does not exceed the image boundaries
-        let offset = size as i32 / 2 + 1;
-        let x = self.get_center_position().x;
-        let y = self.get_center_position().y;
+    pub fn dark_pixel_positions_visited_mut(&mut self) -> &mut Vec<Position> {
+        &mut self.dark_pixel_positions_visited
+    }
 
-        // update the data vector with the new values
-        let mut new_data = vec![];
-        for i in 0..size as i32 {
-            for j in 0..size as i32 {
-                let x = x - offset + j;
-                let y = y - offset + i;
-                new_data.push(image.get_pixel(x as u32, y as u32));
+    pub fn dark_pixel_positions(&self) -> &Vec<Position> {
+        &self.dark_pixel_positions
+    }
+
+    /// collects all dark pixel the retina currently sees and updates its list of
+    /// all dark pixel visited
+    pub fn update_positions_visited(&mut self) {
+        // TODO: threshold
+        let mut new_pixels = vec![];
+        self.dark_pixel_positions_in_frame(0.5)
+            .into_iter()
+            .filter(|pos| {
+                !self.dark_pixel_positions_visited().contains(pos)
+            })
+            .for_each(|new_pos| {
+                new_pixels.push(new_pos);
+            });
+        new_pixels.iter().for_each(|new_pos| {
+            self.dark_pixel_positions_visited_mut().push(new_pos.clone())
+        });
+    }
+
+    /// calculates the percentage of all darker pixels the retina already visited in the image.
+    /// Normalized between 0 and 1
+    pub fn percentage_visited(&self) -> f32 {
+        let percentage = self.dark_pixel_positions_visited().len() as f32 / self.dark_pixel_positions().len() as f32;
+        assert!(percentage <= 1.0);
+        percentage
+    }
+
+    /// calculates all positions of dark pixels the retina currently sees
+    pub fn dark_pixel_positions_in_frame(&self, threshold: f32) -> Vec<Position> {
+        let mut positions = vec![];
+        self.data.iter().enumerate().for_each(|(idx, p)| {
+            if p <= &threshold {
+                // calculate the index of the pixel in the real image global system
+                let local_x = idx % self.size();
+                let local_y = idx / self.size();
+                let local_position = Position::new(local_x as i32, local_y as i32);
+                positions.push(self.get_top_left_position() + local_position);
             }
-        }
-        self.size = size;
-        self.set_data(new_data);
+        });
+        positions
     }
 
     pub fn get_center_position(&self) -> Position {
         self.center_position.clone()
     }
 
+    pub fn get_top_left_position(&self) -> Position {
+        Position::new(
+            self.center_position.x - (self.size / 2) as i32,
+            self.center_position.x - (self.size / 2) as i32,
+        )
+    }
+
     pub fn get_last_delta_position(&self) -> Position {
+        // FIXME: why clone here
         self.last_delta_position.clone()
     }
 
     pub fn get_current_delta_position(&self) -> Position {
+        // FIXME: why clone here
         self.current_delta_position.clone()
     }
 
@@ -921,27 +934,11 @@ mod tests {
 
         retina.move_mut(&Position::new(10, 6), &image);
         image.update_retina_movement(&retina);
-        let _ = retina.set_size(9, &image);
 
         retina.move_mut(&Position::new(-1, -1), &image);
         image.update_retina_movement(&retina);
         assert_eq!(retina.get_center_position().x, 60);
         assert_eq!(retina.get_center_position().y, 56);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_invalid_retina_size() {
-        let image = get_test_image();
-        let mut retina = image
-            .create_retina_at(
-                Position::new(50, 50),
-                35,
-                CONFIG.image_processing.superpixel_size as usize,
-                "test".to_string(),
-            )
-            .unwrap();
-        retina.set_size(10, &image).unwrap();
     }
 
     #[test]
@@ -952,7 +949,7 @@ mod tests {
             pixels.push(if rng.gen_bool(0.5) { 0f32 } else { 255f32 });
         }
         let image = Image::from_vec(pixels).unwrap();
-        let superpixel_size = 5;
+        let superpixel_size = 7;
         let retina = image
             .create_retina_at(
                 Position { x: 18, y: 18 },
@@ -968,5 +965,232 @@ mod tests {
 
         // real value is 0.44 but thresholded to 0.0
         assert_eq!(retina.superpixels[0].value, 0.0);
+    }
+
+    #[test]
+    fn dark_pixel_positions_in_frame() {
+        let mut image =
+            Image::from_path_raw(String::from("images/unit_tests/dark-pixel-test.png")).unwrap();
+
+        let retina = image
+            .create_retina_at(Position { x: 35, y: 35 }, 35, 5, "1".to_string())
+            .unwrap();
+        image.update_retina_movement(&retina);
+
+        let real_pos = image.dark_pixel_positions();
+        let retina_pos = retina.dark_pixel_positions_in_frame(0.5);
+
+        assert!(retina_pos.iter().all(|pos| { real_pos.contains(pos) }))
+    }
+
+    #[test]
+    fn get_top_left_position() {
+        let image = get_test_image();
+        let retina = image
+            .create_retina_at(Position { x: 35, y: 35 }, 35, 5, "1".to_string())
+            .unwrap();
+
+        assert_eq!(retina.get_top_left_position(), Position::new(18, 18))
+    }
+
+    #[test]
+    fn dark_pixel_positions_visited() {
+        let mut image =
+            Image::from_path_raw(String::from("images/unit_tests/dark-pixel-test.png")).unwrap();
+
+        let mut retina = image
+            .create_retina_at(Position { x: 20, y: 20 }, 35, 5, "1".to_string())
+            .unwrap();
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        assert_eq!(retina.dark_pixel_positions_visited().len(), 4);
+
+        retina.move_mut(&Position { x: 30, y: 30 }, &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        assert_eq!(retina.dark_pixel_positions_visited().len(), 13);
+
+        retina.move_mut(&Position { x: -30, y: -30 }, &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        assert_eq!(retina.dark_pixel_positions_visited().len(), 13);
+    }
+
+    #[test]
+    fn dark_pixel_positions() {
+        let mut image =
+            Image::from_path_raw(String::from("images/training-stage-artificial/t1-01.png")).unwrap();
+
+        let mut retina = image
+            .create_retina_at(Position { x: 55, y: 180 }, 35, 7, "1".to_string())
+            .unwrap();
+
+        let speed = 32;
+
+        // move up
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(0, -speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(0, -speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(0, -speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        // move right
+        retina.move_mut(&Position::new(speed, 0), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        //move down 
+        retina.move_mut(&Position::new(0, speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(0, speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(0, speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        // move up
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(0, -speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(0, -speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(0, -speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        // move right
+        retina.move_mut(&Position::new(speed, 0), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(speed, 0), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(speed, 0), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(speed, 0), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(speed, 0), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+        
+        // move down
+        retina.move_mut(&Position::new(0, speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(0, speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        retina.move_mut(&Position::new(0, speed), &image);
+        image.update_retina_movement(&retina);
+        retina.update_positions_visited();
+        dbg!("{}", retina.dark_pixel_positions().len());
+        dbg!("{}", retina.dark_pixel_positions_visited().len());
+        dbg!("{}", retina.dark_pixel_positions_in_frame(0.5).len());
+        dbg!("{}", retina.percentage_visited());
+
+        image.save_with_retina(String::from("tests/images/t.png")).unwrap();
     }
 }

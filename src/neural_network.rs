@@ -217,7 +217,7 @@ impl From<Graph<(usize, f32), f32>> for Rnn {
                     .map(|edge| *graph.edge_weight(edge).unwrap())
                     .unwrap_or(0.0);
                 neuron
-                    .input_connections
+                    .input_connections_mut()
                     .push((graph.node_weight(neighbor).unwrap().0, weight));
             }
             neurons.push(neuron);
@@ -251,7 +251,7 @@ impl Rnn {
             for i in 0..neuron_count {
                 if i != index {
                     neuron
-                        .input_connections
+                        .input_connections_mut()
                         .push((i, rng.gen_range(lower..=upper)));
                 }
             }
@@ -308,17 +308,12 @@ impl Rnn {
         )
     }
 
-    /// the scaled output of neuron 3 is the resize factor of the retina, scaled by the retina_resize_speed
-    pub fn next_size_factor(&self) -> f32 {
-        self.neurons()[2].output() * CONFIG.neural_network.retina_resize_speed as f32
-    }
-
     /// each neuron has a connection to all of the retina SUPERpixels and these need to be updated each rnn update step
     pub fn update_inputs_from_retina(&mut self, retina: &Retina) {
         self.neurons_mut().iter_mut().for_each(|neuron| {
             neuron.retina_inputs_mut().clear();
-            for i in 0..retina.superpixel_size() {
-                for j in 0..retina.superpixel_size() {
+            for i in 0..retina.superpixel_rows_or_col() {
+                for j in 0..retina.superpixel_rows_or_col() {
                     neuron.add_retina_input(retina.get_superpixel_value(j, i));
                 }
             }
@@ -371,9 +366,9 @@ impl Rnn {
                 neuron.bias = other_neuron.bias;
             }
             // crossover the weights
-            for (i, weight) in neuron.input_connections.iter_mut().enumerate() {
+            for (i, weight) in neuron.input_connections_mut().iter_mut().enumerate() {
                 if rng.gen_bool(0.5) {
-                    weight.1 = other_neuron.input_connections[i].1;
+                    weight.1 = other_neuron.input_connections()[i].1;
                 }
             }
         }
@@ -435,7 +430,7 @@ impl Rnn {
             .choose(rng)
         {
             neuron
-                .input_connections
+                .input_connections_mut()
                 .iter_mut()
                 .for_each(|(_, weight)| *weight = 0.0);
             neuron.self_activation = 0.0;
@@ -452,7 +447,7 @@ impl Rnn {
         if let Some(neuron) = self.neurons.iter_mut().choose(rng) {
             if rng.gen_bool(0.5) {
                 if let Some((_, weight)) = neuron
-                    .input_connections
+                    .input_connections_mut()
                     .iter_mut()
                     .filter(|(_, w)| *w != 0.0)
                     .choose(rng)
@@ -504,7 +499,7 @@ impl Rnn {
             neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng);
             neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng);
             if rng.gen_bool(0.5) {
-                if let Some((_, weight)) = neuron.input_connections.iter_mut().choose(rng) {
+                if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
                     *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
                 }
             } else {
@@ -521,7 +516,7 @@ impl Rnn {
         let mean = self.mean;
         if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
             if rng.gen_bool(0.5) {
-                if let Some((_, weight)) = neuron.input_connections.iter_mut().choose(rng) {
+                if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
                     *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
                 }
             } else {
@@ -649,9 +644,9 @@ impl PartialEq for Neuron {
     fn eq(&self, other: &Self) -> bool {
         self.index == other.index
             && round2(self.output) == round2(other.output)
-            && self.input_connections.iter().all(|con| {
+            && self.input_connections().iter().all(|con| {
                 other
-                    .input_connections
+                    .input_connections()
                     .iter()
                     .any(|other_con| (con.0, round2(con.1)) == (other_con.0, round2(other_con.1)))
             })
@@ -672,8 +667,9 @@ impl Neuron {
             CONFIG.neural_network.weight_bounds.retina_upper as f32,
         );
         // maximal buffer size is the superpixel_size^2
-        let retina_weights = (0..CONFIG.image_processing.superpixel_size
-            * CONFIG.image_processing.superpixel_size)
+        let superpixel_size = CONFIG.image_processing.superpixel_size as usize;
+        let retina_size = CONFIG.image_processing.retina_size as usize;
+        let retina_weights = (0..(retina_size / superpixel_size).pow(2))
             // set 90 % of retina weights to 0
             .map(|_| {
                 if rng.gen_bool(0.1) {
@@ -888,12 +884,15 @@ mod tests {
 
         let mut rnn = Rnn::new(&mut rng, 3);
         rnn.neurons_mut().iter_mut().for_each(|neuron| {
-            neuron.input_connections.iter_mut().for_each(|(_, weight)| {
-                *weight = rng.gen_range(
-                    CONFIG.neural_network.weight_bounds.neuron_lower as f32
-                        ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
-                )
-            });
+            neuron
+                .input_connections_mut()
+                .iter_mut()
+                .for_each(|(_, weight)| {
+                    *weight = rng.gen_range(
+                        CONFIG.neural_network.weight_bounds.neuron_lower as f32
+                            ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
+                    )
+                });
             neuron.set_self_activation(rng.gen_range(
                 CONFIG.neural_network.weight_bounds.neuron_lower as f32
                     ..=CONFIG.neural_network.weight_bounds.neuron_upper as f32,
@@ -950,7 +949,7 @@ mod tests {
             graph.neighbors(node).for_each(|neighbor| {
                 // get weight from neuron at index "node" from the agent and the neuron at index "neighbor"
                 if let Some(correct_weight) = rnn.neurons[node.index()]
-                    .input_connections
+                    .input_connections()
                     .iter()
                     .find(|(index, _)| *index == neighbor.index())
                 {
@@ -984,12 +983,7 @@ mod tests {
         let mut rnn = Rnn::new(&mut rng, 3);
         let image = Image::from_vec(vec![0.0; 101 * 101]).unwrap();
         let retina = image
-            .create_retina_at(
-                Position::new(50, 50),
-                35,
-                CONFIG.image_processing.superpixel_size as usize,
-                "test".to_string(),
-            )
+            .create_retina_at(Position::new(50, 50), 35, 7, "test".to_string())
             .unwrap();
 
         rnn.update_inputs_from_retina(&retina);
@@ -1004,12 +998,7 @@ mod tests {
         let mut rnn = Rnn::new(&mut rng, 3);
         let image = Image::from_vec(vec![0.0; 320 * 320]).unwrap();
         let retina = image
-            .create_retina_at(
-                Position::new(160, 120),
-                35,
-                CONFIG.image_processing.superpixel_size as usize,
-                "test".to_string(),
-            )
+            .create_retina_at(Position::new(160, 120), 35, 7, "test".to_string())
             .unwrap();
         rnn.update_inputs_from_retina(&retina);
         rnn.update();

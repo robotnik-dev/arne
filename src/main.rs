@@ -3,6 +3,8 @@ use image_processing::TrainingStage;
 pub use rand_chacha::ChaCha8Rng;
 use static_toml::static_toml;
 
+pub use std::time::{Duration, Instant};
+
 mod utils;
 pub use utils::{round2, round_to_decimal_places};
 
