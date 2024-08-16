@@ -1,7 +1,6 @@
 use image::imageops::resize;
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut};
-use itertools::Itertools;
 use log::debug;
 use nalgebra::clamp;
 use rand::prelude::*;
@@ -411,9 +410,9 @@ impl Image {
         label: String,
     ) -> std::result::Result<Retina, Error> {
         // make sure size is odd number
-        if size != 35 {
-            return Err("ValueError: size must be 35!".into());
-        }
+        // if size != 35 {
+        //     return Err("ValueError: size must be 35!".into());
+        // }
 
         let mut data = vec![];
         let offset = size as i32 / 2 + 1;

@@ -19,6 +19,7 @@ pub use genetic_algorithm::{Agent, AgentEvaluation, Population, SelectionMethod}
 
 mod netlist;
 mod training;
+mod annotations;
 
 type Error = Box<dyn std::error::Error>;
 type Result = std::result::Result<(), Error>;
@@ -30,7 +31,7 @@ static_toml! {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// number of times the training should run, 0 for initilize agents_init
+    /// number of times the training should run, 0 for initialize agents
     #[arg(short, long, default_value_t = 0)]
     count: u8,
 }
@@ -45,13 +46,13 @@ fn main() -> Result {
         training::train_agents(
             TrainingStage::Artificial { stage: 0 },
             None,
-            format!("agents_init"),
+            format!("agents"),
         )?;
     } else {
         std::fs::remove_dir_all(format!("agents_trained")).unwrap_or_default();
         for i in 0..args.count {
             let load_path = if i == 0 {
-                format!("agents_init")
+                format!("agents")
             } else {
                 format!("agents_trained/agents_stage_{}", i - 1)
             };

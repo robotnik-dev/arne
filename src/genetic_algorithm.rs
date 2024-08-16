@@ -94,7 +94,7 @@ impl AgentEvaluation for Agent {
         let _image_center_position =
             Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
         let mut retina = image.create_retina_at(
-            _random_position,
+            _image_center_position,
             retina_size,
             CONFIG.image_processing.superpixel_size as usize,
             "".to_string(),
