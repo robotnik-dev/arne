@@ -4,7 +4,7 @@ use serde_xml_rs::{from_str, to_string};
 #[derive(Debug, Deserialize, PartialEq)]
 struct Database {
     #[serde(rename = "$value")]
-    value: String
+    value: String,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -42,7 +42,7 @@ pub struct Annotation {
     size: Size,
     segmented: String,
     #[serde(rename = "object")]
-    objects: Vec<Object>
+    objects: Vec<Object>,
 }
 
 #[cfg(test)]

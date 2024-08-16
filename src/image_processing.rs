@@ -1,6 +1,8 @@
 use image::imageops::resize;
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
-use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut};
+use imageproc::drawing::{
+    draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut,
+};
 use log::debug;
 use nalgebra::clamp;
 use rand::prelude::*;
@@ -414,7 +416,11 @@ impl Image {
         }
 
         if size % superpixel_size != 0 {
-            return Err(format!("ValueError: retina size: {} must be dividable by the superpixel size: {}", size, superpixel_size).into());
+            return Err(format!(
+                "ValueError: retina size: {} must be dividable by the superpixel size: {}",
+                size, superpixel_size
+            )
+            .into());
         }
 
         let mut data = vec![];
@@ -709,21 +715,21 @@ impl Retina {
         let mut new_pixels = vec![];
         self.dark_pixel_positions_in_frame(0.5)
             .into_iter()
-            .filter(|pos| {
-                !self.dark_pixel_positions_visited().contains(pos)
-            })
+            .filter(|pos| !self.dark_pixel_positions_visited().contains(pos))
             .for_each(|new_pos| {
                 new_pixels.push(new_pos);
             });
         new_pixels.iter().for_each(|new_pos| {
-            self.dark_pixel_positions_visited_mut().push(new_pos.clone())
+            self.dark_pixel_positions_visited_mut()
+                .push(new_pos.clone())
         });
     }
 
     /// calculates the percentage of all darker pixels the retina already visited in the image.
     /// Normalized between 0 and 1
     pub fn percentage_visited(&self) -> f32 {
-        let percentage = self.dark_pixel_positions_visited().len() as f32 / self.dark_pixel_positions().len() as f32;
+        let percentage = self.dark_pixel_positions_visited().len() as f32
+            / self.dark_pixel_positions().len() as f32;
         assert!(percentage <= 1.0);
         percentage
     }
@@ -975,12 +981,13 @@ mod tests {
     #[test]
     fn dark_pixel_positions_in_frame() {
         let mut image =
-            Image::from_path_raw(String::from("images/training-stage-artificial/t1-01.png")).unwrap();
+            Image::from_path_raw(String::from("images/training-stage-artificial/t1-01.png"))
+                .unwrap();
 
         let mut retina = image
             .create_retina_at(Position { x: 35, y: 35 }, 35, 7, "1".to_string())
             .unwrap();
-        
+
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
@@ -1028,7 +1035,8 @@ mod tests {
     #[test]
     fn dark_pixel_positions() {
         let mut image =
-            Image::from_path_raw(String::from("images/training-stage-artificial/t1-01.png")).unwrap();
+            Image::from_path_raw(String::from("images/training-stage-artificial/t1-01.png"))
+                .unwrap();
 
         let mut retina = image
             .create_retina_at(Position { x: 55, y: 180 }, 35, 7, "1".to_string())
@@ -1041,126 +1049,188 @@ mod tests {
         retina.update_positions_visited();
 
         assert_eq!(retina.dark_pixel_positions(), image.dark_pixel_positions());
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(0, -speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(0, -speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(0, -speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         // move right
         retina.move_mut(&Position::new(speed, 0), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
-        //move down 
+        //move down
         retina.move_mut(&Position::new(0, speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(0, speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(0, speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         // move up
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(0, -speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(0, -speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(0, -speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         // move right
         retina.move_mut(&Position::new(speed, 0), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(speed, 0), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(speed, 0), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(speed, 0), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(speed, 0), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         // move down
         retina.move_mut(&Position::new(0, speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(0, speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         retina.move_mut(&Position::new(0, speed), &image);
         image.update_retina_movement(&retina);
         retina.update_positions_visited();
 
-        assert!(retina.dark_pixel_positions_in_frame(0.5).iter().all(|pos| { image.dark_pixel_positions().contains(pos) }));
+        assert!(retina
+            .dark_pixel_positions_in_frame(0.5)
+            .iter()
+            .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
-        image.save_with_retina(String::from("tests/images/t.png")).unwrap();
+        image
+            .save_with_retina(String::from("tests/images/t.png"))
+            .unwrap();
     }
 }
