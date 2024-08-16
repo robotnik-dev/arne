@@ -409,10 +409,13 @@ impl Image {
         superpixel_size: usize,
         label: String,
     ) -> std::result::Result<Retina, Error> {
-        // make sure size is odd number
-        // if size != 35 {
-        //     return Err("ValueError: size must be 35!".into());
-        // }
+        if size % 2 == 0 {
+            return Err(format!("ValueError: retina size: {} must be odd", size).into());
+        }
+
+        if size % superpixel_size != 0 {
+            return Err(format!("ValueError: retina size: {} must be dividable by the superpixel size: {}", size, superpixel_size).into());
+        }
 
         let mut data = vec![];
         let offset = size as i32 / 2 + 1;
