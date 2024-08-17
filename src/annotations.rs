@@ -9,15 +9,15 @@ use serde_xml_rs::{from_str, to_string};
 
 use crate::{image_processing::Image, Error, CONFIG};
 
-pub struct DataReader {
-    data: Vec<(Annotation, Image)>,
+pub struct ImageLoader {
+    count: usize,
+    annotations: Vec<Annotation>,
 }
 
-impl DataReader {
+impl ImageLoader {
     /// creates a Reader from a directory. Gives an error when one of the following folders does not exist
     /// - annotations
     /// - images
-    /// - segmentation
     pub fn build(path: PathBuf) -> std::result::Result<Self, Error> {
         let data_path = path.clone();
         let mut annotations = vec![];
@@ -39,23 +39,30 @@ impl DataReader {
                 };
             }
         }
-        // read the path from annotations and load image
-        let mut data = vec![];
-        for annotation in annotations.clone() {
-            let local_path = PathBuf::from(annotation.path.clone())
-                .strip_prefix(".")?
-                .to_string_lossy()
-                .into_owned();
-            let path = PathBuf::from(format!(
-                "{}/{}",
-                path.to_string_lossy().into_owned(),
-                local_path
-            ));
-            let image = Image::from_path(path)?;
-            data.push((annotation, image));
-        }
 
-        Ok(DataReader { data })
+        Ok(ImageLoader { count: 0, annotations })
+    }
+}
+
+impl Iterator for ImageLoader {
+    type Item = (Annotation, Image);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let annotation = self.annotations.get(self.count)?;
+        let path = CONFIG.image_processing.path_to_data as &str;
+        let local_path = PathBuf::from(annotation.path.clone())
+            .strip_prefix(".").ok()?
+            .to_string_lossy()
+            .into_owned();
+        let path = PathBuf::from(format!(
+            "{}/{}",
+            path.to_string(),
+            local_path
+        ));
+        let image = Image::from_path_raw(path).ok()?;
+
+        self.count += 1;
+        Some((annotation.clone(), image))
     }
 }
 
@@ -87,7 +94,7 @@ struct Object {
     truncated: String,
     difficult: String,
     bndbox: Bndbox,
-    text: String,
+    text: Option<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -199,7 +206,10 @@ mod tests {
     #[test]
     fn data_reader_build() {
         let path = PathBuf::from("data");
-        let data_reader = DataReader::build(path).unwrap();
-        dbg!(data_reader.data.len());
+        let image_loader = ImageLoader::build(path).unwrap();
+        image_loader.into_iter().enumerate().take(1).for_each(|(idx, (a, mut i))| {
+            dbg!("{}", a);
+            i.save_grey(String::from("tests/images/data-reader.jpeg")).unwrap();
+        });
     }
 }

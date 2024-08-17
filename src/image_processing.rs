@@ -215,15 +215,15 @@ impl Image {
     pub fn empty() -> Self {
         Image {
             rgba: RgbaImage::new(
-                CONFIG.image_processing.input_image_width as u32,
-                CONFIG.image_processing.input_image_height as u32,
+                CONFIG.image_processing.goal_image_width as u32,
+                CONFIG.image_processing.goal_image_height as u32,
             ),
             grey: GrayImage::new(
-                CONFIG.image_processing.input_image_width as u32,
-                CONFIG.image_processing.input_image_height as u32,
+                CONFIG.image_processing.goal_image_width as u32,
+                CONFIG.image_processing.goal_image_height as u32,
             ),
-            width: CONFIG.image_processing.input_image_width as u32,
-            height: CONFIG.image_processing.input_image_height as u32,
+            width: CONFIG.image_processing.goal_image_width as u32,
+            height: CONFIG.image_processing.goal_image_height as u32,
             retina_positions: vec![],
             dark_pixel_positions: vec![],
         }
