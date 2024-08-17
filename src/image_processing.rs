@@ -9,6 +9,7 @@ use rand::prelude::*;
 use rusttype::{Font, Scale};
 use serde::Deserialize;
 use std::ops::{Add, Sub};
+use std::path::PathBuf;
 use std::{fmt::Debug, ops::AddAssign};
 
 use crate::utils::get_label_from_path;
@@ -68,31 +69,27 @@ impl ImageReader {
 
         for entry in std::fs::read_dir(path)? {
             let path = entry?.path();
-            if let Some(to_str) = path.to_str() {
-                let path_str = to_str.to_string();
-                let image = match stage {
-                    TrainingStage::Artificial { .. } => Image::from_path_raw(path_str.clone())?,
-                    TrainingStage::RealBinarized => Image::from_path(path_str.clone())?,
-                    TrainingStage::Real => Image::from_path(path_str.clone())?,
-                };
-                if let Some(label) = get_label_from_path(path_str) {
-                    // load description
-                    let desc_entry = std::fs::read_dir(description_path.clone())?
-                        .last()
-                        .ok_or("ValueError: could not get description path")??;
-                    let desc_str = std::fs::read_to_string(desc_entry.path())?;
-                    let description: ImageDescription = toml::from_str(&desc_str)?;
-                    debug!(
-                        "loaded image: label: {:?}, description: {:?}",
-                        label.clone(),
-                        description.clone()
-                    );
-                    images.push((ImageLabel(label), image.clone(), description));
-                } else {
-                    return Err("ValueError: could not get label from path".into());
-                }
+            // let path_str = to_str.to_string();
+            let image = match stage {
+                TrainingStage::Artificial { .. } => Image::from_path_raw(path.clone())?,
+                TrainingStage::RealBinarized => Image::from_path(path.clone())?,
+                TrainingStage::Real => Image::from_path(path.clone())?,
+            };
+            if let Some(label) = get_label_from_path(path) {
+                // load description
+                let desc_entry = std::fs::read_dir(description_path.clone())?
+                    .last()
+                    .ok_or("ValueError: could not get description path")??;
+                let desc_str = std::fs::read_to_string(desc_entry.path())?;
+                let description: ImageDescription = toml::from_str(&desc_str)?;
+                debug!(
+                    "loaded image: label: {:?}, description: {:?}",
+                    label.clone(),
+                    description.clone()
+                );
+                images.push((ImageLabel(label), image.clone(), description));
             } else {
-                return Err("ValueError: could not convert path to string".into());
+                return Err("ValueError: could not get label from path".into());
             }
         }
         Ok(ImageReader { images })
@@ -265,7 +262,7 @@ impl Image {
     }
 
     /// load from a path and return an image(preprocessed)
-    pub fn from_path(path: String) -> std::result::Result<Self, Error> {
+    pub fn from_path(path: PathBuf) -> std::result::Result<Self, Error> {
         let rgba = image::io::Reader::open(path.clone())?
             .decode()?
             .into_rgba8();
@@ -299,7 +296,7 @@ impl Image {
     }
 
     /// load from a path and return an image without preprocessing
-    pub fn from_path_raw(path: String) -> std::result::Result<Self, Error> {
+    pub fn from_path_raw(path: PathBuf) -> std::result::Result<Self, Error> {
         let rgba = image::io::Reader::open(path.clone())?
             .decode()?
             .into_rgba8();
@@ -853,12 +850,7 @@ mod tests {
     fn test_get_retina_out_of_bounds() {
         let image = get_test_image();
         // getting the first pixel in the top left corner should give an error
-        let retina = image.create_retina_at(
-            Position::new(1, 1),
-            35 as usize,
-            CONFIG.image_processing.superpixel_size as usize,
-            "test".to_string(),
-        );
+        let retina = image.create_retina_at(Position::new(1, 1), 35, 7, "test".to_string());
         assert!(retina.is_err());
     }
 
@@ -866,12 +858,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_right() {
         let image = get_test_image();
         let mut retina = image
-            .create_retina_at(
-                Position::new(50, 50),
-                35 as usize,
-                CONFIG.image_processing.superpixel_size as usize,
-                "test".to_string(),
-            )
+            .create_retina_at(Position::new(50, 50), 35, 7, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(80, 0), &image);
@@ -882,12 +869,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_left() {
         let image = get_test_image();
         let mut retina = image
-            .create_retina_at(
-                Position::new(50, 50),
-                35 as usize,
-                CONFIG.image_processing.superpixel_size as usize,
-                "test".to_string(),
-            )
+            .create_retina_at(Position::new(50, 50), 35, 7, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(-80, 0), &image);
@@ -898,12 +880,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_top() {
         let image = get_test_image();
         let mut retina = image
-            .create_retina_at(
-                Position::new(50, 50),
-                35 as usize,
-                CONFIG.image_processing.superpixel_size as usize,
-                "test".to_string(),
-            )
+            .create_retina_at(Position::new(50, 50), 35, 7, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(0, -80), &image);
@@ -914,12 +891,7 @@ mod tests {
     fn test_invalid_retina_movement_to_the_bottom() {
         let image = get_test_image();
         let mut retina = image
-            .create_retina_at(
-                Position::new(50, 50),
-                35 as usize,
-                CONFIG.image_processing.superpixel_size as usize,
-                "test".to_string(),
-            )
+            .create_retina_at(Position::new(50, 50), 35, 7, "test".to_string())
             .unwrap();
 
         retina.move_mut(&Position::new(0, 80), &image);
@@ -930,12 +902,7 @@ mod tests {
     fn test_retina_movement() {
         let mut image = get_test_image();
         let mut retina = image
-            .create_retina_at(
-                Position::new(50, 50),
-                35,
-                CONFIG.image_processing.superpixel_size as usize,
-                "test".to_string(),
-            )
+            .create_retina_at(Position::new(50, 50), 35, 7, "test".to_string())
             .unwrap();
         image.update_retina_movement(&retina);
         retina.move_mut(&Position::new(1, 1), &image);
@@ -960,14 +927,8 @@ mod tests {
             pixels.push(if rng.gen_bool(0.5) { 0f32 } else { 255f32 });
         }
         let image = Image::from_vec(pixels).unwrap();
-        let superpixel_size = 7;
         let retina = image
-            .create_retina_at(
-                Position { x: 18, y: 18 },
-                35,
-                superpixel_size,
-                String::from("1"),
-            )
+            .create_retina_at(Position { x: 18, y: 18 }, 35, 7, String::from("1"))
             .unwrap();
 
         let dir = get_test_dir();
@@ -981,7 +942,7 @@ mod tests {
     #[test]
     fn dark_pixel_positions_in_frame() {
         let mut image =
-            Image::from_path_raw(String::from("images/training-stage-artificial/t1-01.png"))
+            Image::from_path_raw(PathBuf::from("images/training-stage-artificial/t1-01.png"))
                 .unwrap();
 
         let mut retina = image
@@ -1012,7 +973,7 @@ mod tests {
     #[test]
     fn dark_pixel_positions_visited() {
         let mut image =
-            Image::from_path_raw(String::from("images/unit_tests/dark-pixel-test.png")).unwrap();
+            Image::from_path_raw(PathBuf::from("images/unit_tests/dark-pixel-test.png")).unwrap();
 
         let mut retina = image
             .create_retina_at(Position { x: 20, y: 20 }, 35, 5, "1".to_string())
@@ -1035,7 +996,7 @@ mod tests {
     #[test]
     fn dark_pixel_positions() {
         let mut image =
-            Image::from_path_raw(String::from("images/training-stage-artificial/t1-01.png"))
+            Image::from_path_raw(PathBuf::from("images/training-stage-artificial/t1-01.png"))
                 .unwrap();
 
         let mut retina = image
