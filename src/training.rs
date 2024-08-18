@@ -1,4 +1,5 @@
 use core::panic;
+use std::path::PathBuf;
 use std::u8;
 
 use crate::image_processing::{ImageDescription, Position, TrainingStage};
@@ -407,13 +408,16 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
                     std::fs::create_dir_all(format!("{}/{}/{}", save_path, index, label)).unwrap();
 
                     image
-                        .save_with_retina(format!("{}/{}/{}/retina.png", save_path, index, label))
+                        .save_with_retina(PathBuf::from(format!(
+                            "{}/{}/{}/retina.png",
+                            save_path, index, label
+                        )))
                         .unwrap();
                     image
-                        .save_with_retina_upscaled(format!(
+                        .save_with_retina_upscaled(PathBuf::from(format!(
                             "{}/{}/{}/retina_orig.png",
                             save_path, index, label
-                        ))
+                        )))
                         .unwrap();
 
                     // save netlist

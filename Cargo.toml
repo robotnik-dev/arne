@@ -27,7 +27,7 @@ skeletonize = "0.2"
 toml = "0.8.16"
 rusttype = "0.9.3"
 clap = { version = "4.5.13", features = ["derive"] }
-serde-xml-rs = "0.6.0"
+quick-xml = {version = "0.36.1", features = ["serialize"]}
 
 [dependencies.petgraph]
 version = "0.6.5"

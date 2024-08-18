@@ -316,6 +316,23 @@ impl Image {
         Ok(image)
     }
 
+    /// resizes, find edges and binarizes it
+    fn preprocess(&mut self) -> Result {
+
+
+        self
+            // .resize_all(
+            //     CONFIG.image_processing.goal_image_width as u32,
+            //     CONFIG.image_processing.goal_image_height as u32,
+            // )?
+            .edged(Some(CONFIG.image_processing.sobel_threshold as f32))?
+            .erode(
+                imageproc::distance_transform::Norm::L1,
+                CONFIG.image_processing.erode_pixels as u8,
+            )?;
+        Ok(())
+    }
+
     pub fn rgba(&self) -> &RgbaImage {
         &self.rgba
     }
@@ -493,17 +510,17 @@ impl Image {
         ));
     }
 
-    pub fn save_rgba(&mut self, path: String) -> std::result::Result<&mut Self, Error> {
+    pub fn save_rgba(&mut self, path: PathBuf) -> std::result::Result<&mut Self, Error> {
         self.rgba.save(path)?;
         Ok(self)
     }
 
-    pub fn save_grey(&mut self, path: String) -> std::result::Result<&mut Self, Error> {
+    pub fn save_grey(&mut self, path: PathBuf) -> std::result::Result<&mut Self, Error> {
         self.grey.save(path)?;
         Ok(self)
     }
 
-    pub fn save_with_retina(&self, path: String) -> Result {
+    pub fn save_with_retina(&self, path: PathBuf) -> Result {
         let mut canvas = self.grey().clone();
         for (index, (retina_position, retina_size, label)) in
             self.retina_positions.iter().enumerate()
@@ -557,7 +574,7 @@ impl Image {
     }
 
     /// on the rgba version of the image upscaled
-    pub fn save_with_retina_upscaled(&self, path: String) -> Result {
+    pub fn save_with_retina_upscaled(&self, path: PathBuf) -> Result {
         let circle_radius = CONFIG.image_processing.retina_circle_radius as f32;
         let upscaled_width = CONFIG.image_processing.goal_image_width as u32;
         let upscaled_height = CONFIG.image_processing.goal_image_height as u32;
@@ -933,7 +950,9 @@ mod tests {
 
         let dir = get_test_dir();
         let file = String::from("superpixel.png");
-        image.save_with_retina(format!("{}/{}", dir, file)).unwrap();
+        image
+            .save_with_retina(PathBuf::from(format!("{}/{}", dir, file)))
+            .unwrap();
 
         // real value is 0.44 but thresholded to 0.0
         assert_eq!(retina.superpixels[0].value, 0.0);
@@ -1191,7 +1210,17 @@ mod tests {
             .all(|pos| { image.dark_pixel_positions().contains(pos) }));
 
         image
-            .save_with_retina(String::from("tests/images/t.png"))
+            .save_with_retina(PathBuf::from("tests/images/t.png"))
             .unwrap();
     }
+
+    // #[test]
+    // fn preprocess() {
+    //     let mut image =
+    //         Image::from_path_raw(PathBuf::from("data/drafter_15/images/C169_D1_P1.jpeg")).unwrap();
+    //     image.preprocess().unwrap();
+    //     image
+    //         .save_grey(PathBuf::from("tests/images/preprocessed.jpeg"))
+    //         .unwrap();
+    // }
 }

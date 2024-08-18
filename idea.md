@@ -34,3 +34,8 @@ Bilder machen mit Liste von allen x y positionen.
 
 https://www.kaggle.com/datasets/johannesbayer/cghd1152
 
+
+___
+edit
+preprocess all images beforhand and save them in anither folder in each "drafter" folder. Name smth like "preprocessed".
+then add an attribute to the annotation xml where the image is stored. smth like "preprocessed"

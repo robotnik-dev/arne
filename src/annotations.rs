@@ -4,8 +4,8 @@ use std::{
     path::PathBuf,
 };
 
-use serde::Deserialize;
-use serde_xml_rs::{from_str, to_string};
+use serde::{Deserialize, Serialize};
+use quick_xml::{de::from_str, se::to_string};
 
 use crate::{image_processing::Image, Error, CONFIG};
 
@@ -40,7 +40,10 @@ impl ImageLoader {
             }
         }
 
-        Ok(ImageLoader { count: 0, annotations })
+        Ok(ImageLoader {
+            count: 0,
+            annotations,
+        })
     }
 }
 
@@ -51,14 +54,11 @@ impl Iterator for ImageLoader {
         let annotation = self.annotations.get(self.count)?;
         let path = CONFIG.image_processing.path_to_data as &str;
         let local_path = PathBuf::from(annotation.path.clone())
-            .strip_prefix(".").ok()?
+            .strip_prefix(".")
+            .ok()?
             .to_string_lossy()
             .into_owned();
-        let path = PathBuf::from(format!(
-            "{}/{}",
-            path.to_string(),
-            local_path
-        ));
+        let path = PathBuf::from(format!("{}/{}", path.to_string(), local_path));
         let image = Image::from_path_raw(path).ok()?;
 
         self.count += 1;
@@ -66,20 +66,20 @@ impl Iterator for ImageLoader {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 struct Database {
     #[serde(rename = "$value")]
     value: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 struct Size {
     width: String,
     height: String,
     depth: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 struct Bndbox {
     xmin: String,
     ymin: String,
@@ -87,7 +87,7 @@ struct Bndbox {
     ymax: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 struct Object {
     name: String,
     pose: String,
@@ -97,7 +97,7 @@ struct Object {
     text: Option<String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 #[serde(rename_all = "lowercase")]
 pub struct Annotation {
     folder: String,
@@ -118,7 +118,7 @@ impl Annotation {
             .open(path)?
             .read_to_string(&mut buf)?;
 
-        let annotation: Annotation = from_str(buf.as_str())?;
+        let annotation = from_str(buf.as_str())?;
         Ok(annotation)
     }
 }
@@ -197,19 +197,18 @@ mod tests {
     #[test]
     fn from_path() {
         let annotation = test_annotation();
-        let should: Annotation = from_str(&annotation).unwrap();
+        let should: Annotation = from_str(annotation).unwrap();
         let loaded =
             Annotation::from_path(PathBuf::from("images/unit_tests/annotation.xml")).unwrap();
         assert_eq!(should, loaded);
     }
 
     #[test]
-    fn data_reader_build() {
-        let path = PathBuf::from("data");
-        let image_loader = ImageLoader::build(path).unwrap();
-        image_loader.into_iter().enumerate().take(1).for_each(|(idx, (a, mut i))| {
-            dbg!("{}", a);
-            i.save_grey(String::from("tests/images/data-reader.jpeg")).unwrap();
-        });
+    fn change_annotation() {
+        std::fs::create_dir_all(String::from("tests/annotation")).unwrap();
+        let mut annotation = Annotation::from_path(PathBuf::from("images/unit_tests/annotation.xml")).unwrap();
+        annotation.path = String::from("test");
+        let annotation_string = to_string(&annotation).unwrap();
+        std::fs::write(PathBuf::from("tests/annotation/change_test.xml"), annotation_string).unwrap();
     }
 }
