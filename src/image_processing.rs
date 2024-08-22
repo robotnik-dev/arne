@@ -398,7 +398,7 @@ impl Image {
 
     /// saves all the darker pixel in the GREY image, determined by the threshold between 0 and 1
     fn generate_dark_pixel_positions(&mut self, threshold: f32) -> Result {
-        if threshold < 0.0 || threshold > 1.0 {
+        if !(0.0..=1.0).contains(&threshold) {
             return Err("Threshold must be between 0 and 1".into());
         };
 
@@ -845,8 +845,6 @@ impl Superpixel {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::OpenOptions, io::Write};
-
     use rand_chacha::ChaCha8Rng;
 
     use super::*;

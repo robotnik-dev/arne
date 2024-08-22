@@ -2,13 +2,12 @@ use core::panic;
 use std::path::PathBuf;
 use std::u8;
 
-use crate::image_processing::{ImageDescription, Position, TrainingStage};
+use crate::image_processing::{ImageDescription, TrainingStage};
 use crate::netlist::Generate;
 use crate::{
-    Agent, AgentEvaluation, ChaCha8Rng, ImageReader, Population, Result, Retina, Rnn,
-    SelectionMethod, CONFIG,
+    Agent, AgentEvaluation, ChaCha8Rng, ImageReader, Population, Result, Retina, SelectionMethod,
+    CONFIG,
 };
-use approx::AbsDiffEq;
 use indicatif::ProgressBar;
 use rand::prelude::*;
 use rayon::prelude::*;

@@ -25,8 +25,8 @@ impl ImageLoader {
                 let folder_name = subdir_entry
                     .file_name()
                     .into_string()
-                    .map_err(|_| format!("Could not convert to String"))?;
-                if folder_name == "annotations".to_string() {
+                    .map_err(|_| "Could not convert to String".to_string())?;
+                if folder_name == *"annotations" {
                     for annotation_file in std::fs::read_dir(subdir_entry.path())? {
                         let annotation = Annotation::from_path(annotation_file?.path())?;
                         annotations.push(annotation);
@@ -53,7 +53,7 @@ impl Iterator for ImageLoader {
             .ok()?
             .to_string_lossy()
             .into_owned();
-        let path = PathBuf::from(format!("{}/{}", path.to_string(), local_path));
+        let path = PathBuf::from(format!("{}/{}", path, local_path));
         let image = Image::from_path_raw(path).ok()?;
 
         self.count += 1;

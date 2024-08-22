@@ -46,13 +46,13 @@ fn main() -> Result {
         training::train_agents(
             TrainingStage::Artificial { stage: 0 },
             None,
-            format!("agents"),
+            "agents".to_string(),
         )?;
     } else {
-        std::fs::remove_dir_all(format!("agents_trained")).unwrap_or_default();
+        std::fs::remove_dir_all("agents_trained".to_string()).unwrap_or_default();
         for i in 0..args.count {
             let load_path = if i == 0 {
-                format!("agents")
+                "agents".to_string()
             } else {
                 format!("agents_trained/agents_stage_{}", i - 1)
             };

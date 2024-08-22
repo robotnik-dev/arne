@@ -10,7 +10,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use crate::image_processing::{Image, ImageDescription, ImageLabel, Position, Retina};
-use crate::netlist::{ComponentBuilder, ComponentType, Generate, Netlist, Node, NodeType};
+use crate::netlist::Generate;
 use crate::neural_network::Rnn;
 use crate::{Error, CONFIG};
 
@@ -524,6 +524,12 @@ impl Clone for Agent {
             genotype: self.genotype.clone(),
             statistics: self.statistics.clone(),
         }
+    }
+}
+
+impl Default for Agent {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

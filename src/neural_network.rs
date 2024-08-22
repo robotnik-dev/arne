@@ -454,15 +454,13 @@ impl Rnn {
                 {
                     *weight = 0.0;
                 }
-            } else {
-                if let Some(weight) = neuron
-                    .retina_weights_mut()
-                    .iter_mut()
-                    .filter(|w| *w != &0.0)
-                    .choose(rng)
-                {
-                    *weight = 0.0;
-                }
+            } else if let Some(weight) = neuron
+                .retina_weights_mut()
+                .iter_mut()
+                .filter(|w| *w != &0.0)
+                .choose(rng)
+            {
+                *weight = 0.0;
             }
         };
     }
@@ -502,10 +500,8 @@ impl Rnn {
                 if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
                     *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
                 }
-            } else {
-                if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
-                    *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
-                }
+            } else if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+                *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
             }
         };
     }
@@ -519,10 +515,8 @@ impl Rnn {
                 if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
                     *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
                 }
-            } else {
-                if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
-                    *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
-                }
+            } else if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+                *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
             }
         };
     }
