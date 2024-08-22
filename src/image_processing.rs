@@ -318,8 +318,6 @@ impl Image {
 
     /// resizes, find edges and binarizes it
     fn preprocess(&mut self) -> Result {
-
-
         self
             // .resize_all(
             //     CONFIG.image_processing.goal_image_width as u32,

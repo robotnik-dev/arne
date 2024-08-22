@@ -22,7 +22,6 @@
             <xmax>460</xmax>
             <ymax>558</ymax>
         </bndbox>
-        <text>RC</text>
     </object>
     <object>
         <name>text</name>
