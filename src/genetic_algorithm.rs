@@ -9,7 +9,8 @@ use std::fs::{self, OpenOptions};
 use std::io::Read;
 use std::path::PathBuf;
 
-use crate::image_processing::{Image, ImageDescription, ImageLabel, Position, Retina};
+use crate::annotations::Annotation;
+use crate::image_processing::{Image, ImageLabel, Position, Retina};
 use crate::netlist::Generate;
 use crate::neural_network::Rnn;
 use crate::{Error, CONFIG};
@@ -54,15 +55,10 @@ pub enum SelectionMethod {
 pub trait AgentEvaluation {
     fn evaluate(
         &mut self,
-        fitness_function: fn(
-            agent: &mut Agent,
-            description: ImageDescription,
-            retina: &Retina,
-        ) -> f32,
+        fitness_function: fn(agent: &mut Agent, annotation: &Annotation, retina: &Retina) -> f32,
         rng: &mut dyn RngCore,
-        label: ImageLabel,
         image: &mut Image,
-        desciption: ImageDescription,
+        annotation: &Annotation,
         number_of_updates: usize,
     ) -> std::result::Result<f32, Error>;
 }
@@ -70,15 +66,10 @@ pub trait AgentEvaluation {
 impl AgentEvaluation for Agent {
     fn evaluate(
         &mut self,
-        fitness_function: fn(
-            agent: &mut Agent,
-            description: ImageDescription,
-            retina: &Retina,
-        ) -> f32,
+        fitness_function: fn(agent: &mut Agent, annotation: &Annotation, retina: &Retina) -> f32,
         rng: &mut dyn RngCore,
-        label: ImageLabel,
         image: &mut Image,
-        description: ImageDescription,
+        annotation: &Annotation,
         number_of_updates: usize,
     ) -> std::result::Result<f32, Error> {
         // initialize retina
@@ -163,13 +154,15 @@ impl AgentEvaluation for Agent {
                 .add_snapshot(categorize_outputs, time_step);
 
             // calculate the fitness of the genotype
-            local_fitness += fitness_function(self, description.clone(), &retina);
+            local_fitness += fitness_function(self, annotation, &retina);
         }
         // save the image in the hashmap of the agent with label
         let image = image.clone();
         let genotype = self.genotype().clone();
-        self.statistics_mut()
-            .insert(label.clone(), (image, genotype, String::new()));
+        self.statistics_mut().insert(
+            ImageLabel(annotation.filename.clone()),
+            (image, genotype, String::new()),
+        );
 
         let fitness = local_fitness / number_of_updates as f32;
         Ok(fitness)

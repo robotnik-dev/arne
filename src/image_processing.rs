@@ -3,7 +3,6 @@ use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::drawing::{
     draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut,
 };
-use log::debug;
 use nalgebra::clamp;
 use rand::prelude::*;
 use rusttype::{Font, Scale};
@@ -12,7 +11,6 @@ use std::ops::{Add, Sub};
 use std::path::PathBuf;
 use std::{fmt::Debug, ops::AddAssign};
 
-use crate::utils::get_label_from_path;
 use crate::{Error, Result, CONFIG};
 use skeletonize::edge_detection::sobel4;
 use skeletonize::foreground;
@@ -26,26 +24,6 @@ impl std::fmt::Display for ImageLabel {
     }
 }
 
-#[derive(Deserialize, Clone, Debug)]
-pub struct ImageDescription {
-    pub components: Components,
-    pub nodes: Nodes,
-}
-
-#[derive(Deserialize, Clone, Debug)]
-pub struct Components {
-    pub resistor: Option<u32>,
-    pub capacitor: Option<u32>,
-    pub source_dc: Option<u32>,
-}
-
-#[derive(Deserialize, Clone, Debug)]
-pub struct Nodes {
-    pub resistor: Option<Vec<Vec<u32>>>,
-    pub capacitor: Option<Vec<Vec<u32>>>,
-    pub source_dc: Option<Vec<Vec<u32>>>,
-}
-
 #[derive(Debug, Clone)]
 pub enum TrainingStage {
     Artificial { stage: u8 },
@@ -53,62 +31,62 @@ pub enum TrainingStage {
     Real,
 }
 
-pub struct ImageReader {
-    images: Vec<(ImageLabel, Image, ImageDescription)>,
-}
+// pub struct ImageReader {
+//     images: Vec<(ImageLabel, Image, ImageDescription)>,
+// }
 
-impl ImageReader {
-    /// reads a directory and returns a list of all images in it
-    /// also loads the image descriptions with it
-    pub fn from_path(
-        path: String,
-        description_path: String,
-        stage: TrainingStage,
-    ) -> std::result::Result<Self, Error> {
-        let mut images = vec![];
+// impl ImageReader {
+//     /// reads a directory and returns a list of all images in it
+//     /// also loads the image descriptions with it
+//     pub fn from_path(
+//         path: String,
+//         description_path: String,
+//         stage: TrainingStage,
+//     ) -> std::result::Result<Self, Error> {
+//         let mut images = vec![];
 
-        for entry in std::fs::read_dir(path)? {
-            let path = entry?.path();
-            // let path_str = to_str.to_string();
-            let image = match stage {
-                TrainingStage::Artificial { .. } => Image::from_path_raw(path.clone())?,
-                TrainingStage::RealBinarized => Image::from_path(path.clone())?,
-                TrainingStage::Real => Image::from_path(path.clone())?,
-            };
-            if let Some(label) = get_label_from_path(path) {
-                // load description
-                let desc_entry = std::fs::read_dir(description_path.clone())?
-                    .last()
-                    .ok_or("ValueError: could not get description path")??;
-                let desc_str = std::fs::read_to_string(desc_entry.path())?;
-                let description: ImageDescription = toml::from_str(&desc_str)?;
-                debug!(
-                    "loaded image: label: {:?}, description: {:?}",
-                    label.clone(),
-                    description.clone()
-                );
-                images.push((ImageLabel(label), image.clone(), description));
-            } else {
-                return Err("ValueError: could not get label from path".into());
-            }
-        }
-        Ok(ImageReader { images })
-    }
+//         for entry in std::fs::read_dir(path)? {
+//             let path = entry?.path();
+//             // let path_str = to_str.to_string();
+//             let image = match stage {
+//                 TrainingStage::Artificial { .. } => Image::from_path_raw(path.clone())?,
+//                 TrainingStage::RealBinarized => Image::from_path(path.clone())?,
+//                 TrainingStage::Real => Image::from_path(path.clone())?,
+//             };
+//             if let Some(label) = get_label_from_path(path) {
+//                 // load description
+//                 let desc_entry = std::fs::read_dir(description_path.clone())?
+//                     .last()
+//                     .ok_or("ValueError: could not get description path")??;
+//                 let desc_str = std::fs::read_to_string(desc_entry.path())?;
+//                 let description: ImageDescription = toml::from_str(&desc_str)?;
+//                 debug!(
+//                     "loaded image: label: {:?}, description: {:?}",
+//                     label.clone(),
+//                     description.clone()
+//                 );
+//                 images.push((ImageLabel(label), image.clone(), description));
+//             } else {
+//                 return Err("ValueError: could not get label from path".into());
+//             }
+//         }
+//         Ok(ImageReader { images })
+//     }
 
-    pub fn get_image(
-        &self,
-        index: usize,
-    ) -> std::result::Result<&(ImageLabel, Image, ImageDescription), Error> {
-        if index >= self.images.len() {
-            return Err("IndexError: index out of bounds".into());
-        }
-        Ok(&self.images[index])
-    }
+//     pub fn get_image(
+//         &self,
+//         index: usize,
+//     ) -> std::result::Result<&(ImageLabel, Image, ImageDescription), Error> {
+//         if index >= self.images.len() {
+//             return Err("IndexError: index out of bounds".into());
+//         }
+//         Ok(&self.images[index])
+//     }
 
-    pub fn images(&self) -> &Vec<(ImageLabel, Image, ImageDescription)> {
-        &self.images
-    }
-}
+//     pub fn images(&self) -> &Vec<(ImageLabel, Image, ImageDescription)> {
+//         &self.images
+//     }
+// }
 
 /// Counted with one more than image idx. Image index 0 -> Position index 1.
 #[derive(Debug, Clone, Eq)]
@@ -199,12 +177,19 @@ impl AddAssign for Position {
 }
 
 #[derive(Debug, Clone)]
+enum ImageFormat {
+    Landscape,
+    Portrait
+}
+
+#[derive(Debug, Clone)]
 pub struct Image {
     /// generic container for the image data
     rgba: RgbaImage,
     grey: GrayImage,
     width: u32,
     height: u32,
+    format: ImageFormat,
     /// used to visualize the retina movement on an upscaled image (Position, size of retina, label)
     retina_positions: Vec<(Position, usize, String)>,
     dark_pixel_positions: Vec<Position>,
@@ -224,6 +209,7 @@ impl Image {
             ),
             width: CONFIG.image_processing.goal_image_width as u32,
             height: CONFIG.image_processing.goal_image_height as u32,
+            format: ImageFormat::Landscape,
             retina_positions: vec![],
             dark_pixel_positions: vec![],
         }
@@ -252,6 +238,7 @@ impl Image {
             grey,
             width,
             height,
+            format: ImageFormat::Landscape,
             retina_positions: vec![],
             dark_pixel_positions: vec![],
         };
@@ -274,21 +261,13 @@ impl Image {
             grey,
             width,
             height,
+            format: if width >= height {ImageFormat::Landscape} else {ImageFormat::Portrait},
             retina_positions: vec![],
             dark_pixel_positions: vec![],
         };
 
         // preprocess the image
-        image
-            .resize_all(
-                CONFIG.image_processing.goal_image_width as u32,
-                CONFIG.image_processing.goal_image_height as u32,
-            )?
-            .edged(Some(CONFIG.image_processing.sobel_threshold as f32))?
-            .erode(
-                imageproc::distance_transform::Norm::L1,
-                CONFIG.image_processing.erode_pixels as u8,
-            )?;
+        image.preprocess()?;
 
         // TODO: threshold
         image.generate_dark_pixel_positions(0.5)?;
@@ -308,6 +287,7 @@ impl Image {
             grey,
             width,
             height,
+            format: if width >= height {ImageFormat::Landscape} else {ImageFormat::Portrait},
             retina_positions: vec![],
             dark_pixel_positions: vec![],
         };
@@ -317,17 +297,20 @@ impl Image {
     }
 
     /// resizes, find edges and binarizes it
-    fn preprocess(&mut self) -> Result {
-        self
-            // .resize_all(
-            //     CONFIG.image_processing.goal_image_width as u32,
-            //     CONFIG.image_processing.goal_image_height as u32,
-            // )?
-            .edged(Some(CONFIG.image_processing.sobel_threshold as f32))?
-            .erode(
-                imageproc::distance_transform::Norm::L1,
-                CONFIG.image_processing.erode_pixels as u8,
-            )?;
+    pub fn preprocess(&mut self) -> Result {
+        let (width, height) = match self.format {
+            ImageFormat::Landscape => {(CONFIG.image_processing.goal_image_width as u32, CONFIG.image_processing.goal_image_height as u32)},
+            ImageFormat::Portrait => {(CONFIG.image_processing.goal_image_height as u32, CONFIG.image_processing.goal_image_width as u32)},
+        };
+        self.resize_all(
+            width,
+            height,
+        )?
+        .edged(Some(CONFIG.image_processing.sobel_threshold as f32))?
+        .erode(
+            imageproc::distance_transform::Norm::L1,
+            CONFIG.image_processing.erode_pixels as u8,
+        )?;
         Ok(())
     }
 
@@ -387,6 +370,15 @@ impl Image {
         k: u8,
     ) -> std::result::Result<&mut Self, Error> {
         imageproc::morphology::erode_mut(&mut self.grey, norm, k);
+        Ok(self)
+    }
+
+    pub fn dilate(
+        &mut self,
+        norm: imageproc::distance_transform::Norm,
+        k: u8,
+    ) -> std::result::Result<&mut Self, Error> {
+        imageproc::morphology::dilate_mut(&mut self.grey, norm, k);
         Ok(self)
     }
 
@@ -1210,13 +1202,13 @@ mod tests {
             .unwrap();
     }
 
-    // #[test]
-    // fn preprocess() {
-    //     let mut image =
-    //         Image::from_path_raw(PathBuf::from("data/drafter_15/images/C169_D1_P1.jpeg")).unwrap();
-    //     image.preprocess().unwrap();
-    //     image
-    //         .save_grey(PathBuf::from("tests/images/preprocessed.jpeg"))
-    //         .unwrap();
-    // }
+    #[test]
+    fn erode() {
+        let mut image = Image::from_path_raw(PathBuf::from("data/drafter_-1/images/C-1_D1_P1.jpeg")).unwrap();
+        image.save_grey(PathBuf::from("tests/images/before_erode.jpeg")).unwrap();
+        for i in 0..3 {
+            image.dilate(imageproc::distance_transform::Norm::L1, 0).unwrap();
+        }
+        image.save_grey(PathBuf::from("tests/images/erode.jpeg")).unwrap();
+    }
 }

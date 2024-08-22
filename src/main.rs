@@ -1,15 +1,17 @@
+use annotations::XMLParser;
 use clap::Parser;
 use image_processing::TrainingStage;
 pub use rand_chacha::ChaCha8Rng;
 use static_toml::static_toml;
 
+use std::path::PathBuf;
 pub use std::time::{Duration, Instant};
 
 mod utils;
 pub use utils::{round2, round_to_decimal_places};
 
 mod image_processing;
-pub use image_processing::{ImageReader, Retina};
+pub use image_processing::Retina;
 
 mod neural_network;
 pub use neural_network::{Rnn, ShortTermMemory, SnapShot};
@@ -40,6 +42,13 @@ fn main() -> Result {
     env_logger::init();
 
     let args = Args::parse();
+
+    // HACK: just run this once and delete when all are preprocessed
+    if args.count == 99 {
+        XMLParser::preprocess_dir(PathBuf::from("data/drafter_-1"), true, 2)?;
+        // XMLParser::preprocess_dir(PathBuf::from("data/drafter_1"), false, 2)?;
+        return Ok(());
+    }
 
     if args.count == 0 {
         // train first iteration of agents that every other tage builds upon

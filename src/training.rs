@@ -2,17 +2,17 @@ use core::panic;
 use std::path::PathBuf;
 use std::u8;
 
-use crate::image_processing::{ImageDescription, TrainingStage};
+use crate::annotations::{Annotation, XMLParser};
+use crate::image_processing::{ImageLabel, TrainingStage};
 use crate::netlist::Generate;
 use crate::{
-    Agent, AgentEvaluation, ChaCha8Rng, ImageReader, Population, Result, Retina, SelectionMethod,
-    CONFIG,
+    Agent, AgentEvaluation, ChaCha8Rng, Population, Result, Retina, SelectionMethod, CONFIG,
 };
 use indicatif::ProgressBar;
 use rand::prelude::*;
 use rayon::prelude::*;
 
-fn fitness_pixel_follow(agent: &mut Agent, description: ImageDescription, retina: &Retina) -> f32 {
+fn fitness_pixel_follow(agent: &mut Agent, annotation: &Annotation, retina: &Retina) -> f32 {
     // TODO: the categorize network is ignored for now
     // log::debug!(
     //     "all: {:?}; visited: {}, current frame: {}",
@@ -25,7 +25,7 @@ fn fitness_pixel_follow(agent: &mut Agent, description: ImageDescription, retina
 
 fn fitness_recognize_components(
     agent: &mut Agent,
-    description: ImageDescription,
+    annotation: &Annotation,
     retina: &Retina,
 ) -> f32 {
     unimplemented!()
@@ -249,7 +249,6 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     let max_generations = CONFIG.genetic_algorithm.max_generations as u64;
     let seed = CONFIG.genetic_algorithm.seed as u64;
     let with_seed = CONFIG.genetic_algorithm.with_seed;
-    let path_to_image_descriptions = CONFIG.image_processing.path_to_image_descriptions as &str;
     let population_size = CONFIG.genetic_algorithm.initial_population_size as usize;
     let number_of_network_updates = CONFIG.neural_network.number_of_network_updates as usize;
     let take_agents = CONFIG.genetic_algorithm.take_agents as usize;
@@ -279,18 +278,25 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     log::info!("loading training dataset...");
 
     // create a reader to buffer training dataset
-    let image_path = match stage {
-        TrainingStage::Artificial { .. } => {
-            CONFIG.image_processing.path_to_training_artificial as &str
-        }
-        TrainingStage::RealBinarized => CONFIG.image_processing.path_to_training_binarized as &str,
-        TrainingStage::Real => CONFIG.image_processing.path_to_analysis_stage as &str,
-    };
-    let image_reader = ImageReader::from_path(
-        image_path.to_string(),
-        path_to_image_descriptions.to_string(),
-        stage.clone(),
-    )?;
+    // let image_path = match stage {
+    //     TrainingStage::Artificial { .. } => {
+    //         CONFIG.image_processing.path_to_training_artificial as &str
+    //     }
+    //     TrainingStage::RealBinarized => CONFIG.image_processing.path_to_training_binarized as &str,
+    //     TrainingStage::Real => CONFIG.image_processing.path_to_analysis_stage as &str,
+    // };
+    let mut parser = XMLParser::new();
+    // the folder which are used in this training stage
+    // let enabled = vec![-1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29];
+    let enabled = vec![-1, 1];
+    for folder in enabled {
+        let drafter_path = format!("data/drafter_{}", folder);
+        parser.load_preprocessed(
+            PathBuf::from(drafter_path),
+            CONFIG.image_processing.training.load_all as bool,
+            CONFIG.image_processing.training.load_amount as usize,
+        )?;
+    }
 
     let fitness_function = match stage {
         TrainingStage::Artificial { stage: 0 } => fitness_pixel_follow,
@@ -306,10 +312,8 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     loop {
         algorithm_bar.inc(1);
         // for each image in the dataset
-        for index in 0..image_reader.images().len() {
-            // load image
-            let (label, image, description) = image_reader.get_image(index)?;
-
+        let mut images_used = 0usize;
+        for (annotation, image) in parser.data.iter() {
             // evaluate the fitness of each individual of the population
             population
                 .agents_mut()
@@ -320,9 +324,8 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
                         .evaluate(
                             fitness_function,
                             &mut rng.clone(),
-                            label.clone(),
                             &mut image.clone(),
-                            description.clone(),
+                            annotation,
                             number_of_network_updates,
                         )
                         .unwrap();
@@ -332,10 +335,15 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
             // after one image was processed, save a netlist per image
             population.agents_mut().par_iter_mut().for_each(|agent| {
                 let generated_netlist = agent.genotype().generate();
-                if let Some((_, _, netlist)) = agent.statistics_mut().get_mut(&label.clone()) {
+                if let Some((_, _, netlist)) = agent
+                    .statistics_mut()
+                    .get_mut(&ImageLabel(annotation.filename.clone()))
+                {
                     *netlist = generated_netlist;
                 }
-            })
+            });
+
+            images_used += 1;
         }
 
         // average each agents fitness over the number of images
@@ -344,7 +352,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
             .par_iter_mut()
             .enumerate()
             .for_each(|(_, agent)| {
-                agent.set_fitness(agent.fitness() / image_reader.images().len() as f32);
+                agent.set_fitness(agent.fitness() / images_used as f32);
             });
 
         // sort the population by fitness

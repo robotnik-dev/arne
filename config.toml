@@ -2,7 +2,6 @@
 path_to_training_artificial = "images/training-stage-artificial"
 path_to_training_binarized = "images/training-stage-binarized"
 path_to_analysis_stage = "images/analysis-stage"
-path_to_image_descriptions = "images/descriptions"
 path_to_data = "data"
 input_image_width = 4032
 input_image_height = 3024
@@ -16,6 +15,19 @@ retina_circle_radius = 1.0
 retina_label_scale = 12.0
 sobel_threshold = 0.3
 erode_pixels = 1
+
+[image_processing.training]
+# loading all images into memory, takes a while
+load_all = false
+# if all == false, how many to load
+load_amount = 4
+
+[image_processing.testing]
+# loading all images into memory, takes a while
+load_all = false
+# if all == false, how many to load
+load_amount = 4
+
 
 [neural_network]
 control_network_neurons = 2
