@@ -1,6 +1,6 @@
-use crate::image_processing::Retina;
+use crate::image::Retina;
 use crate::utils::round2;
-use crate::{genetic_algorithm::Statistics, image_processing::Position, Result};
+use crate::{genetic_algorithm::Statistics, image::Position, Result};
 use crate::{Error, CONFIG};
 use approx::AbsDiffEq;
 use petgraph::{dot::Dot, Graph};
@@ -763,7 +763,7 @@ impl Neuron {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::image_processing::Image;
+    use crate::image::Image;
     use rand_chacha::ChaCha8Rng;
 
     fn get_test_dir() -> String {

@@ -1,6 +1,6 @@
 use annotations::XMLParser;
 use clap::Parser;
-use image_processing::TrainingStage;
+use image::TrainingStage;
 pub use rand_chacha::ChaCha8Rng;
 use static_toml::static_toml;
 
@@ -10,8 +10,8 @@ pub use std::time::{Duration, Instant};
 mod utils;
 pub use utils::{round2, round_to_decimal_places};
 
-mod image_processing;
-pub use image_processing::Retina;
+mod image;
+pub use image::Retina;
 
 mod neural_network;
 pub use neural_network::{Rnn, ShortTermMemory, SnapShot};
@@ -45,8 +45,9 @@ fn main() -> Result {
 
     // HACK: just run this once and delete when all are preprocessed
     if args.count == 99 {
-        XMLParser::preprocess_dir(PathBuf::from("data/drafter_-1"), true, 2)?;
-        // XMLParser::preprocess_dir(PathBuf::from("data/drafter_1"), false, 2)?;
+        // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_1"))?;
+        // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_2"))?;
+        // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_3"))?;
         return Ok(());
     }
 

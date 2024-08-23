@@ -2,8 +2,8 @@ use core::panic;
 use std::path::PathBuf;
 use std::u8;
 
-use crate::annotations::{Annotation, XMLParser};
-use crate::image_processing::{ImageLabel, TrainingStage};
+use crate::annotations::{Annotation, LoadFolder, XMLParser};
+use crate::image::{ImageLabel, TrainingStage};
 use crate::netlist::Generate;
 use crate::{
     Agent, AgentEvaluation, ChaCha8Rng, Population, Result, Retina, SelectionMethod, CONFIG,
@@ -241,6 +241,10 @@ fn fitness_recognize_components(
     // fitness
 }
 
+pub fn test_agents() -> Result {
+    todo!()
+}
+
 pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: String) -> Result {
     log::info!("starting training stage {:?}", stage);
 
@@ -254,6 +258,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     let take_agents = CONFIG.genetic_algorithm.take_agents as usize;
     let variance_decay = CONFIG.genetic_algorithm.mutation_rates.variance_decay as f32;
     let goal_fitness = CONFIG.genetic_algorithm.goal_fitness as f32;
+    let data_path = CONFIG.image_processing.training.path as &str;
 
     log::info!("setting up rng");
 
@@ -277,22 +282,14 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
 
     log::info!("loading training dataset...");
 
-    // create a reader to buffer training dataset
-    // let image_path = match stage {
-    //     TrainingStage::Artificial { .. } => {
-    //         CONFIG.image_processing.path_to_training_artificial as &str
-    //     }
-    //     TrainingStage::RealBinarized => CONFIG.image_processing.path_to_training_binarized as &str,
-    //     TrainingStage::Real => CONFIG.image_processing.path_to_analysis_stage as &str,
-    // };
     let mut parser = XMLParser::new();
-    // the folder which are used in this training stage
-    // let enabled = vec![-1,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29];
-    let enabled = vec![-1, 1];
-    for folder in enabled {
-        let drafter_path = format!("data/drafter_{}", folder);
-        parser.load_preprocessed(
-            PathBuf::from(drafter_path),
+    let dir = std::fs::read_dir(PathBuf::from(data_path))?;
+
+    for folder in dir {
+        let drafter_path = folder?.path();
+        parser.load(
+            drafter_path,
+            LoadFolder::Resized,
             CONFIG.image_processing.training.load_all as bool,
             CONFIG.image_processing.training.load_amount as usize,
         )?;

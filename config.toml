@@ -1,10 +1,4 @@
 [image_processing]
-path_to_training_artificial = "images/training-stage-artificial"
-path_to_training_binarized = "images/training-stage-binarized"
-path_to_analysis_stage = "images/analysis-stage"
-path_to_data = "data"
-input_image_width = 4032
-input_image_height = 3024
 goal_image_width = 320
 goal_image_height = 240
 # must be odd
@@ -17,12 +11,14 @@ sobel_threshold = 0.3
 erode_pixels = 1
 
 [image_processing.training]
+path = "data/training"
 # loading all images into memory, takes a while
 load_all = false
 # if all == false, how many to load
 load_amount = 4
 
 [image_processing.testing]
+path = "data/testing"
 # loading all images into memory, takes a while
 load_all = false
 # if all == false, how many to load
@@ -46,10 +42,10 @@ retina_upper = 4.0
 with_seed = false
 seed = 1024
 goal_fitness = 0.95
-initial_population_size = 100
-max_generations = 20
+initial_population_size = 20
+max_generations = 5
 tournament_size = 5
-take_agents = 1
+take_agents = 2
 
 [genetic_algorithm.mutation_rates]
 variance = 0.2

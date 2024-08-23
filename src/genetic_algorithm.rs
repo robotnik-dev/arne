@@ -10,7 +10,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use crate::annotations::Annotation;
-use crate::image_processing::{Image, ImageLabel, Position, Retina};
+use crate::image::{Image, ImageLabel, Position, Retina};
 use crate::netlist::Generate;
 use crate::neural_network::Rnn;
 use crate::{Error, CONFIG};

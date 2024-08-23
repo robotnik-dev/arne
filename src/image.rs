@@ -177,19 +177,19 @@ impl AddAssign for Position {
 }
 
 #[derive(Debug, Clone)]
-enum ImageFormat {
+pub enum ImageFormat {
     Landscape,
     Portrait
 }
 
+/// generic container for the image data
 #[derive(Debug, Clone)]
 pub struct Image {
-    /// generic container for the image data
     rgba: RgbaImage,
     grey: GrayImage,
     width: u32,
     height: u32,
-    format: ImageFormat,
+    pub format: ImageFormat,
     /// used to visualize the retina movement on an upscaled image (Position, size of retina, label)
     retina_positions: Vec<(Position, usize, String)>,
     dark_pixel_positions: Vec<Position>,
@@ -312,6 +312,10 @@ impl Image {
             CONFIG.image_processing.erode_pixels as u8,
         )?;
         Ok(())
+    }
+
+    pub fn binarize(&mut self) -> Result {
+        todo!("real binarization and save the lower und upper binarization value in the image")
     }
 
     pub fn rgba(&self) -> &RgbaImage {
@@ -1200,15 +1204,5 @@ mod tests {
         image
             .save_with_retina(PathBuf::from("tests/images/t.png"))
             .unwrap();
-    }
-
-    #[test]
-    fn erode() {
-        let mut image = Image::from_path_raw(PathBuf::from("data/drafter_-1/images/C-1_D1_P1.jpeg")).unwrap();
-        image.save_grey(PathBuf::from("tests/images/before_erode.jpeg")).unwrap();
-        for i in 0..3 {
-            image.dilate(imageproc::distance_transform::Norm::L1, 0).unwrap();
-        }
-        image.save_grey(PathBuf::from("tests/images/erode.jpeg")).unwrap();
     }
 }

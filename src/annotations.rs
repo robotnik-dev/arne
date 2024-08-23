@@ -5,7 +5,13 @@ use serde_json::Value;
 use xml2json_rs::JsonBuilder;
 // use quick_xml::{de::from_str, se::to_string};
 
-use crate::{image_processing::Image, Error, Result, CONFIG};
+use crate::{image::{Image, ImageFormat}, Error, Result, CONFIG};
+
+pub enum LoadFolder {
+    Segmentation,
+    Resized,
+    Images,
+}
 
 pub struct XMLParser {
     pub data: Vec<(Annotation, Image)>,
@@ -16,19 +22,17 @@ impl XMLParser {
         XMLParser { data: Vec::new() }
     }
 
-    /// Gives an error when one of the following folders does not exist
-    /// - annotations
-    /// - preprocessed
-    /// Failes also when one images was not yet preprocessed
-    pub fn load_preprocessed(
+    /// loads the images from the specified folder
+    pub fn load(
         &mut self,
         drafter_path: PathBuf,
+        folder: LoadFolder,
         all: bool,
         amount: usize,
     ) -> std::result::Result<&mut Self, Error> {
-        let mut data = vec![];
         let mut count = 0usize;
-        'outer: for subdir in std::fs::read_dir(drafter_path)? {
+        let path = drafter_path.clone().to_string_lossy().into_owned();
+        'outer: for subdir in std::fs::read_dir(path)? {
             let subdir_entry = subdir?;
             let folder_name = subdir_entry
                 .file_name()
@@ -40,118 +44,49 @@ impl XMLParser {
                     if count == amount && !all {
                         break 'outer;
                     };
-
                     let annotation = Annotation::from_path(annotation_file?.path())?;
-                    let path = CONFIG.image_processing.path_to_data as &str;
-                    // HACK: changes the path so that only the preprocessed images are loaded
-                    let preprocessed_path =
-                        annotation.path.clone().replace("images", "preprocessed");
-                    let local_path = PathBuf::from(preprocessed_path)
-                        .strip_prefix(".")?
-                        .to_string_lossy()
-                        .into_owned();
-                    let path = PathBuf::from(format!("{}/{}", path, local_path));
-                    let image = Image::from_path_raw(path)?;
-                    data.push((annotation, image));
-                    count += 1;
+                    let folder_name = match folder {
+                        LoadFolder::Resized => {"resized"},
+                        LoadFolder::Segmentation => {"segmentation"},
+                        LoadFolder::Images => {"images"},
+                    };
+                    let path = PathBuf::from(format!("{}/{}/{}", drafter_path.clone().to_string_lossy().into_owned(), folder_name, annotation.filename.clone()));
+                    // skip all annotations that have not a segmented images
+                    if let Ok(image) = Image::from_path_raw(path) {
+                        self.data.push((annotation, image));
+                        count += 1;
+                    }
                 }
             };
         }
-        self.data = data;
         Ok(self)
     }
 
-    // /// loads the images from the segmentation folder
-    // pub fn load_segmentation(
-    //     &mut self,
-    //     drafter_path: PathBuf,
-    //     all: bool,
-    //     amount: usize,
-    // ) -> std::result::Result<&mut Self, Error> {
-    //     let mut data = vec![];
-    //     let mut count = 0usize;
-    //     'outer: for subdir in std::fs::read_dir(drafter_path)? {
-    //         let subdir_entry = subdir?;
-    //         let folder_name = subdir_entry
-    //             .file_name()
-    //             .into_string()
-    //             .map_err(|_| "Could not convert to String".to_string())?;
-    //         if folder_name == *"annotations" {
-    //             for annotation_file in std::fs::read_dir(subdir_entry.path())? {
-    //                 // check stop condition
-    //                 if count == amount && !all {
-    //                     break 'outer;
-    //                 };
+    pub fn resize_segmented_images(folder: PathBuf) -> Result {
+        let path = folder.clone().to_string_lossy().into_owned();
 
-    //                 let annotation = Annotation::from_path(annotation_file?.path())?;
-    //                 let path = CONFIG.image_processing.path_to_data as &str;
-    //                 let preprocessed_path =
-    //                     annotation.path.clone().replace("images", "segmentation");
-    //                 let local_path = PathBuf::from(preprocessed_path)
-    //                     .strip_prefix(".")?
-    //                     .to_string_lossy()
-    //                     .into_owned();
-    //                 let path = PathBuf::from(format!("{}/{}", path, local_path));
-    //                 let image = Image::from_path_raw(path)?;
-    //                 data.push((annotation, image));
-    //                 count += 1;
-    //             }
-    //         };
-    //     }
-    //     self.data = data;
-    //     Ok(self)
-    // }
-
-    /// This function is meant to run once and then never again. (Maybe when preprocessing changes)
-    /// preprocess all images in the directory e.g. drafter_1 and save them in a new folder 'preprocessed'
-    /// next to the other folder and lastly changes the filename in the annotation file
-    pub fn preprocess_dir(dir_path: PathBuf, all: bool, amount: usize) -> Result {
-        let path = dir_path.clone();
-        log::debug!("preprocessing folder: {:?}", path.clone());
-        
-        let new_images_path = format!("{}/preprocessed", path.to_str().unwrap());
-        let mut count = 0usize;
-        'outer: for folder in std::fs::read_dir(path.clone())? {
-            let folder_path = folder?;
-            std::fs::create_dir_all(PathBuf::from(new_images_path.clone()))?;
-            let folder_name = folder_path
-            .file_name()
-            .into_string()
-            .map_err(|_| "Could not convert to String".to_string())?;
+        log::debug!("resizing images in folder: {:?}", path.clone());
+        let resized_path = format!("{}/resized", path);
+        std::fs::create_dir_all(PathBuf::from(resized_path.clone()))?;
+        for entry in std::fs::read_dir(path.clone())? {
+            let entry = entry?;
+            let folder_name = entry.file_name().to_string_lossy().into_owned();
             
-            if folder_name == *"annotations" {
-                let progress = ProgressBar::new(if all {
-                    std::fs::read_dir(folder_path.path())?.count() as u64
-                } else {
-                    amount as u64
-                });
-                for annotation_file in std::fs::read_dir(folder_path.path())? {
-                    // check stop condition
-                    if count == amount && !all {
-                        break 'outer;
-                    };
+            if folder_name == *"segmentation" {
+                let progress = ProgressBar::new(std::fs::read_dir(entry.path())?.count() as u64);
+                for image_entry in std::fs::read_dir(entry.path())? {
                     progress.inc(1);
-
-                    let annotation = Annotation::from_path(annotation_file?.path())?;
-                    let path = CONFIG.image_processing.path_to_data as &str;
-                    let old_local_path = PathBuf::from(annotation.path.clone())
-                        .strip_prefix(".")?
-                        .to_string_lossy()
-                        .into_owned();
-                    let old_image_path = PathBuf::from(format!("{}/{}", path, old_local_path));
-
-                    log::debug!("loading image");
-                    let mut image = Image::from_path_raw(old_image_path.clone())?;
-                    let new_local_image_path = old_image_path
-                        .to_str()
-                        .unwrap()
-                        .replace("images", "preprocessed");
-                    log::debug!("preprocessing image");
-                    image.preprocess()?;
-                    log::debug!("saving image");
-                    image.save_grey(PathBuf::from(new_local_image_path))?;
-                    count += 1;
+                    let image_entry = image_entry?;
+                    let filename = image_entry.file_name().to_string_lossy().into_owned();
+                    let mut image = Image::from_path_raw(image_entry.path())?;
+                    let (width, height) = match image.format {
+                        ImageFormat::Landscape => {(CONFIG.image_processing.goal_image_width as u32, CONFIG.image_processing.goal_image_height as u32)},
+                        ImageFormat::Portrait => {(CONFIG.image_processing.goal_image_height as u32, CONFIG.image_processing.goal_image_width as u32)},
+                    };
+                    image.resize_all(width, height)?;
+                    image.save_grey(PathBuf::from(format!("{}/{}", resized_path.clone(), filename)))?;
                 }
+                progress.finish_and_clear();
             }
         }
         Ok(())
@@ -385,8 +320,14 @@ mod tests {
     fn parse_amount() {
         let mut parser = XMLParser::new();
         parser
-            .load_preprocessed(PathBuf::from("data/drafter_-1"), false, 2)
+            .load(
+                PathBuf::from(
+                    format!("{}/drafter_1", CONFIG.image_processing.training.path as &str)
+                ),
+                LoadFolder::Segmentation,
+                false,
+            1)
             .unwrap();
-        assert_eq!(parser.data.len(), 2);
+        assert_eq!(parser.data.len(), 1);
     }
 }
