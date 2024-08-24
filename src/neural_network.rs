@@ -421,12 +421,12 @@ impl Rnn {
         self.clone()
     }
 
-    /// setting all incoming weights, self activation and bias to 0 from a random neuron that wasnt already deleted (all 0)
+    /// setting all incoming weights, self activation and bias to 0 from a random neuron
     pub fn delete_neuron(&mut self, rng: &mut dyn RngCore) {
         if let Some(neuron) = self
             .neurons_mut()
             .iter_mut()
-            .filter(|n| !n.is_deleted())
+            // .filter(|n| !n.is_deleted())
             .choose(rng)
         {
             neuron
@@ -442,14 +442,14 @@ impl Rnn {
         };
     }
 
-    /// setting one weight to 0 from a random neuron which isnt already 0
+    /// setting one weight to 0 from a random neuron
     pub fn delete_weights(&mut self, rng: &mut dyn RngCore) {
         if let Some(neuron) = self.neurons.iter_mut().choose(rng) {
             if rng.gen_bool(0.5) {
                 if let Some((_, weight)) = neuron
                     .input_connections_mut()
                     .iter_mut()
-                    .filter(|(_, w)| *w != 0.0)
+                    // .filter(|(_, w)| *w != 0.0)
                     .choose(rng)
                 {
                     *weight = 0.0;
@@ -457,7 +457,7 @@ impl Rnn {
             } else if let Some(weight) = neuron
                 .retina_weights_mut()
                 .iter_mut()
-                .filter(|w| *w != &0.0)
+                // .filter(|w| *w != &0.0)
                 .choose(rng)
             {
                 *weight = 0.0;
@@ -465,24 +465,24 @@ impl Rnn {
         };
     }
 
-    /// setting bias to 0 from a random neuron that isnt already 0
+    /// setting bias to 0 from a random neuron
     pub fn delete_bias(&mut self, rng: &mut dyn RngCore) {
         if let Some(neuron) = self
             .neurons_mut()
             .iter_mut()
-            .filter(|n: &&mut Neuron| n.bias() != 0.0)
+            // .filter(|n: &&mut Neuron| n.bias() != 0.0)
             .choose(rng)
         {
             neuron.bias = 0.0
         };
     }
 
-    /// setting self activation to 0 from a random neuron that isnt already 0
+    /// setting self activation to 0 from a random neuron
     pub fn delete_self_activation(&mut self, rng: &mut dyn RngCore) {
         if let Some(neuron) = self
             .neurons_mut()
             .iter_mut()
-            .filter(|n| n.self_activation() != 0.0)
+            // .filter(|n| n.self_activation() != 0.0)
             .choose(rng)
         {
             neuron.self_activation = 0.0
