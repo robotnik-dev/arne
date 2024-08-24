@@ -1,0 +1,373 @@
+{
+  "neurons": [
+    {
+      "index": 0,
+      "output": 0.011727938,
+      "input_connections": [],
+      "bias": -0.0102713425,
+      "self_activation": -0.019657033,
+      "retina_weights": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.022230355,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "short_term_memory": {
+    "snapshots": [
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 1
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 2
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 3
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 4
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 5
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 6
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 7
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 8
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 9
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 10
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 11
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 12
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 13
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 14
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 15
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 16
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 17
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 18
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 19
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 20
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 21
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 22
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 23
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 24
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 25
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 26
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 27
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 28
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 29
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 30
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 31
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 32
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 33
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 34
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 35
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 36
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 37
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 38
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 39
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 40
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 41
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 42
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 43
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 44
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 45
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 46
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 47
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 48
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 49
+      },
+      {
+        "outputs": [
+          0.011727938
+        ],
+        "time_step": 50
+      }
+    ]
+  },
+  "graph": {
+    "nodes": [
+      [
+        0,
+        -0.01
+      ]
+    ],
+    "node_holes": [],
+    "edge_property": "directed",
+    "edges": [
+      [
+        0,
+        0,
+        -0.02
+      ]
+    ]
+  },
+  "statistics": {
+    "deleted_neurons": 9,
+    "deleted_weights": 5,
+    "deleted_biases": 7,
+    "deleted_self_activations": 12,
+    "mutated_neurons": 6,
+    "mutated_weights": 8,
+    "mutated_biases": 9,
+    "mutated_self_activations": 6,
+    "fitness": 0.0,
+    "variance": 0.016198928
+  },
+  "mutation_variance": 0.016198928,
+  "mean": 0.0
+}
