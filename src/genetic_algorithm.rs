@@ -513,7 +513,7 @@ pub struct Agent {
 impl Clone for Agent {
     fn clone(&self) -> Self {
         Agent {
-            fitness: self.fitness,
+            fitness: 0.0,
             genotype: self.genotype.clone(),
             statistics: self.statistics.clone(),
         }

@@ -31,63 +31,6 @@ pub enum TrainingStage {
     Real,
 }
 
-// pub struct ImageReader {
-//     images: Vec<(ImageLabel, Image, ImageDescription)>,
-// }
-
-// impl ImageReader {
-//     /// reads a directory and returns a list of all images in it
-//     /// also loads the image descriptions with it
-//     pub fn from_path(
-//         path: String,
-//         description_path: String,
-//         stage: TrainingStage,
-//     ) -> std::result::Result<Self, Error> {
-//         let mut images = vec![];
-
-//         for entry in std::fs::read_dir(path)? {
-//             let path = entry?.path();
-//             // let path_str = to_str.to_string();
-//             let image = match stage {
-//                 TrainingStage::Artificial { .. } => Image::from_path_raw(path.clone())?,
-//                 TrainingStage::RealBinarized => Image::from_path(path.clone())?,
-//                 TrainingStage::Real => Image::from_path(path.clone())?,
-//             };
-//             if let Some(label) = get_label_from_path(path) {
-//                 // load description
-//                 let desc_entry = std::fs::read_dir(description_path.clone())?
-//                     .last()
-//                     .ok_or("ValueError: could not get description path")??;
-//                 let desc_str = std::fs::read_to_string(desc_entry.path())?;
-//                 let description: ImageDescription = toml::from_str(&desc_str)?;
-//                 debug!(
-//                     "loaded image: label: {:?}, description: {:?}",
-//                     label.clone(),
-//                     description.clone()
-//                 );
-//                 images.push((ImageLabel(label), image.clone(), description));
-//             } else {
-//                 return Err("ValueError: could not get label from path".into());
-//             }
-//         }
-//         Ok(ImageReader { images })
-//     }
-
-//     pub fn get_image(
-//         &self,
-//         index: usize,
-//     ) -> std::result::Result<&(ImageLabel, Image, ImageDescription), Error> {
-//         if index >= self.images.len() {
-//             return Err("IndexError: index out of bounds".into());
-//         }
-//         Ok(&self.images[index])
-//     }
-
-//     pub fn images(&self) -> &Vec<(ImageLabel, Image, ImageDescription)> {
-//         &self.images
-//     }
-// }
-
 /// Counted with one more than image idx. Image index 0 -> Position index 1.
 #[derive(Debug, Clone, Eq)]
 pub struct Position {
@@ -550,17 +493,17 @@ impl Image {
             // draw in the middle a circle
             draw_filled_circle_mut(&mut canvas, (x as i32, y as i32), 1_i32, Luma([0]));
 
-            // add a label to the retina
-            let font_data = include_bytes!("../assets/Roboto-Regular.ttf");
-            let Some(font) = Font::try_from_bytes(font_data) else {
-                return Err("Could not load font".into());
-            };
-            let scale = Scale {
-                x: CONFIG.image_processing.retina_label_scale as f32,
-                y: CONFIG.image_processing.retina_label_scale as f32,
-            };
-            let color = Luma([0]);
-            draw_text_mut(&mut canvas, color, x as i32, y as i32, scale, &font, label);
+            // // add a label to the retina
+            // let font_data = include_bytes!("../assets/Roboto-Regular.ttf");
+            // let Some(font) = Font::try_from_bytes(font_data) else {
+            //     return Err("Could not load font".into());
+            // };
+            // let scale = Scale {
+            //     x: CONFIG.image_processing.retina_label_scale as f32,
+            //     y: CONFIG.image_processing.retina_label_scale as f32,
+            // };
+            // let color = Luma([0]);
+            // draw_text_mut(&mut canvas, color, x as i32, y as i32, scale, &font, label);
         }
         canvas.save(path)?;
 
@@ -627,25 +570,25 @@ impl Image {
                 Rgba([0, 255, 0, 255]),
             );
 
-            // add a label to the retina
-            let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
-            let Some(font) = Font::try_from_bytes(font_data) else {
-                return Err("Could not load font".into());
-            };
-            let scale = Scale {
-                x: CONFIG.image_processing.retina_label_scale as f32,
-                y: CONFIG.image_processing.retina_label_scale as f32,
-            };
-            let color = Rgba([0, 0, 0, 255]);
-            draw_text_mut(
-                &mut canvas,
-                color,
-                scaled_x as i32,
-                scaled_y as i32,
-                scale,
-                &font,
-                label,
-            );
+            // // add a label to the retina
+            // let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
+            // let Some(font) = Font::try_from_bytes(font_data) else {
+            //     return Err("Could not load font".into());
+            // };
+            // let scale = Scale {
+            //     x: CONFIG.image_processing.retina_label_scale as f32,
+            //     y: CONFIG.image_processing.retina_label_scale as f32,
+            // };
+            // let color = Rgba([0, 0, 0, 255]);
+            // draw_text_mut(
+            //     &mut canvas,
+            //     color,
+            //     scaled_x as i32,
+            //     scaled_y as i32,
+            //     scale,
+            //     &font,
+            //     label,
+            // );
         }
         canvas.save(path)?;
 

@@ -285,7 +285,9 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     let mut parser = XMLParser::new();
     let dir = std::fs::read_dir(PathBuf::from(data_path))?;
 
+    let mut idx = 0usize;
     for folder in dir {
+        if idx == CONFIG.image_processing.training.load_amount as usize {break;};
         let drafter_path = folder?.path();
         parser.load(
             drafter_path,
@@ -293,7 +295,10 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
             CONFIG.image_processing.training.load_all as bool,
             CONFIG.image_processing.training.load_amount as usize,
         )?;
+        idx += 1;
     }
+
+    log::info!("loaded {} images", parser.loaded);
 
     let fitness_function = match stage {
         TrainingStage::Artificial { stage: 0 } => fitness_pixel_follow,
@@ -309,7 +314,6 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     loop {
         algorithm_bar.inc(1);
         // for each image in the dataset
-        let mut images_used = 0usize;
         for (annotation, image) in parser.data.iter() {
             // evaluate the fitness of each individual of the population
             population
@@ -339,8 +343,6 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
                     *netlist = generated_netlist;
                 }
             });
-
-            images_used += 1;
         }
 
         // average each agents fitness over the number of images
@@ -349,7 +351,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
             .par_iter_mut()
             .enumerate()
             .for_each(|(_, agent)| {
-                agent.set_fitness(agent.fitness() / images_used as f32);
+                agent.set_fitness(agent.fitness() / parser.loaded as f32);
             });
 
         // sort the population by fitness

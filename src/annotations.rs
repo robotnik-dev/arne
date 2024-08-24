@@ -15,11 +15,12 @@ pub enum LoadFolder {
 
 pub struct XMLParser {
     pub data: Vec<(Annotation, Image)>,
+    pub loaded: usize,
 }
 
 impl XMLParser {
     pub fn new() -> Self {
-        XMLParser { data: Vec::new() }
+        XMLParser { data: Vec::new(), loaded: 0 }
     }
 
     /// loads the images from the specified folder
@@ -54,6 +55,7 @@ impl XMLParser {
                     // skip all annotations that have not a segmented images
                     if let Ok(image) = Image::from_path_raw(path) {
                         self.data.push((annotation, image));
+                        self.loaded += 1;
                         count += 1;
                     }
                 }
