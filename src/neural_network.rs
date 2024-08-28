@@ -496,13 +496,20 @@ impl Rnn {
         if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
             neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng);
             neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng);
-            if rng.gen_bool(0.5) {
-                if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
-                    *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
-                }
-            } else if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+            if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
                 *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
             }
+            if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+                *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+            }
+
+            // if rng.gen_bool(0.5) {
+            //     if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
+            //         *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+            //     }
+            // } else if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+            //     *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+            // }
         };
     }
 
@@ -511,11 +518,10 @@ impl Rnn {
         let std_dev = self.mutation_variance;
         let mean = self.mean;
         if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
-            if rng.gen_bool(0.5) {
-                if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
-                    *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
-                }
-            } else if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
+            if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
+                *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+            }
+            if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
                 *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
             }
         };

@@ -11,13 +11,19 @@ pub fn round2(value: f32) -> f32 {
     round_to_decimal_places(value, 2)
 }
 
+pub fn round3(value: f32) -> f32 {
+    round_to_decimal_places(value, 3)
+}
+
 /// gives the last bit of the path as the label e.g. "path/to/file.png" -> "file"
+#[allow(dead_code)]
 pub fn get_label_from_path(path: PathBuf) -> Option<String> {
     let path = std::path::Path::new(&path);
     let file_name = path.file_stem()?.to_str()?.to_string();
     Some(file_name)
 }
 
+#[allow(dead_code)]
 pub fn binarize_image(image: Image) -> std::result::Result<Image, Error> {
     let mut image = image.clone();
     image

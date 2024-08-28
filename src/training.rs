@@ -6,13 +6,14 @@ use crate::annotations::{Annotation, LoadFolder, XMLParser};
 use crate::image::{ImageLabel, TrainingStage};
 use crate::netlist::Generate;
 use crate::{
-    Agent, AgentEvaluation, ChaCha8Rng, Population, Result, Retina, SelectionMethod, CONFIG,
+    round2, round3, Agent, AgentEvaluation, ChaCha8Rng, Population, Result, Retina,
+    SelectionMethod, CONFIG,
 };
 use indicatif::ProgressBar;
 use rand::prelude::*;
 use rayon::prelude::*;
 
-fn fitness_pixel_follow(agent: &mut Agent, annotation: &Annotation, retina: &Retina) -> f32 {
+fn fitness_pixel_follow(_agent: &mut Agent, _annotation: &Annotation, retina: &Retina) -> f32 {
     // TODO: the categorize network is ignored for now
     // log::debug!(
     //     "all: {:?}; visited: {}, current frame: {}",
@@ -24,9 +25,9 @@ fn fitness_pixel_follow(agent: &mut Agent, annotation: &Annotation, retina: &Ret
 }
 
 fn fitness_recognize_components(
-    agent: &mut Agent,
-    annotation: &Annotation,
-    retina: &Retina,
+    _agent: &mut Agent,
+    _annotation: &Annotation,
+    _retina: &Retina,
 ) -> f32 {
     unimplemented!()
 
@@ -241,6 +242,7 @@ fn fitness_recognize_components(
     // fitness
 }
 
+#[allow(dead_code)]
 pub fn test_agents() -> Result {
     todo!()
 }
@@ -255,7 +257,6 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     let with_seed = CONFIG.genetic_algorithm.with_seed;
     let population_size = CONFIG.genetic_algorithm.initial_population_size as usize;
     let number_of_network_updates = CONFIG.neural_network.number_of_network_updates as usize;
-    let take_agents = CONFIG.genetic_algorithm.take_agents as usize;
     let variance_decay = CONFIG.genetic_algorithm.mutation_rates.variance_decay as f32;
     let goal_fitness = CONFIG.genetic_algorithm.goal_fitness as f32;
     let data_path = CONFIG.image_processing.training.path as &str;
@@ -287,7 +288,11 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
 
     let mut idx = 0usize;
     for folder in dir {
-        if idx == CONFIG.image_processing.training.load_amount as usize {break;};
+        if idx == CONFIG.image_processing.training.load_amount as usize
+            && !CONFIG.image_processing.training.load_all
+        {
+            break;
+        };
         let drafter_path = folder?.path();
         parser.load(
             drafter_path,
@@ -309,6 +314,9 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     };
 
     let algorithm_bar = ProgressBar::new(max_generations);
+
+    //increas number of updates over time
+    let mut nr_updates = number_of_network_updates;
     // loop until stop criterial is met
     log::info!("training agents...");
     loop {
@@ -327,7 +335,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
                             &mut rng.clone(),
                             &mut image.clone(),
                             annotation,
-                            number_of_network_updates,
+                            nr_updates,
                         )
                         .unwrap();
                     agent.add_to_fitness(fitness);
@@ -359,6 +367,27 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
             .agents_mut()
             .sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
 
+        // printing the best agents fitnes per iteration
+        let highest = population.agents()[0].fitness();
+        let lowest = population
+            .agents()
+            .iter()
+            .last()
+            .map(|a| a.fitness())
+            .unwrap();
+        let average = population
+            .agents()
+            .iter()
+            .fold(0f32, |acc, a| acc + a.fitness())
+            / population.agents().len() as f32;
+        algorithm_bar.println(format!(
+            "highest: {}, lowest: {}, avarage: {}, nr_updates: {}",
+            round3(highest),
+            round3(lowest),
+            round3(average),
+            nr_updates
+        ));
+
         // check stop criteria:
         // - if any agent has a high enough fitness
         // - if the maximum number of generations has been reached
@@ -389,17 +418,21 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
             .collect::<Vec<Agent>>();
 
         // evolve the population
-        population.evolve(new_agents);
+        population.evolve(new_agents, &mut rng);
+
+        if population.generation() % CONFIG.neural_network.increase_every_generations as u32 == 0
+            && CONFIG.neural_network.increase as bool
+        {
+            nr_updates += CONFIG.neural_network.by_amount as usize;
+        }
     }
     algorithm_bar.finish();
     log::info!("training finished");
     log::info!("stopped after {} generations", population.generation());
-    log::info!("generating files for the best {} agents...", take_agents);
 
     // remove 'agents' directory if it exists
     std::fs::remove_dir_all(save_path.clone()).unwrap_or_default();
 
-    let generating_files_bar = ProgressBar::new(take_agents as u64);
     population
         .agents_mut()
         .par_iter_mut()
@@ -407,89 +440,103 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         .inspect(|(index, agent)| {
             log::debug!("agent {} fitness: {}", index, agent.fitness());
         })
-        .take(take_agents)
         .for_each(|(index, agent)| {
-            agent.statistics_mut().par_iter_mut().for_each(
-                |(label, (image, genotype, netlist))| {
-                    std::fs::create_dir_all(format!("{}/{}/{}", save_path, index, label)).unwrap();
+            // saves the folder name with index + fitness round2
+            let agent_folder = format!("{}_{}", round2(agent.fitness()), index);
+            std::fs::create_dir_all(format!("{}/{}", save_path, agent_folder)).unwrap();
 
-                    image
-                        .save_with_retina(PathBuf::from(format!(
-                            "{}/{}/{}/retina.png",
-                            save_path, index, label
-                        )))
-                        .unwrap();
-                    image
-                        .save_with_retina_upscaled(PathBuf::from(format!(
-                            "{}/{}/{}/retina_orig.png",
-                            save_path, index, label
-                        )))
-                        .unwrap();
-
-                    // save netlist
-                    std::fs::write(
-                        format!("{}/{}/{}/netlist.net", save_path, index, label),
-                        netlist.clone(),
-                    )
-                    .unwrap();
-
-                    genotype
-                        .networks_mut()
-                        .iter_mut()
-                        .enumerate()
-                        .for_each(|(i, network)| {
-                            std::fs::create_dir_all(format!(
-                                "{}/{}/{}/{}",
-                                save_path, index, label, i
-                            ))
-                            .unwrap();
-                            network
-                                .short_term_memory()
-                                .visualize(format!(
-                                    "{}/{}/{}/{}/memory.png",
-                                    save_path, index, label, i
-                                ))
-                                .unwrap();
-                            network
-                                .to_json(format!(
-                                    "{}/{}/{}/{}/network.json",
-                                    save_path, index, label, i
-                                ))
-                                .unwrap();
-                            network
-                                .to_dot(format!(
-                                    "{}/{}/{}/{}/network.dot",
-                                    save_path, index, label, i
-                                ))
-                                .unwrap();
-                        });
-                },
-            );
-
-            // create a final version of the agent with the current network
+            // save control network
+            let folder_name = "control";
+            std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name))
+                .unwrap();
+            agent
+                .genotype()
+                .control_network()
+                .short_term_memory()
+                .visualize(format!(
+                    "{}/{}/{}/memory.png",
+                    save_path, agent_folder, folder_name
+                ))
+                .unwrap();
             agent
                 .genotype_mut()
-                .networks_mut()
-                .iter_mut()
-                .enumerate()
-                .for_each(|(i, network)| {
-                    std::fs::create_dir_all(format!("{}/{}/final/{}", save_path, index, i))
-                        .unwrap();
-                    network
-                        .short_term_memory()
-                        .visualize(format!("{}/{}/final/{}/memory.png", save_path, index, i))
-                        .unwrap();
-                    network
-                        .to_json(format!("{}/{}/final/{}/network.json", save_path, index, i))
-                        .unwrap();
-                    network
-                        .to_dot(format!("{}/{}/final/{}/network.dot", save_path, index, i))
-                        .unwrap();
-                });
+                .control_network_mut()
+                .to_json(format!(
+                    "{}/{}/{}/network.json",
+                    save_path, agent_folder, folder_name
+                ))
+                .unwrap();
+            agent
+                .genotype()
+                .control_network()
+                .to_dot(format!(
+                    "{}/{}/{}/network.dot",
+                    save_path, agent_folder, folder_name
+                ))
+                .unwrap();
 
-            generating_files_bar.inc(1);
+            // save categorize network
+            let folder_name = "categorize";
+            std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name))
+                .unwrap();
+            agent
+                .genotype()
+                .categorize_network()
+                .short_term_memory()
+                .visualize(format!(
+                    "{}/{}/{}/memory.png",
+                    save_path, agent_folder, folder_name
+                ))
+                .unwrap();
+            agent
+                .genotype_mut()
+                .categorize_network_mut()
+                .to_json(format!(
+                    "{}/{}/{}/network.json",
+                    save_path, agent_folder, folder_name
+                ))
+                .unwrap();
+            agent
+                .genotype()
+                .categorize_network()
+                .to_dot(format!(
+                    "{}/{}/{}/network.dot",
+                    save_path, agent_folder, folder_name
+                ))
+                .unwrap();
         });
-    generating_files_bar.finish();
 
+    // for the best agent, create the images
+    log::info!("generating images for the best agents ..");
+    population.agents().iter().take(1).for_each(|agent| {
+        agent
+            .statistics()
+            .par_iter()
+            .for_each(|(label, (image, _, netlist))| {
+                let folder_name = format!("best_agent_{}", round2(agent.fitness()));
+                std::fs::create_dir_all(format!("{}/{}/{}", save_path, folder_name, label))
+                    .unwrap();
+
+                image
+                    .save_with_retina(PathBuf::from(format!(
+                        "{}/{}/{}/retina.png",
+                        save_path, folder_name, label
+                    )))
+                    .unwrap();
+                image
+                    .save_with_retina_upscaled(PathBuf::from(format!(
+                        "{}/{}/{}/retina_orig.png",
+                        save_path, folder_name, label
+                    )))
+                    .unwrap();
+
+                // save netlist
+                std::fs::write(
+                    format!("{}/{}/{}/netlist.net", save_path, folder_name, label),
+                    netlist.clone(),
+                )
+                .unwrap();
+            });
+    });
     Ok(())
 }

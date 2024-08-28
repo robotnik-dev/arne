@@ -81,11 +81,12 @@ impl AgentEvaluation for Agent {
             image.height() as i32 - retina_size as i32,
         );
 
-        let _random_position = Position::random(rng, top_left, bottom_right);
+        let _random_position = Position::random(rng, top_left.clone(), bottom_right);
         let _image_center_position =
             Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
+
         let mut retina = image.create_retina_at(
-            _image_center_position,
+            self.retina_start_pos.clone(),
             retina_size,
             CONFIG.image_processing.superpixel_size as usize,
             "".to_string(),
@@ -160,7 +161,7 @@ impl AgentEvaluation for Agent {
         let image = image.clone();
         let genotype = self.genotype().clone();
         self.statistics_mut().insert(
-            ImageLabel(annotation.filename.clone()),
+            ImageLabel(annotation.filename.replace(".jpg", "").clone()),
             (image, genotype, String::new()),
         );
 
@@ -193,17 +194,16 @@ impl Population {
     pub fn from_path(path: String) -> std::result::Result<Self, Error> {
         let mut agents = vec![];
         fs::read_dir(path).unwrap().for_each(|entry| {
-            // entry => the actual agent index 0, 1, etc
-            fs::read_dir(entry.unwrap().path())
+            let path_buf = entry.unwrap().path();
+            if !path_buf
+                .file_name()
                 .unwrap()
-                .for_each(|img_folder| {
-                    // the folder named "final" is the one we have to use
-                    let path_buf = img_folder.unwrap().path();
-                    if path_buf.file_name().unwrap().to_str().unwrap() == "final" {
-                        let agent = Agent::from_path(path_buf).unwrap();
-                        agents.push(agent);
-                    }
-                })
+                .to_string_lossy()
+                .starts_with("best_agent")
+            {
+                let agent = Agent::from_path(path_buf).unwrap();
+                agents.push(agent);
+            }
         });
 
         let population = Population {
@@ -225,8 +225,27 @@ impl Population {
         self.generation
     }
 
-    pub fn evolve(&mut self, new_agents: Vec<Agent>) {
-        self.agents = new_agents;
+    /// recombinate the population. Adds all new agents to the list and the drop the worst ones until population is the correct size again
+    pub fn evolve(&mut self, new_agents: Vec<Agent>, rng: &mut dyn RngCore) {
+        let mut combined = self
+            .agents
+            .iter()
+            .cloned()
+            .chain(new_agents.iter().cloned())
+            .collect::<Vec<Agent>>();
+        combined.sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
+        // combined.shuffle(rng);
+        let new_population = combined
+            .iter()
+            .cloned()
+            .take(CONFIG.genetic_algorithm.initial_population_size as usize)
+            // resets the fitness
+            .map(|mut a| {
+                a.set_fitness(0.0f32);
+                a
+            })
+            .collect::<Vec<Agent>>();
+        self.agents = new_population;
         self.generation += 1;
     }
 
@@ -506,6 +525,7 @@ impl Generate for Genotype {
 pub struct Agent {
     fitness: f32,
     genotype: Genotype,
+    retina_start_pos: Position,
     /// String -> netlist string
     pub statistics: HashMap<ImageLabel, (Image, Genotype, String)>,
 }
@@ -513,8 +533,9 @@ pub struct Agent {
 impl Clone for Agent {
     fn clone(&self) -> Self {
         Agent {
-            fitness: 0.0,
+            fitness: self.fitness,
             genotype: self.genotype.clone(),
+            retina_start_pos: self.retina_start_pos.clone(),
             statistics: self.statistics.clone(),
         }
     }
@@ -532,37 +553,63 @@ impl Agent {
         Agent {
             fitness: 0.0,
             genotype: Genotype::new(&mut rng),
+            // top left
+            retina_start_pos: Position::new(
+                CONFIG.image_processing.retina_size as i32,
+                CONFIG.image_processing.retina_size as i32,
+            ) / 2,
             statistics: HashMap::new(),
         }
     }
 
     /// builds a new Aegnt from a multiple json files located at 'path'
     pub fn from_path(path: PathBuf) -> std::result::Result<Self, Error> {
-        let mut rnns = vec![];
+        let mut networks = vec![];
         fs::read_dir(path.clone()).unwrap().for_each(|entry| {
             let network_path = entry.unwrap().path();
             if network_path.is_dir() {
-                fs::read_dir(network_path.clone())
-                    .unwrap()
-                    .for_each(|file| {
-                        let file_path = file.unwrap().path();
-                        if Some(OsStr::new("network.json")) == file_path.file_name() {
-                            let mut file = OpenOptions::new().read(true).open(file_path).unwrap();
-                            let mut buffer = String::new();
-                            file.read_to_string(&mut buffer).unwrap();
-                            let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
-                            rnns.push(rnn);
-                        }
-                    })
+                if network_path.file_name().unwrap().to_string_lossy() == *"control" {
+                    fs::read_dir(network_path.clone())
+                        .unwrap()
+                        .for_each(|file| {
+                            let file_path = file.unwrap().path();
+                            if Some(OsStr::new("network.json")) == file_path.file_name() {
+                                let mut file =
+                                    OpenOptions::new().read(true).open(file_path).unwrap();
+                                let mut buffer = String::new();
+                                file.read_to_string(&mut buffer).unwrap();
+                                let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
+                                networks.insert(0, rnn);
+                            }
+                        })
+                } else if network_path.file_name().unwrap().to_string_lossy() == *"categorize" {
+                    fs::read_dir(network_path.clone())
+                        .unwrap()
+                        .for_each(|file| {
+                            let file_path = file.unwrap().path();
+                            if Some(OsStr::new("network.json")) == file_path.file_name() {
+                                let mut file =
+                                    OpenOptions::new().read(true).open(file_path).unwrap();
+                                let mut buffer = String::new();
+                                file.read_to_string(&mut buffer).unwrap();
+                                let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
+                                networks.insert(1, rnn);
+                            }
+                        })
+                }
             }
         });
-        // TODO: i assume now the first found is the control network and second is the categorize network
         let genotype = Genotype {
-            networks: vec![rnns[0].clone(), rnns[1].clone()],
+            networks: vec![networks[0].clone(), networks[1].clone()],
         };
         Ok(Agent {
             fitness: 0.0,
             genotype,
+            // top left
+            retina_start_pos: Position::new(
+                CONFIG.image_processing.retina_size as i32,
+                CONFIG.image_processing.retina_size as i32,
+            ) / 2,
             statistics: HashMap::new(),
         })
     }
@@ -597,8 +644,8 @@ impl Agent {
     }
 
     pub fn crossover(&self, rng: &mut dyn RngCore, with: &Agent) -> Agent {
-        let offspring_genotype = self.genotype.crossover_uniform(rng, &with.genotype);
         let mut new_agent = self.clone();
+        let offspring_genotype = self.genotype.crossover_uniform(rng, &with.genotype);
         new_agent.genotype = offspring_genotype;
         new_agent
     }

@@ -1,13 +1,9 @@
 use image::imageops::resize;
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
-use imageproc::drawing::{
-    draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut,
-};
+use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
 use nalgebra::clamp;
 use rand::prelude::*;
-use rusttype::{Font, Scale};
-use serde::Deserialize;
-use std::ops::{Add, Sub};
+use std::ops::{Add, Div, Sub};
 use std::path::PathBuf;
 use std::{fmt::Debug, ops::AddAssign};
 
@@ -26,8 +22,12 @@ impl std::fmt::Display for ImageLabel {
 
 #[derive(Debug, Clone)]
 pub enum TrainingStage {
-    Artificial { stage: u8 },
+    Artificial {
+        stage: u8,
+    },
+    #[allow(dead_code)]
     RealBinarized,
+    #[allow(dead_code)]
     Real,
 }
 
@@ -119,10 +119,35 @@ impl AddAssign for Position {
     }
 }
 
+impl Div<i32> for Position {
+    type Output = Self;
+
+    fn div(self, divisor: i32) -> Self::Output {
+        if divisor == 0 {
+            Self {
+                x: self.x,
+                y: self.y,
+            }
+        } else {
+            let x = if self.x % 2 == 0 {
+                self.x / divisor
+            } else {
+                self.x / divisor + 1
+            };
+            let y = if self.y % 2 == 0 {
+                self.y / divisor
+            } else {
+                self.y / divisor + 1
+            };
+            Self { x, y }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ImageFormat {
     Landscape,
-    Portrait
+    Portrait,
 }
 
 /// generic container for the image data
@@ -204,7 +229,11 @@ impl Image {
             grey,
             width,
             height,
-            format: if width >= height {ImageFormat::Landscape} else {ImageFormat::Portrait},
+            format: if width >= height {
+                ImageFormat::Landscape
+            } else {
+                ImageFormat::Portrait
+            },
             retina_positions: vec![],
             dark_pixel_positions: vec![],
         };
@@ -230,7 +259,11 @@ impl Image {
             grey,
             width,
             height,
-            format: if width >= height {ImageFormat::Landscape} else {ImageFormat::Portrait},
+            format: if width >= height {
+                ImageFormat::Landscape
+            } else {
+                ImageFormat::Portrait
+            },
             retina_positions: vec![],
             dark_pixel_positions: vec![],
         };
@@ -242,18 +275,21 @@ impl Image {
     /// resizes, find edges and binarizes it
     pub fn preprocess(&mut self) -> Result {
         let (width, height) = match self.format {
-            ImageFormat::Landscape => {(CONFIG.image_processing.goal_image_width as u32, CONFIG.image_processing.goal_image_height as u32)},
-            ImageFormat::Portrait => {(CONFIG.image_processing.goal_image_height as u32, CONFIG.image_processing.goal_image_width as u32)},
+            ImageFormat::Landscape => (
+                CONFIG.image_processing.goal_image_width as u32,
+                CONFIG.image_processing.goal_image_height as u32,
+            ),
+            ImageFormat::Portrait => (
+                CONFIG.image_processing.goal_image_height as u32,
+                CONFIG.image_processing.goal_image_width as u32,
+            ),
         };
-        self.resize_all(
-            width,
-            height,
-        )?
-        .edged(Some(CONFIG.image_processing.sobel_threshold as f32))?
-        .erode(
-            imageproc::distance_transform::Norm::L1,
-            CONFIG.image_processing.erode_pixels as u8,
-        )?;
+        self.resize_all(width, height)?
+            .edged(Some(CONFIG.image_processing.sobel_threshold as f32))?
+            .erode(
+                imageproc::distance_transform::Norm::L1,
+                CONFIG.image_processing.erode_pixels as u8,
+            )?;
         Ok(())
     }
 
@@ -459,9 +495,7 @@ impl Image {
 
     pub fn save_with_retina(&self, path: PathBuf) -> Result {
         let mut canvas = self.grey().clone();
-        for (index, (retina_position, retina_size, label)) in
-            self.retina_positions.iter().enumerate()
-        {
+        for (index, (retina_position, retina_size, _)) in self.retina_positions.iter().enumerate() {
             let scaled_size = *retina_size as f32;
             let x = retina_position.x as f32 - 0.5;
             let y = retina_position.y as f32 - 0.5;
@@ -525,9 +559,7 @@ impl Image {
             upscaled_height,
             image::imageops::FilterType::Nearest,
         );
-        for (index, (retina_position, retina_size, label)) in
-            self.retina_positions.iter().enumerate()
-        {
+        for (index, (retina_position, retina_size, _)) in self.retina_positions.iter().enumerate() {
             let scaled_size = *retina_size as f32 * scaling_factor_x;
             let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;

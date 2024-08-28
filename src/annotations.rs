@@ -5,11 +5,16 @@ use serde_json::Value;
 use xml2json_rs::JsonBuilder;
 // use quick_xml::{de::from_str, se::to_string};
 
-use crate::{image::{Image, ImageFormat}, Error, Result, CONFIG};
+use crate::{
+    image::{Image, ImageFormat},
+    Error, Result, CONFIG,
+};
 
 pub enum LoadFolder {
+    #[allow(dead_code)]
     Segmentation,
     Resized,
+    #[allow(dead_code)]
     Images,
 }
 
@@ -20,7 +25,10 @@ pub struct XMLParser {
 
 impl XMLParser {
     pub fn new() -> Self {
-        XMLParser { data: Vec::new(), loaded: 0 }
+        XMLParser {
+            data: Vec::new(),
+            loaded: 0,
+        }
     }
 
     /// loads the images from the specified folder
@@ -47,11 +55,16 @@ impl XMLParser {
                     };
                     let annotation = Annotation::from_path(annotation_file?.path())?;
                     let folder_name = match folder {
-                        LoadFolder::Resized => {"resized"},
-                        LoadFolder::Segmentation => {"segmentation"},
-                        LoadFolder::Images => {"images"},
+                        LoadFolder::Resized => "resized",
+                        LoadFolder::Segmentation => "segmentation",
+                        LoadFolder::Images => "images",
                     };
-                    let path = PathBuf::from(format!("{}/{}/{}", drafter_path.clone().to_string_lossy().into_owned(), folder_name, annotation.filename.clone()));
+                    let path = PathBuf::from(format!(
+                        "{}/{}/{}",
+                        drafter_path.clone().to_string_lossy().into_owned(),
+                        folder_name,
+                        annotation.filename.clone()
+                    ));
                     // skip all annotations that have not a segmented images
                     if let Ok(image) = Image::from_path_raw(path) {
                         self.data.push((annotation, image));
@@ -64,6 +77,7 @@ impl XMLParser {
         Ok(self)
     }
 
+    #[allow(dead_code)]
     pub fn resize_segmented_images(folder: PathBuf) -> Result {
         let path = folder.clone().to_string_lossy().into_owned();
 
@@ -73,7 +87,7 @@ impl XMLParser {
         for entry in std::fs::read_dir(path.clone())? {
             let entry = entry?;
             let folder_name = entry.file_name().to_string_lossy().into_owned();
-            
+
             if folder_name == *"segmentation" {
                 let progress = ProgressBar::new(std::fs::read_dir(entry.path())?.count() as u64);
                 for image_entry in std::fs::read_dir(entry.path())? {
@@ -82,11 +96,21 @@ impl XMLParser {
                     let filename = image_entry.file_name().to_string_lossy().into_owned();
                     let mut image = Image::from_path_raw(image_entry.path())?;
                     let (width, height) = match image.format {
-                        ImageFormat::Landscape => {(CONFIG.image_processing.goal_image_width as u32, CONFIG.image_processing.goal_image_height as u32)},
-                        ImageFormat::Portrait => {(CONFIG.image_processing.goal_image_height as u32, CONFIG.image_processing.goal_image_width as u32)},
+                        ImageFormat::Landscape => (
+                            CONFIG.image_processing.goal_image_width as u32,
+                            CONFIG.image_processing.goal_image_height as u32,
+                        ),
+                        ImageFormat::Portrait => (
+                            CONFIG.image_processing.goal_image_height as u32,
+                            CONFIG.image_processing.goal_image_width as u32,
+                        ),
                     };
                     image.resize_all(width, height)?;
-                    image.save_grey(PathBuf::from(format!("{}/{}", resized_path.clone(), filename)))?;
+                    image.save_grey(PathBuf::from(format!(
+                        "{}/{}",
+                        resized_path.clone(),
+                        filename
+                    )))?;
                 }
                 progress.finish_and_clear();
             }
@@ -323,12 +347,14 @@ mod tests {
         let mut parser = XMLParser::new();
         parser
             .load(
-                PathBuf::from(
-                    format!("{}/drafter_1", CONFIG.image_processing.training.path as &str)
-                ),
+                PathBuf::from(format!(
+                    "{}/drafter_1",
+                    CONFIG.image_processing.training.path as &str
+                )),
                 LoadFolder::Segmentation,
                 false,
-            1)
+                1,
+            )
             .unwrap();
         assert_eq!(parser.data.len(), 1);
     }

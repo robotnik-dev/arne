@@ -1,14 +1,12 @@
-use annotations::XMLParser;
 use clap::Parser;
 use image::TrainingStage;
 pub use rand_chacha::ChaCha8Rng;
 use static_toml::static_toml;
 
-use std::path::PathBuf;
 pub use std::time::{Duration, Instant};
 
 mod utils;
-pub use utils::{round2, round_to_decimal_places};
+pub use utils::{round2, round3, round_to_decimal_places};
 
 mod image;
 pub use image::Retina;
@@ -68,7 +66,7 @@ fn main() -> Result {
             };
             let save_path = format!("agents_trained/agents_stage_{}", i);
             training::train_agents(
-                TrainingStage::Artificial { stage: 1 },
+                TrainingStage::Artificial { stage: 0 },
                 Some(load_path),
                 save_path,
             )?;

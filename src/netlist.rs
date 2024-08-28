@@ -29,12 +29,16 @@ pub trait Generate {
 pub enum ComponentType {
     #[default]
     Resistor,
+    #[allow(dead_code)]
     Capacitor,
+    #[allow(dead_code)]
     VoltageSourceDc,
 }
 
 pub enum NodeType {
+    #[allow(dead_code)]
     In,
+    #[allow(dead_code)]
     Out,
 }
 
@@ -88,7 +92,9 @@ impl Component {
 
 #[derive(Default)]
 pub struct ComponentBuilder {
+    #[allow(dead_code)]
     name: String,
+    #[allow(dead_code)]
     component_type: ComponentType,
     prefix: Option<String>,
     value: Option<f64>,
@@ -96,6 +102,7 @@ pub struct ComponentBuilder {
 }
 
 impl ComponentBuilder {
+    #[allow(dead_code)]
     pub fn new(component_type: ComponentType, name: String) -> ComponentBuilder {
         ComponentBuilder {
             name,
@@ -117,6 +124,7 @@ impl ComponentBuilder {
         self
     }
 
+    #[allow(dead_code)]
     pub fn build(self) -> Component {
         match self.component_type {
             ComponentType::Resistor => Component {
@@ -182,12 +190,14 @@ impl Generate for Netlist {
 }
 
 impl Netlist {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Netlist {
             components: HashMap::new(),
         }
     }
 
+    #[allow(dead_code)]
     pub fn add_component(&mut self, component: Component, label: String) -> Result {
         if self.components.contains_key(&label) {
             return Err(Box::new(std::io::Error::new(
