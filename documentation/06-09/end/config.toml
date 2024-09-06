@@ -1,0 +1,66 @@
+[image_processing]
+goal_image_width = 320
+goal_image_height = 240
+# must be odd
+retina_size = 39
+# must be divisor of retina size
+superpixel_size = 13
+retina_circle_radius = 1.0
+retina_label_scale = 12.0
+sobel_threshold = 0.3
+erode_pixels = 1
+
+[image_processing.training]
+path = "data/training"
+# loading all images into memory, takes a while
+load_all = false
+# if all == false, how many to load
+load_amount = 1
+
+[image_processing.testing]
+path = "data/testing"
+# loading all images into memory, takes a while
+load_all = false
+# if all == false, how many to load
+load_amount = 4
+
+[neural_network]
+control_network_neurons = 2
+# The more neurons, the more components can be categorized
+categorize_network_neurons = 1
+retina_movement_speed = 40.0
+# increases the number of updates
+number_of_network_updates = 50
+increase = false
+increase_every_generations = 10
+by_amount = 1
+
+[neural_network.weight_bounds]
+neuron_lower = -4.0
+neuron_upper = 4.0
+retina_lower = -4.0
+retina_upper = 4.0
+# percentage of non-zero weights at initialization
+init_zero_retina_weights = 0.3
+
+[genetic_algorithm]
+with_seed = false
+seed = 1024
+goal_fitness = 0.95
+initial_population_size = 1000
+max_generations = 1000
+# minimum size is 2
+tournament_size = 5 
+
+[genetic_algorithm.mutation_rates]
+variance = 0.2
+variance_decay = 1.0
+mean = 0.0
+delete_neuron = 0.1
+delete_weights = 0.1
+delete_bias = 0.1
+delete_self_activation = 0.1
+mutate_neuron = 0.3
+mutate_weights = 0.3
+mutate_bias = 0.3
+mutate_self_activation = 0.3
