@@ -28,7 +28,25 @@ toml = "0.8.16"
 rusttype = "0.9.3"
 clap = { version = "4.5.13", features = ["derive"] }
 xml2json-rs = "1.0.1"
+bevy = "0.14.1"
 
 [dependencies.petgraph]
 version = "0.6.5"
 features = ["serde-1"]
+
+# Enable a small amount of optimization in debug mode
+[profile.dev]
+opt-level = 1
+
+# Enable high optimizations for dependencies (incl. Bevy), but not for our code:
+[profile.dev.package."*"]
+opt-level = 3
+
+# more performance at the cost of very slow compile times
+# configuration for the most aggressive optimizations possible
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+incremental = false
+debug = false

@@ -672,7 +672,8 @@ impl Neuron {
         let retina_weights = (0..(retina_size / superpixel_size).pow(2))
             // set 90 % of retina weights to 0
             .map(|_| {
-                if rng.gen_bool(0.1) {
+                if rng.gen_bool(CONFIG.neural_network.weight_bounds.init_zero_retina_weights as f64)
+                {
                     rng.gen_range(retina_lower..=retina_upper)
                 } else {
                     0.0

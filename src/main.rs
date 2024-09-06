@@ -1,8 +1,8 @@
+use bevy::prelude::*;
 use clap::Parser;
 use image::TrainingStage;
 pub use rand_chacha::ChaCha8Rng;
 use static_toml::static_toml;
-
 pub use std::time::{Duration, Instant};
 
 mod utils;
@@ -19,6 +19,8 @@ pub use genetic_algorithm::{Agent, AgentEvaluation, Population, SelectionMethod}
 
 mod annotations;
 mod netlist;
+mod plotting;
+
 mod training;
 
 type Error = Box<dyn std::error::Error>;
@@ -36,41 +38,57 @@ struct Args {
     count: u8,
 }
 
-fn main() -> Result {
-    env_logger::init();
+fn main() {
+    App::new()
+        .add_plugins(MinimalPlugins)
+        .add_systems(Startup, run)
+        .run();
 
-    let args = Args::parse();
+    // env_logger::init();
 
-    // HACK: just run this once and delete when all are preprocessed
-    if args.count == 99 {
-        // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_1"))?;
-        // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_2"))?;
-        // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_3"))?;
-        return Ok(());
-    }
+    // let args = Args::parse();
 
-    if args.count == 0 {
-        // train first iteration of agents that every other tage builds upon
-        training::train_agents(
-            TrainingStage::Artificial { stage: 0 },
-            None,
-            "agents".to_string(),
-        )?;
-    } else {
-        std::fs::remove_dir_all("agents_trained".to_string()).unwrap_or_default();
-        for i in 0..args.count {
-            let load_path = if i == 0 {
-                "agents".to_string()
-            } else {
-                format!("agents_trained/agents_stage_{}", i - 1)
-            };
-            let save_path = format!("agents_trained/agents_stage_{}", i);
-            training::train_agents(
-                TrainingStage::Artificial { stage: 0 },
-                Some(load_path),
-                save_path,
-            )?;
-        }
-    }
-    Ok(())
+    // // HACK: just run this once and delete when all are preprocessed
+    // if args.count == 99 {
+    //     // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_1"))?;
+    //     // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_2"))?;
+    //     // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_3"))?;
+    //     return;
+    // }
+
+    // if args.count == 0 {
+    //     training::train_agents(
+    //         TrainingStage::Artificial { stage: 0 },
+    //         None,
+    //         "agents".to_string(),
+    //     )
+    //     .unwrap();
+    //     // train first iteration of agents that every other tage builds upon
+    // } else {
+    //     std::fs::remove_dir_all("agents_trained".to_string()).unwrap_or_default();
+    //     for i in 0..args.count {
+    //         let load_path = if i == 0 {
+    //             "agents".to_string()
+    //         } else {
+    //             format!("agents_trained/agents_stage_{}", i - 1)
+    //         };
+    //         let save_path = format!("agents_trained/agents_stage_{}", i);
+    //         training::train_agents(
+    //             TrainingStage::Artificial { stage: 0 },
+    //             Some(load_path),
+    //             save_path,
+    //         )
+    //         .unwrap();
+    //     }
+    // }
+}
+
+fn run(mut exit: EventWriter<AppExit>) {
+    training::train_agents(
+        TrainingStage::Artificial { stage: 0 },
+        None,
+        "agents".to_string(),
+    )
+    .unwrap();
+    exit.send(AppExit::Success);
 }

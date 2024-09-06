@@ -1,5 +1,6 @@
 use std::{io::Read, path::PathBuf};
 
+use bevy::log::debug;
 use indicatif::ProgressBar;
 use serde_json::Value;
 use xml2json_rs::JsonBuilder;
@@ -81,7 +82,7 @@ impl XMLParser {
     pub fn resize_segmented_images(folder: PathBuf) -> Result {
         let path = folder.clone().to_string_lossy().into_owned();
 
-        log::debug!("resizing images in folder: {:?}", path.clone());
+        debug!("resizing images in folder: {:?}", path.clone());
         let resized_path = format!("{}/resized", path);
         std::fs::create_dir_all(PathBuf::from(resized_path.clone()))?;
         for entry in std::fs::read_dir(path.clone())? {

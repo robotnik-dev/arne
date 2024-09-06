@@ -6,9 +6,10 @@ use crate::annotations::{Annotation, LoadFolder, XMLParser};
 use crate::image::{ImageLabel, TrainingStage};
 use crate::netlist::Generate;
 use crate::{
-    round2, round3, Agent, AgentEvaluation, ChaCha8Rng, Population, Result, Retina,
+    plotting, round2, round3, Agent, AgentEvaluation, ChaCha8Rng, Population, Result, Retina,
     SelectionMethod, CONFIG,
 };
+use bevy::log::{debug, info};
 use indicatif::ProgressBar;
 use rand::prelude::*;
 use rayon::prelude::*;
@@ -248,9 +249,9 @@ pub fn test_agents() -> Result {
 }
 
 pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: String) -> Result {
-    log::info!("starting training stage {:?}", stage);
+    info!("starting training stage {:?}", stage);
 
-    log::info!("loading training config variables");
+    info!("loading training config variables");
 
     let max_generations = CONFIG.genetic_algorithm.max_generations as u64;
     let seed = CONFIG.genetic_algorithm.seed as u64;
@@ -261,16 +262,16 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     let goal_fitness = CONFIG.genetic_algorithm.goal_fitness as f32;
     let data_path = CONFIG.image_processing.training.path as &str;
 
-    log::info!("setting up rng");
+    info!("setting up rng");
 
     let mut rng = ChaCha8Rng::from_entropy();
 
     if with_seed {
-        log::info!("using seed: {}", seed);
+        info!("using seed: {}", seed);
         rng = ChaCha8Rng::seed_from_u64(seed);
     }
 
-    log::info!("initializing population...");
+    info!("initializing population...");
 
     // intialize population
     let population_bar = ProgressBar::new(population_size as u64);
@@ -281,7 +282,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     };
     population_bar.finish();
 
-    log::info!("loading training dataset...");
+    info!("loading training dataset...");
 
     let mut parser = XMLParser::new();
     let dir = std::fs::read_dir(PathBuf::from(data_path))?;
@@ -303,7 +304,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         idx += 1;
     }
 
-    log::info!("loaded {} images", parser.loaded);
+    info!("loaded {} images", parser.loaded);
 
     let fitness_function = match stage {
         TrainingStage::Artificial { stage: 0 } => fitness_pixel_follow,
@@ -315,10 +316,12 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
 
     let algorithm_bar = ProgressBar::new(max_generations);
 
+    let mut average_fitness_data = vec![];
+
     //increas number of updates over time
     let mut nr_updates = number_of_network_updates;
     // loop until stop criterial is met
-    log::info!("training agents...");
+    info!("training agents...");
     loop {
         algorithm_bar.inc(1);
         // for each image in the dataset
@@ -367,26 +370,13 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
             .agents_mut()
             .sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
 
-        // printing the best agents fitnes per iteration
-        let highest = population.agents()[0].fitness();
-        let lowest = population
-            .agents()
-            .iter()
-            .last()
-            .map(|a| a.fitness())
-            .unwrap();
+        // save fitness data for plotting
         let average = population
             .agents()
             .iter()
-            .fold(0f32, |acc, a| acc + a.fitness())
+            .fold(-1f32, |acc, a| acc + a.fitness())
             / population.agents().len() as f32;
-        algorithm_bar.println(format!(
-            "highest: {}, lowest: {}, avarage: {}, nr_updates: {}",
-            round3(highest),
-            round3(lowest),
-            round3(average),
-            nr_updates
-        ));
+        average_fitness_data.push(average);
 
         // check stop criteria:
         // - if any agent has a high enough fitness
@@ -427,8 +417,10 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         }
     }
     algorithm_bar.finish();
-    log::info!("training finished");
-    log::info!("stopped after {} generations", population.generation());
+    info!("training finished");
+    info!("stopped after {} generations", population.generation());
+
+    plotting::update_image(&average_fitness_data);
 
     // remove 'agents' directory if it exists
     std::fs::remove_dir_all(save_path.clone()).unwrap_or_default();
@@ -438,7 +430,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         .par_iter_mut()
         .enumerate()
         .inspect(|(index, agent)| {
-            log::debug!("agent {} fitness: {}", index, agent.fitness());
+            debug!("agent {} fitness: {}", index, agent.fitness());
         })
         .for_each(|(index, agent)| {
             // saves the folder name with index + fitness round2
@@ -507,7 +499,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         });
 
     // for the best agent, create the images
-    log::info!("generating images for the best agents ..");
+    info!("generating images for the best agents ..");
     population.agents().iter().take(1).for_each(|agent| {
         agent
             .statistics()
