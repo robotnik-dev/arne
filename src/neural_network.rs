@@ -1,7 +1,7 @@
 use crate::image::Retina;
 use crate::utils::round2;
 use crate::{genetic_algorithm::Statistics, image::Position, Result};
-use crate::{Error, CONFIG};
+use crate::{AdaptiveConfig, Error, CONFIG};
 use approx::AbsDiffEq;
 use petgraph::{dot::Dot, Graph};
 use plotters::prelude::*;
@@ -375,46 +375,36 @@ impl Rnn {
         new_rnn
     }
 
-    pub fn mutate(&mut self, rng: &mut dyn RngCore) -> Rnn {
-        if rng.gen_bool(CONFIG.genetic_algorithm.mutation_rates.delete_neuron) {
+    pub fn mutate(&mut self, rng: &mut dyn RngCore, adaptive_config: &AdaptiveConfig) -> Rnn {
+        if rng.gen_bool(adaptive_config.delete_neuron) {
             self.delete_neuron(rng);
             self.statistics.deleted_neurons += 1;
         }
-        if rng.gen_bool(CONFIG.genetic_algorithm.mutation_rates.delete_weights) {
+        if rng.gen_bool(adaptive_config.delete_weights) {
             self.delete_weights(rng);
             self.statistics.deleted_weights += 1;
         }
-        if rng.gen_bool(CONFIG.genetic_algorithm.mutation_rates.delete_bias) {
+        if rng.gen_bool(adaptive_config.delete_bias) {
             self.delete_bias(rng);
             self.statistics.deleted_biases += 1;
         }
-        if rng.gen_bool(
-            CONFIG
-                .genetic_algorithm
-                .mutation_rates
-                .delete_self_activation,
-        ) {
+        if rng.gen_bool(adaptive_config.delete_self_activation) {
             self.delete_self_activation(rng);
             self.statistics.deleted_self_activations += 1;
         }
-        if rng.gen_bool(CONFIG.genetic_algorithm.mutation_rates.mutate_neuron) {
+        if rng.gen_bool(adaptive_config.mutate_neuron) {
             self.mutate_neuron(rng);
             self.statistics.mutated_neurons += 1;
         }
-        if rng.gen_bool(CONFIG.genetic_algorithm.mutation_rates.mutate_weights) {
+        if rng.gen_bool(adaptive_config.mutate_weights) {
             self.mutate_weights(rng);
             self.statistics.mutated_weights += 1;
         }
-        if rng.gen_bool(CONFIG.genetic_algorithm.mutation_rates.mutate_bias) {
+        if rng.gen_bool(adaptive_config.mutate_bias) {
             self.mutate_bias(rng);
             self.statistics.mutated_biases += 1;
         }
-        if rng.gen_bool(
-            CONFIG
-                .genetic_algorithm
-                .mutation_rates
-                .mutate_self_activation,
-        ) {
+        if rng.gen_bool(adaptive_config.mutate_self_activation) {
             self.mutate_self_activation(rng);
             self.statistics.mutated_self_activations += 1;
         }

@@ -82,7 +82,7 @@ impl XMLParser {
     pub fn resize_segmented_images(folder: PathBuf) -> Result {
         let path = folder.clone().to_string_lossy().into_owned();
 
-        debug!("resizing images in folder: {:?}", path.clone());
+        // debug("resizing images in folder: {:?}", path.clone());
         let resized_path = format!("{}/resized", path);
         std::fs::create_dir_all(PathBuf::from(resized_path.clone()))?;
         for entry in std::fs::read_dir(path.clone())? {

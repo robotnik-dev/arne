@@ -1,4 +1,6 @@
 use core::panic;
+use std::fs::write;
+use std::io::Write;
 use std::path::PathBuf;
 use std::u8;
 
@@ -6,13 +8,15 @@ use crate::annotations::{Annotation, LoadFolder, XMLParser};
 use crate::image::{ImageLabel, TrainingStage};
 use crate::netlist::Generate;
 use crate::{
-    plotting, round2, round3, Agent, AgentEvaluation, ChaCha8Rng, Population, Result, Retina,
-    SelectionMethod, CONFIG,
+    plotting, round2, round3, AdaptiveConfig, Agent, AgentEvaluation, ChaCha8Rng,
+    LocalMaximumError, Population, Result, Retina, SelectionMethod, CONFIG,
 };
 use bevy::log::{debug, info};
+use bevy::utils::info;
 use indicatif::ProgressBar;
 use rand::prelude::*;
 use rayon::prelude::*;
+use serde::Serialize;
 
 fn fitness_pixel_follow(_agent: &mut Agent, _annotation: &Annotation, retina: &Retina) -> f32 {
     // TODO: the categorize network is ignored for now
@@ -248,30 +252,31 @@ pub fn test_agents() -> Result {
     todo!()
 }
 
-pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: String) -> Result {
-    info!("starting training stage {:?}", stage);
+pub fn train_agents(
+    stage: TrainingStage,
+    load_path: Option<String>,
+    save_path: String,
+    iteration: usize,
+    adaptive_config: &AdaptiveConfig,
+    stuck_and_stale_check: bool,
+) -> Result {
+    info(format!("{:?}", adaptive_config));
 
-    info!("loading training config variables");
+    let max_generations = adaptive_config.max_generations;
+    let population_size = adaptive_config.initial_population_size;
+    let number_of_network_updates = adaptive_config.number_of_network_updates;
+    let variance_decay = adaptive_config.variance_decay;
 
-    let max_generations = CONFIG.genetic_algorithm.max_generations as u64;
     let seed = CONFIG.genetic_algorithm.seed as u64;
     let with_seed = CONFIG.genetic_algorithm.with_seed;
-    let population_size = CONFIG.genetic_algorithm.initial_population_size as usize;
-    let number_of_network_updates = CONFIG.neural_network.number_of_network_updates as usize;
-    let variance_decay = CONFIG.genetic_algorithm.mutation_rates.variance_decay as f32;
     let goal_fitness = CONFIG.genetic_algorithm.goal_fitness as f32;
     let data_path = CONFIG.image_processing.training.path as &str;
-
-    info!("setting up rng");
 
     let mut rng = ChaCha8Rng::from_entropy();
 
     if with_seed {
-        info!("using seed: {}", seed);
         rng = ChaCha8Rng::seed_from_u64(seed);
     }
-
-    info!("initializing population...");
 
     // intialize population
     let population_bar = ProgressBar::new(population_size as u64);
@@ -281,8 +286,6 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         Population::new(&population_bar, population_size)
     };
     population_bar.finish();
-
-    info!("loading training dataset...");
 
     let mut parser = XMLParser::new();
     let dir = std::fs::read_dir(PathBuf::from(data_path))?;
@@ -304,7 +307,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         idx += 1;
     }
 
-    info!("loaded {} images", parser.loaded);
+    info(format!("loaded {} images", parser.loaded));
 
     let fitness_function = match stage {
         TrainingStage::Artificial { stage: 0 } => fitness_pixel_follow,
@@ -321,7 +324,6 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
     //increas number of updates over time
     let mut nr_updates = number_of_network_updates;
     // loop until stop criterial is met
-    info!("training agents...");
     loop {
         algorithm_bar.inc(1);
         // for each image in the dataset
@@ -378,6 +380,47 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
             / population.agents().len() as f32;
         average_fitness_data.push(average);
 
+        // if the minimum fitness and the max fitness is the same, local maximum reached, break.
+        // or when the avarage fitness is stuck for over X generations
+        if stuck_and_stale_check {
+            let stale = round3(population.agents()[0].fitness())
+                == round3(population.agents().iter().last().unwrap().fitness());
+            let avrg_of_avrg =
+                average_fitness_data.iter().sum::<f32>() / average_fitness_data.iter().len() as f32;
+            let stuck = (population.generation() as f32 / adaptive_config.max_generations as f32)
+                > avrg_of_avrg;
+            if stale || stuck {
+                if stale {
+                    info("stale");
+                }
+                if stuck {
+                    info("stuck");
+                }
+                std::fs::create_dir_all(format!("iterations/{}", iteration)).unwrap();
+                plotting::update_image(
+                    &average_fitness_data,
+                    format!("iterations/{}/fitness.png", iteration).as_str(),
+                );
+                let out = serde_json::to_string_pretty(adaptive_config).unwrap();
+                write(
+                    format!("iterations/{}/config.json", iteration).as_str(),
+                    out,
+                )
+                .unwrap();
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("iteration_results.txt")
+                    .unwrap()
+                    .write_fmt(format_args!(
+                        "generations survived: {} ",
+                        population.generation()
+                    ))
+                    .unwrap();
+                info(format!("generations survived {}", population.generation()));
+                return Err(LocalMaximumError.into());
+            }
+        }
         // check stop criteria:
         // - if any agent has a high enough fitness
         // - if the maximum number of generations has been reached
@@ -393,7 +436,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         // after 50 % of max generations, decrease the variance by 10 % each generation
         if population.generation() > max_generations as u32 / 2 {
             population.agents_mut().iter_mut().for_each(|agent| {
-                agent.update_variance(agent.get_current_variance() * variance_decay);
+                agent.update_variance(agent.get_current_variance() * variance_decay as f32);
             })
         }
 
@@ -402,7 +445,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
             .map(|_| {
                 let (parent1, parent2) = population.select(&mut rng, SelectionMethod::Tournament);
                 let mut offspring = parent1.crossover(&mut rng, parent2);
-                offspring.mutate(&mut rng);
+                offspring.mutate(&mut rng, adaptive_config);
                 offspring
             })
             .collect::<Vec<Agent>>();
@@ -417,10 +460,11 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         }
     }
     algorithm_bar.finish();
-    info!("training finished");
-    info!("stopped after {} generations", population.generation());
 
-    plotting::update_image(&average_fitness_data);
+    std::fs::create_dir_all(format!("iterations/final")).unwrap();
+    let out = serde_json::to_string_pretty(adaptive_config).unwrap();
+    write("iterations/final/config.json", out).unwrap();
+    plotting::update_image(&average_fitness_data, "iterations/final/fitness.png");
 
     // remove 'agents' directory if it exists
     std::fs::remove_dir_all(save_path.clone()).unwrap_or_default();
@@ -430,7 +474,7 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         .par_iter_mut()
         .enumerate()
         .inspect(|(index, agent)| {
-            debug!("agent {} fitness: {}", index, agent.fitness());
+            // debug("agent {} fitness: {}", index, agent.fitness());
         })
         .for_each(|(index, agent)| {
             // saves the folder name with index + fitness round2
@@ -499,7 +543,6 @@ pub fn train_agents(stage: TrainingStage, load_path: Option<String>, save_path: 
         });
 
     // for the best agent, create the images
-    info!("generating images for the best agents ..");
     population.agents().iter().take(1).for_each(|agent| {
         agent
             .statistics()

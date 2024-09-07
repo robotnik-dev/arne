@@ -13,7 +13,7 @@ use crate::annotations::Annotation;
 use crate::image::{Image, ImageLabel, Position, Retina};
 use crate::netlist::Generate;
 use crate::neural_network::Rnn;
-use crate::{Error, CONFIG};
+use crate::{AdaptiveConfig, Error, CONFIG};
 
 /// statisteics per Agent to store some data relevant for human statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -332,9 +332,9 @@ impl Genotype {
         }
     }
 
-    pub fn mutate(&mut self, rng: &mut dyn RngCore) {
+    pub fn mutate(&mut self, rng: &mut dyn RngCore, adaptive_config: &AdaptiveConfig) {
         for network in self.networks_mut() {
-            network.mutate(rng);
+            network.mutate(rng, adaptive_config);
         }
     }
 
@@ -650,8 +650,8 @@ impl Agent {
         new_agent
     }
 
-    pub fn mutate(&mut self, rng: &mut dyn RngCore) {
-        self.genotype.mutate(rng);
+    pub fn mutate(&mut self, rng: &mut dyn RngCore, adaptive_config: &AdaptiveConfig) {
+        self.genotype.mutate(rng, adaptive_config);
     }
 
     pub fn get_current_variance(&self) -> f32 {

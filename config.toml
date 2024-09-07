@@ -30,7 +30,7 @@ control_network_neurons = 2
 categorize_network_neurons = 1
 retina_movement_speed = 40.0
 # increases the number of updates
-number_of_network_updates = 50
+number_of_network_updates = 100 
 increase = false
 increase_every_generations = 10
 by_amount = 1
@@ -47,8 +47,8 @@ init_zero_retina_weights = 0.3
 with_seed = false
 seed = 1024
 goal_fitness = 0.95
-initial_population_size = 1000
-max_generations = 1000
+initial_population_size = 50
+max_generations = 8000
 # minimum size is 2
 tournament_size = 5 
 
@@ -56,11 +56,11 @@ tournament_size = 5
 variance = 0.2
 variance_decay = 1.0
 mean = 0.0
-delete_neuron = 0.1
-delete_weights = 0.1
-delete_bias = 0.1
-delete_self_activation = 0.1
-mutate_neuron = 0.3
+delete_neuron = 0.0
+delete_weights = 0.05
+delete_bias = 0.05
+delete_self_activation = 0.05
+mutate_neuron = 0.0
 mutate_weights = 0.3
 mutate_bias = 0.3
 mutate_self_activation = 0.3

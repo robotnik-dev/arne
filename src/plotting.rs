@@ -3,8 +3,8 @@ use plotters::style::Color;
 
 use crate::CONFIG;
 
-pub fn update_image(data: &Vec<f32>) {
-    let root = BitMapBackend::new("assets/0.png", (640, 480)).into_drawing_area();
+pub fn update_image(data: &Vec<f32>, path: &str) {
+    let root = BitMapBackend::new(path, (640, 480)).into_drawing_area();
     root.fill(&WHITE).unwrap();
     let x_max = CONFIG.genetic_algorithm.max_generations as f32;
     let mut chart = ChartBuilder::on(&root)
