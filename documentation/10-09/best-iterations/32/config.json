@@ -1,0 +1,22 @@
+{
+  "number_of_network_updates": 141,
+  "neuron_lower": -4.0,
+  "neuron_upper": 4.0,
+  "retina_lower": -4.0,
+  "retina_upper": 4.0,
+  "init_zero_retina_weights": 0.54379916,
+  "initial_population_size": 368,
+  "max_generations": 8000,
+  "tournament_size": 77,
+  "variance": 0.32143202994420933,
+  "variance_decay": 0.9586994016183332,
+  "mean": 0.9153422391683743,
+  "delete_neuron": 0.5814584273713747,
+  "delete_weights": 0.31687744579325733,
+  "delete_bias": 0.9973217199598625,
+  "delete_self_activation": 0.587543697217702,
+  "mutate_neuron": 0.08252301738624591,
+  "mutate_weights": 0.4010493713167359,
+  "mutate_bias": 0.9885059313330455,
+  "mutate_self_activation": 0.020753589794727526
+}
