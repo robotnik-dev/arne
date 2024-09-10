@@ -376,35 +376,35 @@ impl Rnn {
     }
 
     pub fn mutate(&mut self, rng: &mut dyn RngCore, adaptive_config: &AdaptiveConfig) -> Rnn {
-        if rng.gen_bool(adaptive_config.delete_neuron) {
+        if rng.gen_bool(adaptive_config.delete_neuron as f64) {
             self.delete_neuron(rng);
             self.statistics.deleted_neurons += 1;
         }
-        if rng.gen_bool(adaptive_config.delete_weights) {
+        if rng.gen_bool(adaptive_config.delete_weights as f64) {
             self.delete_weights(rng);
             self.statistics.deleted_weights += 1;
         }
-        if rng.gen_bool(adaptive_config.delete_bias) {
+        if rng.gen_bool(adaptive_config.delete_bias as f64) {
             self.delete_bias(rng);
             self.statistics.deleted_biases += 1;
         }
-        if rng.gen_bool(adaptive_config.delete_self_activation) {
+        if rng.gen_bool(adaptive_config.delete_self_activation as f64) {
             self.delete_self_activation(rng);
             self.statistics.deleted_self_activations += 1;
         }
-        if rng.gen_bool(adaptive_config.mutate_neuron) {
+        if rng.gen_bool(adaptive_config.mutate_neuron as f64) {
             self.mutate_neuron(rng);
             self.statistics.mutated_neurons += 1;
         }
-        if rng.gen_bool(adaptive_config.mutate_weights) {
+        if rng.gen_bool(adaptive_config.mutate_weights as f64) {
             self.mutate_weights(rng);
             self.statistics.mutated_weights += 1;
         }
-        if rng.gen_bool(adaptive_config.mutate_bias) {
+        if rng.gen_bool(adaptive_config.mutate_bias as f64) {
             self.mutate_bias(rng);
             self.statistics.mutated_biases += 1;
         }
-        if rng.gen_bool(adaptive_config.mutate_self_activation) {
+        if rng.gen_bool(adaptive_config.mutate_self_activation as f64) {
             self.mutate_self_activation(rng);
             self.statistics.mutated_self_activations += 1;
         }
@@ -972,11 +972,15 @@ mod tests {
     fn test_retina_weights_and_inputs_same_size() {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
         let mut rnn = Rnn::new(&mut rng, 3);
-        let image = Image::from_vec(vec![0.0; 101 * 101]).unwrap();
+        let image = Image::from_vec(vec![0.0; 1001 * 1001]).unwrap();
         let retina = image
-            .create_retina_at(Position::new(50, 50), 35, 7, "test".to_string())
+            .create_retina_at(
+                Position::new(100, 100),
+                CONFIG.image_processing.retina_size as usize,
+                CONFIG.image_processing.superpixel_size as usize,
+                "test".to_string(),
+            )
             .unwrap();
-
         rnn.update_inputs_from_retina(&retina);
         rnn.neurons().iter().for_each(|neuron| {
             assert_eq!(neuron.retina_inputs().len(), neuron.retina_weights().len());

@@ -16,6 +16,7 @@ path = "data/training"
 load_all = false
 # if all == false, how many to load
 load_amount = 1
+run_one_config_path = "documentation/10-09/best-iterations/x/config.json"
 
 [image_processing.testing]
 path = "data/testing"

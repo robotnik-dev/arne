@@ -420,6 +420,13 @@ pub fn train_agents(
                 info(format!("generations survived {}", population.generation()));
                 return Err(LocalMaximumError.into());
             }
+        } else {
+            // save average fitness nonetheless
+            std::fs::create_dir_all(format!("best_iterations/{}", iteration)).unwrap();
+            plotting::update_image(
+                &average_fitness_data,
+                format!("best_iterations/{}/fitness.png", iteration).as_str(),
+            );
         }
         // check stop criteria:
         // - if any agent has a high enough fitness

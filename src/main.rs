@@ -4,10 +4,12 @@ use image::TrainingStage;
 use rand::{Rng, RngCore, SeedableRng};
 pub use rand_chacha::ChaCha8Rng;
 use serde::{ser::StdError, Deserialize, Serialize};
+use serde_json::from_str;
 use static_toml::static_toml;
 pub use std::time::{Duration, Instant};
 use std::{
     fmt::Display,
+    fs::read_to_string,
     io::{self, Write},
 };
 
@@ -47,7 +49,8 @@ struct Args {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_systems(Startup, run)
+        // .add_systems(Startup, test_configs)
+        .add_systems(Startup, run_one_config)
         .run();
 
     // env_logger::init();
@@ -104,66 +107,66 @@ impl Into<Box<dyn StdError>> for LocalMaximumError {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct AdaptiveConfig {
     pub number_of_network_updates: usize,
     // not configurable
-    pub neuron_lower: f64,
+    pub neuron_lower: f32,
     // not configurable
-    pub neuron_upper: f64,
+    pub neuron_upper: f32,
     // not configurable
-    pub retina_lower: f64,
+    pub retina_lower: f32,
     // not configurable
-    pub retina_upper: f64,
+    pub retina_upper: f32,
     // not configurable
     pub init_zero_retina_weights: f32,
     pub initial_population_size: usize,
     pub max_generations: u64,
     // not configurable
     pub tournament_size: usize,
-    pub variance: f64,
-    pub variance_decay: f64,
-    pub mean: f64,
-    pub delete_neuron: f64,
-    pub delete_weights: f64,
-    pub delete_bias: f64,
-    pub delete_self_activation: f64,
-    pub mutate_neuron: f64,
-    pub mutate_weights: f64,
-    pub mutate_bias: f64,
-    pub mutate_self_activation: f64,
+    pub variance: f32,
+    pub variance_decay: f32,
+    pub mean: f32,
+    pub delete_neuron: f32,
+    pub delete_weights: f32,
+    pub delete_bias: f32,
+    pub delete_self_activation: f32,
+    pub mutate_neuron: f32,
+    pub mutate_weights: f32,
+    pub mutate_bias: f32,
+    pub mutate_self_activation: f32,
 }
 
 impl AdaptiveConfig {
     fn new() -> Self {
         AdaptiveConfig {
             number_of_network_updates: CONFIG.neural_network.number_of_network_updates as usize,
-            neuron_lower: CONFIG.neural_network.weight_bounds.neuron_lower as f64,
-            neuron_upper: CONFIG.neural_network.weight_bounds.neuron_upper as f64,
-            retina_lower: CONFIG.neural_network.weight_bounds.retina_lower as f64,
-            retina_upper: CONFIG.neural_network.weight_bounds.retina_upper as f64,
+            neuron_lower: CONFIG.neural_network.weight_bounds.neuron_lower as f32,
+            neuron_upper: CONFIG.neural_network.weight_bounds.neuron_upper as f32,
+            retina_lower: CONFIG.neural_network.weight_bounds.retina_lower as f32,
+            retina_upper: CONFIG.neural_network.weight_bounds.retina_upper as f32,
             init_zero_retina_weights: CONFIG.neural_network.weight_bounds.init_zero_retina_weights
                 as f32,
             initial_population_size: CONFIG.genetic_algorithm.initial_population_size as usize,
             max_generations: CONFIG.genetic_algorithm.max_generations as u64,
             tournament_size: CONFIG.genetic_algorithm.tournament_size as usize,
-            variance: CONFIG.genetic_algorithm.mutation_rates.variance as f64,
-            variance_decay: CONFIG.genetic_algorithm.mutation_rates.variance_decay as f64,
-            mean: CONFIG.genetic_algorithm.mutation_rates.mean as f64,
-            delete_neuron: CONFIG.genetic_algorithm.mutation_rates.delete_neuron as f64,
-            delete_weights: CONFIG.genetic_algorithm.mutation_rates.delete_weights as f64,
-            delete_bias: CONFIG.genetic_algorithm.mutation_rates.delete_bias as f64,
+            variance: CONFIG.genetic_algorithm.mutation_rates.variance as f32,
+            variance_decay: CONFIG.genetic_algorithm.mutation_rates.variance_decay as f32,
+            mean: CONFIG.genetic_algorithm.mutation_rates.mean as f32,
+            delete_neuron: CONFIG.genetic_algorithm.mutation_rates.delete_neuron as f32,
+            delete_weights: CONFIG.genetic_algorithm.mutation_rates.delete_weights as f32,
+            delete_bias: CONFIG.genetic_algorithm.mutation_rates.delete_bias as f32,
             delete_self_activation: CONFIG
                 .genetic_algorithm
                 .mutation_rates
-                .delete_self_activation as f64,
-            mutate_neuron: CONFIG.genetic_algorithm.mutation_rates.mutate_neuron as f64,
-            mutate_weights: CONFIG.genetic_algorithm.mutation_rates.mutate_weights as f64,
-            mutate_bias: CONFIG.genetic_algorithm.mutation_rates.mutate_bias as f64,
+                .delete_self_activation as f32,
+            mutate_neuron: CONFIG.genetic_algorithm.mutation_rates.mutate_neuron as f32,
+            mutate_weights: CONFIG.genetic_algorithm.mutation_rates.mutate_weights as f32,
+            mutate_bias: CONFIG.genetic_algorithm.mutation_rates.mutate_bias as f32,
             mutate_self_activation: CONFIG
                 .genetic_algorithm
                 .mutation_rates
-                .mutate_self_activation as f64,
+                .mutate_self_activation as f32,
         }
     }
 
@@ -186,7 +189,26 @@ impl AdaptiveConfig {
     }
 }
 
-fn run(mut exit: EventWriter<AppExit>) {
+fn run_one_config(mut exit: EventWriter<AppExit>) {
+    let entity = 32;
+    let path = CONFIG.image_processing.training.run_one_config_path as &str;
+    let filepath = String::from(path).replace("x", entity.to_string().as_str());
+    let adaptive_config: AdaptiveConfig =
+        from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
+
+    training::train_agents(
+        TrainingStage::Artificial { stage: 0 },
+        None,
+        String::from("agents"),
+        entity,
+        &adaptive_config,
+        false,
+    )
+    .unwrap();
+    exit.send(AppExit::Success);
+}
+
+fn test_configs(mut exit: EventWriter<AppExit>) {
     let max_iterations = 10000;
     let mut rng = ChaCha8Rng::from_entropy();
     let _ = std::fs::remove_dir_all("iterations");
@@ -220,4 +242,25 @@ fn run(mut exit: EventWriter<AppExit>) {
         iteration += 1;
     }
     exit.send(AppExit::Success);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{read_to_string, write};
+
+    use serde_json::{from_str, to_string_pretty};
+
+    use super::*;
+
+    #[test]
+    fn test_load_config() {
+        let mut rng = ChaCha8Rng::from_entropy();
+        let mut config = AdaptiveConfig::new();
+        config.randomize(&mut rng);
+        let buf = to_string_pretty(&config).unwrap();
+        write("tests/config.json", buf).unwrap();
+        let loaded_str = read_to_string("tests/config.json").unwrap();
+        let loaded: AdaptiveConfig = from_str(&loaded_str).unwrap();
+        assert_eq!(config, loaded);
+    }
 }
