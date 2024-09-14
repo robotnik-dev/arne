@@ -1,0 +1,1 @@
+Overnight experiment failed with 41 images and the adaptive config pasted inside the "best_iterations/7/" folder 
