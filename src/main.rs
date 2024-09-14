@@ -190,7 +190,7 @@ impl AdaptiveConfig {
 }
 
 fn run_one_config(mut exit: EventWriter<AppExit>) {
-    let entity = 32;
+    let entity = 7;
     let path = CONFIG.image_processing.training.run_one_config_path as &str;
     let filepath = String::from(path).replace("x", entity.to_string().as_str());
     let adaptive_config: AdaptiveConfig =

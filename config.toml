@@ -13,7 +13,7 @@ erode_pixels = 1
 [image_processing.training]
 path = "data/training"
 # loading all images into memory, takes a while
-load_all = false
+load_all = true
 # if all == false, how many to load
 load_amount = 1
 run_one_config_path = "documentation/10-09/best-iterations/x/config.json"
