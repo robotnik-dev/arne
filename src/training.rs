@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::u8;
 
 use crate::annotations::{Annotation, LoadFolder, XMLParser};
-use crate::image::{ImageLabel, TrainingStage};
+use crate::image::{Image, ImageLabel, TrainingStage};
 use crate::netlist::Generate;
 use crate::{
     plotting, round2, round3, AdaptiveConfig, Agent, AgentEvaluation, ChaCha8Rng,
@@ -18,21 +18,31 @@ use rand::prelude::*;
 use rayon::prelude::*;
 use serde::Serialize;
 
-fn fitness_pixel_follow(_agent: &mut Agent, _annotation: &Annotation, retina: &Retina) -> f32 {
-    // TODO: the categorize network is ignored for now
-    // log::debug!(
-    //     "all: {:?}; visited: {}, current frame: {}",
-    //     retina.dark_pixel_positions().len(),
-    //     retina.dark_pixel_positions_visited().len(),
-    //     retina.dark_pixel_positions_in_frame(0.5).len()
-    // );
-    retina.percentage_visited()
+fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &Image) -> f32 {
+    let source_dc_neuron_idx = 0usize;
+    let resistor_neuron_idx = 1usize;
+    let capacitor_neuron_idx = 2usize;
+
+    // we need to check if any bndbox specified in the annotation is currently inside the retina rectangle
+    annotation.objects.iter().for_each(|obj| {
+        // If anyone is, then we check we check what kind of component is specified in this object
+        if image.wraps_bndbox(&obj.bndbox, retina) {
+            let component = obj.name.clone();
+            // And lastly we check if the corresponding neuron is active for this component and every other neuron is inactive
+            todo!()
+        }
+    });
+
+    let categorize_fitness = 0f32;
+    let control_fitness = retina.percentage_visited();
+    (categorize_fitness + control_fitness) / 2.0f32
 }
 
 fn fitness_recognize_components(
     _agent: &mut Agent,
     _annotation: &Annotation,
     _retina: &Retina,
+    _image: &Image,
 ) -> f32 {
     unimplemented!()
 
@@ -310,7 +320,7 @@ pub fn train_agents(
     info(format!("loaded {} images", parser.loaded));
 
     let fitness_function = match stage {
-        TrainingStage::Artificial { stage: 0 } => fitness_pixel_follow,
+        TrainingStage::Artificial { stage: 0 } => fitness,
         TrainingStage::Artificial { stage: 1 } => fitness_recognize_components,
         TrainingStage::Artificial { stage: 2..=u8::MAX } => panic!("No third stage defined"),
         TrainingStage::RealBinarized => todo!(),

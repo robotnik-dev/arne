@@ -28,7 +28,7 @@ load_amount = 4
 [neural_network]
 control_network_neurons = 2
 # The more neurons, the more components can be categorized
-categorize_network_neurons = 1
+categorize_network_neurons = 3
 retina_movement_speed = 40.0
 # increases the number of updates
 number_of_network_updates = 100 

@@ -7,6 +7,7 @@ use std::ops::{Add, Div, Sub};
 use std::path::PathBuf;
 use std::{fmt::Debug, ops::AddAssign};
 
+use crate::annotations::Bndbox;
 use crate::{Error, Result, CONFIG};
 use skeletonize::edge_detection::sobel4;
 use skeletonize::foreground;
@@ -32,7 +33,7 @@ pub enum TrainingStage {
 }
 
 /// Counted with one more than image idx. Image index 0 -> Position index 1.
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
 pub struct Position {
     x: i32,
     y: i32,
@@ -81,12 +82,6 @@ impl Position {
         let x = rng.gen_range(top_left.x..bottom_right.x);
         let y = rng.gen_range(top_left.y..bottom_right.y);
         Position { x, y }
-    }
-}
-
-impl PartialEq for Position {
-    fn eq(&self, other: &Self) -> bool {
-        self.x == other.x && self.y == other.y
     }
 }
 
@@ -626,6 +621,15 @@ impl Image {
 
         Ok(())
     }
+
+    /// checks if the bndbox is fully wrapped from the retina rectangle (inclusive edged)
+    pub fn wraps_bndbox(&self, bndbox: &Bndbox, retina: &Retina) -> bool {
+        let top_left_bndbox = bndbox.top_left();
+        let bottom_right_bndbox = bndbox.bottom_rigt();
+        let top_left_retina = retina.get_top_left_position();
+        let bottom_right_retina = retina.get_bottom_right_position();
+        top_left_bndbox >= top_left_retina && bottom_right_bndbox <= bottom_right_retina
+    }
 }
 
 #[derive(Clone)]
@@ -737,6 +741,7 @@ impl Retina {
         self.center_position.clone()
     }
 
+    /// global position inside the image
     pub fn get_top_left_position(&self) -> Position {
         Position::new(
             self.center_position.x - (self.size / 2) as i32,
@@ -744,6 +749,13 @@ impl Retina {
         )
     }
 
+    /// global position inside the image
+    pub fn get_bottom_right_position(&self) -> Position {
+        Position::new(
+            self.center_position.x + (self.size / 2) as i32,
+            self.center_position.y + (self.size / 2) as i32,
+        )
+    }
     pub fn get_last_delta_position(&self) -> Position {
         // FIXME: why clone here
         self.last_delta_position.clone()
@@ -1179,5 +1191,34 @@ mod tests {
         image
             .save_with_retina(PathBuf::from("tests/images/t.png"))
             .unwrap();
+    }
+
+    #[test]
+    fn wraps_bndbox() {
+        let image = get_test_image();
+        let retina = image
+            .create_retina_at(Position::new(50, 50), 35, 7, "".to_string())
+            .unwrap();
+        let bndbox = Bndbox {
+            xmin: String::from("45"),
+            xmax: String::from("65"),
+            ymin: String::from("45"),
+            ymax: String::from("65"),
+        };
+        assert!(image.wraps_bndbox(&bndbox, &retina));
+    }
+    #[test]
+    fn doesnt_wraps_bndbox() {
+        let image = get_test_image();
+        let retina = image
+            .create_retina_at(Position::new(50, 50), 35, 7, "".to_string())
+            .unwrap();
+        let bndbox = Bndbox {
+            xmin: String::from("75"),
+            xmax: String::from("95"),
+            ymin: String::from("75"),
+            ymax: String::from("95"),
+        };
+        assert!(!image.wraps_bndbox(&bndbox, &retina));
     }
 }

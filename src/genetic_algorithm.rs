@@ -55,7 +55,12 @@ pub enum SelectionMethod {
 pub trait AgentEvaluation {
     fn evaluate(
         &mut self,
-        fitness_function: fn(agent: &mut Agent, annotation: &Annotation, retina: &Retina) -> f32,
+        fitness_function: fn(
+            agent: &mut Agent,
+            annotation: &Annotation,
+            retina: &Retina,
+            image: &Image,
+        ) -> f32,
         rng: &mut dyn RngCore,
         image: &mut Image,
         annotation: &Annotation,
@@ -66,7 +71,12 @@ pub trait AgentEvaluation {
 impl AgentEvaluation for Agent {
     fn evaluate(
         &mut self,
-        fitness_function: fn(agent: &mut Agent, annotation: &Annotation, retina: &Retina) -> f32,
+        fitness_function: fn(
+            agent: &mut Agent,
+            annotation: &Annotation,
+            retina: &Retina,
+            image: &Image,
+        ) -> f32,
         rng: &mut dyn RngCore,
         image: &mut Image,
         annotation: &Annotation,
@@ -155,7 +165,7 @@ impl AgentEvaluation for Agent {
                 .add_snapshot(categorize_outputs, time_step);
 
             // calculate the fitness of the genotype
-            local_fitness += fitness_function(self, annotation, &retina);
+            local_fitness += fitness_function(self, annotation, &retina, &image);
         }
         // save the image in the hashmap of the agent with label
         let image = image.clone();

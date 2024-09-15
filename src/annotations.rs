@@ -7,7 +7,7 @@ use xml2json_rs::JsonBuilder;
 // use quick_xml::{de::from_str, se::to_string};
 
 use crate::{
-    image::{Image, ImageFormat},
+    image::{Image, ImageFormat, Position},
     Error, Result, CONFIG,
 };
 
@@ -138,6 +138,20 @@ pub struct Bndbox {
     pub ymin: String,
     pub xmax: String,
     pub ymax: String,
+}
+
+impl Bndbox {
+    pub fn top_left(&self) -> Position {
+        let x = self.xmin.parse::<i32>().unwrap();
+        let y = self.ymin.parse::<i32>().unwrap();
+        Position::new(x, y)
+    }
+
+    pub fn bottom_rigt(&self) -> Position {
+        let x = self.xmax.parse::<i32>().unwrap();
+        let y = self.ymax.parse::<i32>().unwrap();
+        Position::new(x, y)
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
