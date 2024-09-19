@@ -23,238 +23,70 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
     let resistor_neuron_idx = 1usize;
     let capacitor_neuron_idx = 2usize;
 
-    // we need to check if any bndbox specified in the annotation is currently inside the retina rectangle
+    let mut categorize_fitness = 0f32;
     annotation.objects.iter().for_each(|obj| {
-        // If anyone is, then we check we check what kind of component is specified in this object
+        // we need to check if any bndbox specified in the annotation is currently inside the retina rectangle
         if image.wraps_bndbox(&obj.bndbox, retina) {
-            let component = obj.name.clone();
+            // If anyone is, then we check we check what kind of component is specified in this object
+            let full_component = obj.name.clone();
+            let component = full_component.split(".").take(1).collect::<String>();
+
             // And lastly we check if the corresponding neuron is active for this component and every other neuron is inactive
-            todo!()
+            if component == "resistor".to_string() {
+                if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+                    >= 1.0
+                    && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+                        .output()
+                        <= -1.0
+                    && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+                        .output()
+                        <= -1.0
+                {
+                    categorize_fitness = 1f32;
+                }
+            } else if component == "voltage".to_string() {
+                if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+                    <= -1.0
+                    && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+                        .output()
+                        >= 1.0
+                    && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+                        .output()
+                        <= -1.0
+                {
+                    categorize_fitness = 1f32;
+                }
+            } else if component == "capacitor".to_string() {
+                if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+                    <= -1.0
+                    && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+                        .output()
+                        <= -1.0
+                    && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+                        .output()
+                        >= 1.0
+                {
+                    categorize_fitness = 1f32;
+                }
+            } else {
+                // nothing in the retina should gain fitness when every neuron is inactive
+                if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+                    <= -1.0
+                    && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+                        .output()
+                        <= -1.0
+                    && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+                        .output()
+                        <= -1.0
+                {
+                    categorize_fitness = 1f32;
+                }
+            }
         }
     });
 
-    let categorize_fitness = 0f32;
     let control_fitness = retina.percentage_visited();
     (categorize_fitness + control_fitness) / 2.0f32
-}
-
-fn fitness_recognize_components(
-    _agent: &mut Agent,
-    _annotation: &Annotation,
-    _retina: &Retina,
-    _image: &Image,
-) -> f32 {
-    unimplemented!()
-
-    // let resistors = description.components.resistor.unwrap_or_default();
-    // let resistor_nodes = description.nodes.resistor.unwrap_or_default();
-    // let capacitors = description.components.capacitor.unwrap_or_default();
-    // let capacitors_nodes = description.nodes.capacitor.unwrap_or_default();
-    // let sources_dc = description.components.source_dc.unwrap_or_default();
-    // let sources_dc_nodes = description.nodes.source_dc.unwrap_or_default();
-
-    // let source_dc_neuron_idx = 2usize;
-    // let resistor_neuron_idx = 3usize;
-    // let capacitor_neuron_idx = 4usize;
-    // let in_node_neuron_idx = 5usize;
-    // let out_node_neuron_idx = 6usize;
-
-    // // collect all networks that 'see' some component
-    // let resistor_networks = agent
-    //     .genotype()
-    //     .networks()
-    //     .iter()
-    //     .filter(|&network| {
-    //         network.neurons()[resistor_neuron_idx]
-    //             .output()
-    //             .abs_diff_eq(&1.0, 0.01)
-    //             && network.neurons()[capacitor_neuron_idx]
-    //                 .output()
-    //                 .abs_diff_eq(&0.0, 0.01)
-    //             && network.neurons()[source_dc_neuron_idx]
-    //                 .output()
-    //                 .abs_diff_eq(&0.0, 0.01)
-    //     })
-    //     .cloned()
-    //     .collect::<Vec<Rnn>>();
-
-    // let capacitor_networks = agent
-    //     .genotype()
-    //     .networks()
-    //     .iter()
-    //     .filter(|&network| {
-    //         network.neurons()[resistor_neuron_idx]
-    //             .output()
-    //             .abs_diff_eq(&0.0, 0.01)
-    //             && network.neurons()[capacitor_neuron_idx]
-    //                 .output()
-    //                 .abs_diff_eq(&1.0, 0.01)
-    //             && network.neurons()[source_dc_neuron_idx]
-    //                 .output()
-    //                 .abs_diff_eq(&0.0, 0.01)
-    //     })
-    //     .cloned()
-    //     .collect::<Vec<Rnn>>();
-
-    // let source_dc_networks = agent
-    //     .genotype()
-    //     .networks()
-    //     .iter()
-    //     .filter(|&network| {
-    //         network.neurons()[resistor_neuron_idx]
-    //             .output()
-    //             .abs_diff_eq(&0.0, 0.01)
-    //             && network.neurons()[capacitor_neuron_idx]
-    //                 .output()
-    //                 .abs_diff_eq(&0.0, 0.01)
-    //             && network.neurons()[source_dc_neuron_idx]
-    //                 .output()
-    //                 .abs_diff_eq(&1.0, 0.01)
-    //     })
-    //     .cloned()
-    //     .collect::<Vec<Rnn>>();
-
-    // // remove identical networks (comparison of the nodes)
-    // // only keep the ones that have unique outputs of in_nodes and out_nodes
-    // let resistor_networks = resistor_networks
-    //     .iter()
-    //     .filter(|&network| {
-    //         let in_node_output = network.neurons()[in_node_neuron_idx].output();
-    //         let out_node_output = network.neurons()[out_node_neuron_idx].output();
-    //         resistor_networks.iter().all(|other_network| {
-    //             let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-    //             let other_out_node_output = other_network.neurons()[out_node_neuron_idx].output();
-    //             in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
-    //                 && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
-    //         })
-    //     })
-    //     .cloned()
-    //     .collect::<Vec<Rnn>>();
-
-    // let capacitor_networks = capacitor_networks
-    //     .iter()
-    //     .filter(|&network| {
-    //         let in_node_output = network.neurons()[in_node_neuron_idx].output();
-    //         let out_node_output = network.neurons()[out_node_neuron_idx].output();
-    //         capacitor_networks.iter().all(|other_network| {
-    //             let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-    //             let other_out_node_output = other_network.neurons()[out_node_neuron_idx].output();
-    //             in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
-    //                 && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
-    //         })
-    //     })
-    //     .cloned()
-    //     .collect::<Vec<Rnn>>();
-
-    // let source_dc_networks = source_dc_networks
-    //     .iter()
-    //     .filter(|&network| {
-    //         let in_node_output = network.neurons()[in_node_neuron_idx].output();
-    //         let out_node_output = network.neurons()[out_node_neuron_idx].output();
-    //         source_dc_networks.iter().all(|other_network| {
-    //             let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-    //             let other_out_node_output = other_network.neurons()[out_node_neuron_idx].output();
-    //             in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
-    //                 && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
-    //         })
-    //     })
-    //     .cloned()
-    //     .collect::<Vec<Rnn>>();
-
-    // // for each correct determined node in the corresponding network, it gets a point
-    // // then the points are accumulated, normalized and weighted to add to the fitness calculation
-    // let mut correct_nodes = 0u32;
-    // let maximum_nodes = resistor_nodes
-    //     .iter()
-    //     .chain(capacitors_nodes.iter())
-    //     .chain(sources_dc_nodes.iter())
-    //     .count() as u32
-    //     * 2;
-    // resistor_networks.iter().for_each(|network| {
-    //     let in_node = network.neurons()[in_node_neuron_idx].output().abs()
-    //         * CONFIG.genetic_algorithm.node_range as f32;
-    //     let out_node = network.neurons()[out_node_neuron_idx].output().abs()
-    //         * CONFIG.genetic_algorithm.node_range as f32;
-    //     resistor_nodes.iter().for_each(|pair| {
-    //         if in_node as u32 == pair[0] {
-    //             correct_nodes += 1
-    //         };
-    //         if out_node as u32 == pair[1] {
-    //             correct_nodes += 1
-    //         };
-    //     })
-    // });
-    // capacitor_networks.iter().for_each(|network| {
-    //     let in_node = network.neurons()[in_node_neuron_idx].output().abs()
-    //         * CONFIG.genetic_algorithm.node_range as f32;
-    //     let out_node = network.neurons()[out_node_neuron_idx].output().abs()
-    //         * CONFIG.genetic_algorithm.node_range as f32;
-    //     capacitors_nodes.iter().for_each(|pair| {
-    //         if in_node as u32 == pair[0] {
-    //             correct_nodes += 1
-    //         };
-    //         if out_node as u32 == pair[1] {
-    //             correct_nodes += 1
-    //         };
-    //     })
-    // });
-    // source_dc_networks.iter().for_each(|network| {
-    //     let in_node = network.neurons()[in_node_neuron_idx].output().abs()
-    //         * CONFIG.genetic_algorithm.node_range as f32;
-    //     let out_node = network.neurons()[out_node_neuron_idx].output().abs()
-    //         * CONFIG.genetic_algorithm.node_range as f32;
-    //     sources_dc_nodes.iter().for_each(|pair| {
-    //         if in_node as u32 == pair[0] {
-    //             correct_nodes += 1
-    //         };
-    //         if out_node as u32 == pair[1] {
-    //             correct_nodes += 1
-    //         };
-    //     })
-    // });
-    // // fitness is high when the count of the networks are exactly the ImageDescription numbers
-    // // Additionally the fitness gets lower the more blank_networks exists in this time step
-
-    // // if there are no components of this kind, the fitness is not so much weighted
-    // let max_networks = CONFIG.neural_network.networks_per_agent as f32;
-    // let resistor_fitness = if resistors == 0 {
-    //     if resistor_networks.len() == resistors as usize {
-    //         0.25
-    //     } else {
-    //         0.0
-    //     }
-    // } else if resistor_networks.len() == resistors as usize {
-    //     1.0
-    // } else {
-    //     1.0 - ((resistor_networks.len() as f32 - resistors as f32).abs() / max_networks)
-    // };
-    // let capacitor_fitness = if capacitors == 0 {
-    //     if capacitor_networks.len() == capacitors as usize {
-    //         0.25
-    //     } else {
-    //         0.0
-    //     }
-    // } else if capacitor_networks.len() == capacitors as usize {
-    //     1.0
-    // } else {
-    //     1.0 - ((capacitor_networks.len() as f32 - capacitors as f32).abs() / max_networks)
-    // };
-    // let source_dc_fitness = if sources_dc == 0 {
-    //     if source_dc_networks.len() == sources_dc as usize {
-    //         0.25
-    //     } else {
-    //         0.0
-    //     }
-    // } else if source_dc_networks.len() == sources_dc as usize {
-    //     1.0
-    // } else {
-    //     1.0 - ((source_dc_networks.len() as f32 - sources_dc as f32).abs() / max_networks)
-    // };
-    // let network_fitness = (resistor_fitness + capacitor_fitness + source_dc_fitness) / 3.0;
-    // let node_fitness = 1.0 - (correct_nodes as f32 / maximum_nodes as f32);
-
-    // let fitness = (network_fitness * 0.4 + node_fitness * 0.6) / 2.0;
-    // fitness
 }
 
 #[allow(dead_code)]
@@ -321,7 +153,7 @@ pub fn train_agents(
 
     let fitness_function = match stage {
         TrainingStage::Artificial { stage: 0 } => fitness,
-        TrainingStage::Artificial { stage: 1 } => fitness_recognize_components,
+        TrainingStage::Artificial { stage: 1 } => fitness,
         TrainingStage::Artificial { stage: 2..=u8::MAX } => panic!("No third stage defined"),
         TrainingStage::RealBinarized => todo!(),
         TrainingStage::Real => todo!(),
