@@ -195,14 +195,13 @@ fn run_one_config(mut exit: EventWriter<AppExit>) {
     let filepath = String::from(path).replace("x", entity.to_string().as_str());
     let adaptive_config: AdaptiveConfig =
         from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
-
     training::train_agents(
         TrainingStage::Artificial { stage: 0 },
         None,
         String::from("agents"),
         entity,
         &adaptive_config,
-        true,
+        false,
     )
     .unwrap();
     exit.send(AppExit::Success);
@@ -215,32 +214,34 @@ fn test_configs(mut exit: EventWriter<AppExit>) {
     let _ = std::fs::remove_file("iteration_results.txt");
     let mut iteration = 0usize;
     let mut adaptive_config = AdaptiveConfig::new();
-    while let Err(e) = training::train_agents(
+    training::train_agents(
         TrainingStage::Artificial { stage: 0 },
         None,
         "agents".to_string(),
         iteration,
         &adaptive_config,
         true,
-    ) {
-        if iteration >= max_iterations {
-            break;
-        }
-        // tweak configuration
-        adaptive_config.randomize(&mut rng);
+    )
+    .unwrap();
+    // {
+    //     if iteration >= max_iterations {
+    //         break;
+    //     }
+    //     // tweak configuration
+    //     adaptive_config.randomize(&mut rng);
 
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("iteration_results.txt")
-            .unwrap()
-            .write_fmt(format_args!("iteration: {}\n", iteration))
-            .unwrap();
+    //     std::fs::OpenOptions::new()
+    //         .create(true)
+    //         .append(true)
+    //         .open("iteration_results.txt")
+    //         .unwrap()
+    //         .write_fmt(format_args!("iteration: {}\n", iteration))
+    //         .unwrap();
 
-        info(format!("iteration: {}", iteration));
+    //     info(format!("iteration: {}", iteration));
 
-        iteration += 1;
-    }
+    //     iteration += 1;
+    // }
     exit.send(AppExit::Success);
 }
 

@@ -147,7 +147,7 @@ impl Bndbox {
         Position::new(x, y)
     }
 
-    pub fn bottom_rigt(&self) -> Position {
+    pub fn bottom_right(&self) -> Position {
         let x = self.xmax.parse::<i32>().unwrap();
         let y = self.ymax.parse::<i32>().unwrap();
         Position::new(x, y)

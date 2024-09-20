@@ -13,7 +13,7 @@ erode_pixels = 1
 [image_processing.training]
 path = "data/training"
 # loading all images into memory, takes a while
-load_all = true
+load_all = false 
 # if all == false, how many to load
 load_amount = 1
 run_one_config_path = "documentation/10-09/best-iterations/x/config.json"
@@ -49,7 +49,7 @@ with_seed = false
 seed = 1024
 goal_fitness = 0.95
 initial_population_size = 50
-max_generations = 8000
+max_generations = 500
 # minimum size is 2
 tournament_size = 5 
 

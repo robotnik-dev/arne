@@ -5,13 +5,12 @@ use std::path::PathBuf;
 use std::u8;
 
 use crate::annotations::{Annotation, LoadFolder, XMLParser};
-use crate::image::{Image, ImageLabel, TrainingStage};
-use crate::netlist::Generate;
+use crate::image::{Image, ImageLabel, Position, TrainingStage};
+use crate::netlist::{ComponentType, Generate};
 use crate::{
     plotting, round2, round3, AdaptiveConfig, Agent, AgentEvaluation, ChaCha8Rng,
     LocalMaximumError, Population, Result, Retina, SelectionMethod, CONFIG,
 };
-use bevy::log::{debug, info};
 use bevy::utils::info;
 use indicatif::ProgressBar;
 use rand::prelude::*;
@@ -41,8 +40,14 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                     && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
                         .output()
                         <= -1.0
+                    // dont add duplicate
+                    && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(obj.bndbox.clone()))
                 {
                     categorize_fitness = 1f32;
+                    agent.genotype_mut().add_found_component(
+                        Position::from(obj.bndbox.clone()),
+                        ComponentType::Resistor,
+                    );
                 }
             } else if component == "voltage".to_string() {
                 if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
@@ -53,8 +58,14 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                     && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
                         .output()
                         <= -1.0
+                    // dont add duplicate
+                    && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(obj.bndbox.clone()))
                 {
                     categorize_fitness = 1f32;
+                    agent.genotype_mut().add_found_component(
+                        Position::from(obj.bndbox.clone()),
+                        ComponentType::VoltageSourceDc,
+                    );
                 }
             } else if component == "capacitor".to_string() {
                 if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
@@ -65,8 +76,14 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                     && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
                         .output()
                         >= 1.0
+                    // dont add duplicate
+                    && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(obj.bndbox.clone()))
                 {
                     categorize_fitness = 1f32;
+                    agent.genotype_mut().add_found_component(
+                        Position::from(obj.bndbox.clone()),
+                        ComponentType::Capacitor,
+                    );
                 }
             } else {
                 // nothing in the retina should gain fitness when every neuron is inactive
@@ -242,6 +259,7 @@ pub fn train_agents(
                 plotting::update_image(
                     &average_fitness_data,
                     format!("iterations/{}/fitness.png", iteration).as_str(),
+                    max_generations,
                 );
                 let out = serde_json::to_string_pretty(adaptive_config).unwrap();
                 write(
@@ -260,7 +278,8 @@ pub fn train_agents(
                     ))
                     .unwrap();
                 info(format!("generations survived {}", population.generation()));
-                return Err(LocalMaximumError.into());
+                // break out of outer loop
+                break;
             }
         } else {
             // save average fitness nonetheless
@@ -268,6 +287,7 @@ pub fn train_agents(
             plotting::update_image(
                 &average_fitness_data,
                 format!("best_iterations/{}/fitness.png", iteration).as_str(),
+                max_generations,
             );
         }
         // check stop criteria:
@@ -292,7 +312,11 @@ pub fn train_agents(
         // select, crossover and mutate
         let new_agents = (0..population.agents().len())
             .map(|_| {
-                let (parent1, parent2) = population.select(&mut rng, SelectionMethod::Tournament);
+                let (parent1, parent2) = population.select(
+                    &mut rng,
+                    SelectionMethod::Tournament,
+                    Some(adaptive_config.tournament_size),
+                );
                 let mut offspring = parent1.crossover(&mut rng, parent2);
                 offspring.mutate(&mut rng, adaptive_config);
                 offspring
@@ -300,7 +324,7 @@ pub fn train_agents(
             .collect::<Vec<Agent>>();
 
         // evolve the population
-        population.evolve(new_agents, &mut rng);
+        population.evolve(new_agents, &mut rng, population_size);
 
         if population.generation() % CONFIG.neural_network.increase_every_generations as u32 == 0
             && CONFIG.neural_network.increase as bool
@@ -308,12 +332,16 @@ pub fn train_agents(
             nr_updates += CONFIG.neural_network.by_amount as usize;
         }
     }
-    algorithm_bar.finish();
+    algorithm_bar.finish_and_clear();
 
     std::fs::create_dir_all(format!("iterations/final")).unwrap();
     let out = serde_json::to_string_pretty(adaptive_config).unwrap();
     write("iterations/final/config.json", out).unwrap();
-    plotting::update_image(&average_fitness_data, "iterations/final/fitness.png");
+    plotting::update_image(
+        &average_fitness_data,
+        "iterations/final/fitness.png",
+        max_generations,
+    );
 
     // remove 'agents' directory if it exists
     std::fs::remove_dir_all(save_path.clone()).unwrap_or_default();
@@ -322,14 +350,10 @@ pub fn train_agents(
         .agents_mut()
         .par_iter_mut()
         .enumerate()
-        .inspect(|(index, agent)| {
-            // debug("agent {} fitness: {}", index, agent.fitness());
-        })
         .for_each(|(index, agent)| {
             // saves the folder name with index + fitness round2
             let agent_folder = format!("{}_{}", round2(agent.fitness()), index);
             std::fs::create_dir_all(format!("{}/{}", save_path, agent_folder)).unwrap();
-
             // save control network
             let folder_name = "control";
             std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name))

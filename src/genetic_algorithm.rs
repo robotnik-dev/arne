@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use crate::annotations::Annotation;
 use crate::image::{Image, ImageLabel, Position, Retina};
-use crate::netlist::Generate;
+use crate::netlist::{ComponentType, Generate};
 use crate::neural_network::Rnn;
 use crate::{AdaptiveConfig, Error, CONFIG};
 
@@ -236,7 +236,12 @@ impl Population {
     }
 
     /// recombinate the population. Adds all new agents to the list and the drop the worst ones until population is the correct size again
-    pub fn evolve(&mut self, new_agents: Vec<Agent>, rng: &mut dyn RngCore) {
+    pub fn evolve(
+        &mut self,
+        new_agents: Vec<Agent>,
+        rng: &mut dyn RngCore,
+        population_size: usize,
+    ) {
         let mut combined = self
             .agents
             .iter()
@@ -248,7 +253,7 @@ impl Population {
         let new_population = combined
             .iter()
             .cloned()
-            .take(CONFIG.genetic_algorithm.initial_population_size as usize)
+            .take(population_size)
             // resets the fitness
             .map(|mut a| {
                 a.set_fitness(0.0f32);
@@ -259,15 +264,24 @@ impl Population {
         self.generation += 1;
     }
 
-    pub fn select(&self, rng: &mut dyn RngCore, method: SelectionMethod) -> (&Agent, &Agent) {
+    pub fn select(
+        &self,
+        rng: &mut dyn RngCore,
+        method: SelectionMethod,
+        tournament_size: Option<usize>,
+    ) -> (&Agent, &Agent) {
         match method {
-            SelectionMethod::Tournament => self.select_tournament(rng),
+            SelectionMethod::Tournament => self.select_tournament(rng, tournament_size),
             SelectionMethod::Weighted => self.select_weighted(rng),
         }
     }
 
-    fn select_tournament(&self, rng: &mut dyn RngCore) -> (&Agent, &Agent) {
-        let tournament_size = CONFIG.genetic_algorithm.tournament_size as usize;
+    fn select_tournament(
+        &self,
+        rng: &mut dyn RngCore,
+        tournament_size: Option<usize>,
+    ) -> (&Agent, &Agent) {
+        let tournament_size = tournament_size.unwrap_or_default();
         let mut tournament = Vec::with_capacity(tournament_size);
         for _ in 0..tournament_size {
             tournament.push(self.agents.choose(rng).unwrap());
@@ -292,6 +306,8 @@ impl Population {
 pub struct Genotype {
     /// the first is the control network and second the categorize network
     networks: Vec<Rnn>,
+    #[serde(skip)]
+    found_components: Vec<(Position, ComponentType)>,
 }
 
 impl Genotype {
@@ -303,6 +319,7 @@ impl Genotype {
         );
         Genotype {
             networks: vec![control_network, categorize_network],
+            found_components: vec![],
         }
     }
 
@@ -330,6 +347,14 @@ impl Genotype {
         &mut self.networks[1]
     }
 
+    pub fn found_components(&self) -> &Vec<(Position, ComponentType)> {
+        &self.found_components
+    }
+
+    pub fn add_found_component(&mut self, position: Position, component_type: ComponentType) {
+        self.found_components.push((position, component_type));
+    }
+
     pub fn crossover_uniform(&self, rng: &mut dyn RngCore, with: &Genotype) -> Genotype {
         let control_network = self
             .control_network()
@@ -339,6 +364,7 @@ impl Genotype {
             .crossover_uniform(rng, with.categorize_network());
         Genotype {
             networks: vec![control_network, categorize_network],
+            found_components: vec![],
         }
     }
 
@@ -357,7 +383,8 @@ impl Genotype {
 
 impl Generate for Genotype {
     fn generate(&self) -> String {
-        // TODO: generate netlist for the genotype
+        // we have a list of found components with the boundingbox position saved (Position, ComponentType)
+        // there a already only unique positions listed
 
         String::from("")
 
@@ -611,6 +638,7 @@ impl Agent {
         });
         let genotype = Genotype {
             networks: vec![networks[0].clone(), networks[1].clone()],
+            found_components: vec![],
         };
         Ok(Agent {
             fitness: 0.0,

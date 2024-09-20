@@ -25,7 +25,7 @@ pub trait Generate {
     fn generate(&self) -> String;
 }
 
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq, Clone)]
 pub enum ComponentType {
     #[default]
     Resistor,

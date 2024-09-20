@@ -85,6 +85,16 @@ impl Position {
     }
 }
 
+impl From<Bndbox> for Position {
+    fn from(value: Bndbox) -> Self {
+        let top_left = value.top_left();
+        let bottom_right = value.bottom_right();
+        let x = bottom_right.x / 2 + top_left.x / 2;
+        let y = bottom_right.y / 2 + top_left.y / 2;
+        Position::new(x, y)
+    }
+}
+
 impl Add for Position {
     type Output = Self;
 
@@ -625,7 +635,7 @@ impl Image {
     /// checks if the bndbox is fully wrapped from the retina rectangle (inclusive edged)
     pub fn wraps_bndbox(&self, bndbox: &Bndbox, retina: &Retina) -> bool {
         let top_left_bndbox = bndbox.top_left();
-        let bottom_right_bndbox = bndbox.bottom_rigt();
+        let bottom_right_bndbox = bndbox.bottom_right();
         let top_left_retina = retina.get_top_left_position();
         let bottom_right_retina = retina.get_bottom_right_position();
         top_left_bndbox >= top_left_retina && bottom_right_bndbox <= bottom_right_retina
@@ -1220,5 +1230,18 @@ mod tests {
             ymax: String::from("95"),
         };
         assert!(!image.wraps_bndbox(&bndbox, &retina));
+    }
+
+    #[test]
+    fn from_bndbox() {
+        let bndbox = Bndbox {
+            xmin: "10".to_string(),
+            ymin: "10".to_string(),
+            xmax: "100".to_string(),
+            ymax: "100".to_string(),
+        };
+        let pos = Position::from(bndbox.clone());
+
+        assert_eq!(Position::new(55, 55), pos);
     }
 }
