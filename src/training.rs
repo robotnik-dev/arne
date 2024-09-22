@@ -106,9 +106,62 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
     (categorize_fitness + control_fitness) / 2.0f32
 }
 
-#[allow(dead_code)]
-pub fn test_agents() -> Result {
-    todo!()
+pub fn test_agents(path: String, number_of_updates: usize) -> Result {
+    let mut population = Population::from_path(path)?;
+
+    let rng = ChaCha8Rng::from_entropy();
+    let data_path = CONFIG.image_processing.testing.path as &str;
+    let mut parser = XMLParser::new();
+    let dir = std::fs::read_dir(PathBuf::from(data_path))?;
+
+    for folder in dir {
+        let drafter_path = folder?.path();
+        parser.load(drafter_path, LoadFolder::Resized, true, 0)?;
+    }
+
+    info(format!("loaded {} images", parser.loaded));
+
+    for (annotation, image) in parser.data.iter() {
+        // for each image, let the agents evaluate once
+        population
+            .agents_mut()
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(_, agent)| {
+                let fitness = agent
+                    .evaluate(
+                        fitness,
+                        &mut rng.clone(),
+                        &mut image.clone(),
+                        annotation,
+                        number_of_updates,
+                    )
+                    .unwrap();
+                agent.add_to_fitness(fitness);
+            });
+        // generate a netlist for each agent
+        population.agents_mut().iter_mut().for_each(|agent| {
+            let generated_netlist = agent.genotype().generate();
+            if let Some((_, _, netlist)) = agent
+                .statistics_mut()
+                .get_mut(&ImageLabel(annotation.filename.clone()))
+            {
+                *netlist = generated_netlist;
+            }
+        });
+
+        // generate the optimal netlist for this image
+        // TODO
+        let optimal_netlist = String::from("");
+
+        // compare each generated netlist with the optimal one and create a ranking
+        population.agents().iter().for_each(|agent| {
+            agent.statistics().iter().for_each(|(_, (_, _, netlist))| {
+                //TODO
+            });
+        });
+    }
+    Ok(())
 }
 
 pub fn train_agents(
@@ -117,7 +170,8 @@ pub fn train_agents(
     save_path: String,
     iteration: usize,
     adaptive_config: &AdaptiveConfig,
-    stuck_and_stale_check: bool,
+    stuck_check: bool,
+    stale_check: bool,
 ) -> Result {
     info(format!("{:?}", adaptive_config));
 
@@ -179,6 +233,7 @@ pub fn train_agents(
     let algorithm_bar = ProgressBar::new(max_generations);
 
     let mut average_fitness_data = vec![];
+    let mut netlists_data = vec![];
 
     //increas number of updates over time
     let mut nr_updates = number_of_network_updates;
@@ -205,16 +260,24 @@ pub fn train_agents(
                     agent.add_to_fitness(fitness);
                 });
 
-            // after one image was processed, save a netlist per image
-            population.agents_mut().par_iter_mut().for_each(|agent| {
+            // after one image was processed, save a netlist per image.
+            // The netlist will be overwritten after one generation was processed, so it is always the newest list
+            let mut netlist_count = vec![];
+            population.agents_mut().iter_mut().for_each(|agent| {
                 let generated_netlist = agent.genotype().generate();
                 if let Some((_, _, netlist)) = agent
                     .statistics_mut()
                     .get_mut(&ImageLabel(annotation.filename.clone()))
                 {
-                    *netlist = generated_netlist;
+                    *netlist = generated_netlist.clone();
+                    // adding to netlist count if the generated string is not empty
+                    if !generated_netlist.is_empty() {
+                        netlist_count.push(1);
+                    }
                 }
             });
+            // adding it to the netlist data (count is needed because of closure above, can only use vec here)
+            netlists_data.push(netlist_count.iter().count() as f32);
         }
 
         // average each agents fitness over the number of images
@@ -241,20 +304,47 @@ pub fn train_agents(
 
         // if the minimum fitness and the max fitness is the same, local maximum reached, break.
         // or when the avarage fitness is stuck for over X generations
-        if stuck_and_stale_check {
-            let stale = round3(population.agents()[0].fitness())
-                == round3(population.agents().iter().last().unwrap().fitness());
-            let avrg_of_avrg =
-                average_fitness_data.iter().sum::<f32>() / average_fitness_data.iter().len() as f32;
-            let stuck = (population.generation() as f32 / adaptive_config.max_generations as f32)
-                > avrg_of_avrg;
-            if stale || stuck {
-                if stale {
-                    info("stale");
-                }
-                if stuck {
-                    info("stuck");
-                }
+        let avrg_of_avrg =
+            average_fitness_data.iter().sum::<f32>() / average_fitness_data.iter().len() as f32;
+
+        if stale_check {
+            if round3(population.agents()[0].fitness())
+                == round3(population.agents().iter().last().unwrap().fitness())
+            {
+                info("stale");
+
+                std::fs::create_dir_all(format!("iterations/{}", iteration)).unwrap();
+                plotting::update_image(
+                    &average_fitness_data,
+                    format!("iterations/{}/fitness.png", iteration).as_str(),
+                    max_generations,
+                );
+                let out = serde_json::to_string_pretty(adaptive_config).unwrap();
+                write(
+                    format!("iterations/{}/config.json", iteration).as_str(),
+                    out,
+                )
+                .unwrap();
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("iteration_results.txt")
+                    .unwrap()
+                    .write_fmt(format_args!(
+                        "generations survived: {} ",
+                        population.generation()
+                    ))
+                    .unwrap();
+                info(format!("generations survived {}", population.generation()));
+                // break out of outer loop
+                break;
+            }
+        } else if stuck_check {
+            if (population.generation() as f32 / adaptive_config.max_generations as f32)
+                > avrg_of_avrg
+            {
+                info("stuck");
+
                 std::fs::create_dir_all(format!("iterations/{}", iteration)).unwrap();
                 plotting::update_image(
                     &average_fitness_data,
@@ -340,6 +430,14 @@ pub fn train_agents(
     plotting::update_image(
         &average_fitness_data,
         "iterations/final/fitness.png",
+        max_generations,
+    );
+
+    // save netlists over time
+    plotting::netlists_over_time(
+        &netlists_data,
+        "netlist_plot.png",
+        population_size,
         max_generations,
     );
 

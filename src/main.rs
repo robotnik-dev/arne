@@ -189,8 +189,13 @@ impl AdaptiveConfig {
     }
 }
 
+fn test_agents(mut exit: EventWriter<AppExit>) {
+    training::test_agents(String::from("agents"), 100usize).unwrap();
+    exit.send(AppExit::Success);
+}
+
 fn run_one_config(mut exit: EventWriter<AppExit>) {
-    let entity = 11;
+    let entity = CONFIG.image_processing.training.entity as usize;
     let path = CONFIG.image_processing.training.run_one_config_path as &str;
     let filepath = String::from(path).replace("x", entity.to_string().as_str());
     let adaptive_config: AdaptiveConfig =
@@ -202,6 +207,7 @@ fn run_one_config(mut exit: EventWriter<AppExit>) {
         entity,
         &adaptive_config,
         false,
+        true,
     )
     .unwrap();
     exit.send(AppExit::Success);
@@ -220,6 +226,7 @@ fn test_configs(mut exit: EventWriter<AppExit>) {
         "agents".to_string(),
         iteration,
         &adaptive_config,
+        true,
         true,
     )
     .unwrap();

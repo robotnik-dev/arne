@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use crate::annotations::Annotation;
 use crate::image::{Image, ImageLabel, Position, Retina};
-use crate::netlist::{ComponentType, Generate};
+use crate::netlist::{Component, ComponentBuilder, ComponentType, Generate, Netlist};
 use crate::neural_network::Rnn;
 use crate::{AdaptiveConfig, Error, CONFIG};
 
@@ -385,137 +385,22 @@ impl Generate for Genotype {
     fn generate(&self) -> String {
         // we have a list of found components with the boundingbox position saved (Position, ComponentType)
         // there a already only unique positions listed
+        let mut netlist = Netlist::new();
 
-        String::from("")
+        self.found_components
+            .iter()
+            .cloned()
+            .enumerate()
+            .for_each(|(idx, (_, component_type))| {
+                let component = ComponentBuilder::new(component_type, idx.to_string()).build();
+                // adding components
+                let _ = netlist.add_component(
+                    component.clone(),
+                    format!("{}{}", component.symbol, component.name),
+                );
+            });
 
-        // let resistor_neuron_idx = 4usize;
-        // let capacitor_neuron_idx = 5usize;
-        // let source_dc_neuron_idx = 3usize;
-        // let in_node_neuron_idx = 6usize;
-        // let out_node_neuron_idx = 6usize;
-
-        // let resistor_networks = self
-        //     .networks()
-        //     .iter()
-        //     .filter(|&network| {
-        //         network.neurons()[resistor_neuron_idx]
-        //             .output()
-        //             .abs_diff_eq(&1.0, 0.01)
-        //             && network.neurons()[capacitor_neuron_idx]
-        //                 .output()
-        //                 .abs_diff_eq(&0.0, 0.01)
-        //             && network.neurons()[source_dc_neuron_idx]
-        //                 .output()
-        //                 .abs_diff_eq(&0.0, 0.01)
-        //     })
-        //     .cloned()
-        //     .collect::<Vec<Rnn>>();
-
-        // let capacitor_networks = self
-        //     .networks()
-        //     .iter()
-        //     .filter(|&network| {
-        //         network.neurons()[resistor_neuron_idx]
-        //             .output()
-        //             .abs_diff_eq(&0.0, 0.01)
-        //             && network.neurons()[capacitor_neuron_idx]
-        //                 .output()
-        //                 .abs_diff_eq(&1.0, 0.01)
-        //             && network.neurons()[source_dc_neuron_idx]
-        //                 .output()
-        //                 .abs_diff_eq(&0.0, 0.01)
-        //     })
-        //     .cloned()
-        //     .collect::<Vec<Rnn>>();
-
-        // let source_dc_networks = self
-        //     .networks()
-        //     .iter()
-        //     .filter(|&network| {
-        //         network.neurons()[resistor_neuron_idx]
-        //             .output()
-        //             .abs_diff_eq(&0.0, 0.01)
-        //             && network.neurons()[capacitor_neuron_idx]
-        //                 .output()
-        //                 .abs_diff_eq(&0.0, 0.01)
-        //             && network.neurons()[source_dc_neuron_idx]
-        //                 .output()
-        //                 .abs_diff_eq(&1.0, 0.01)
-        //     })
-        //     .cloned()
-        //     .collect::<Vec<Rnn>>();
-
-        // // remove identical networks (comparison of the nodes)
-        // // only keep the ones that have unique outputs of in_nodes and out_nodes
-        // let resistor_networks = resistor_networks
-        //     .iter()
-        //     .filter(|&network| {
-        //         let in_node_output = network.neurons()[in_node_neuron_idx].output();
-        //         let out_node_output = network.neurons()[out_node_neuron_idx].output();
-        //         resistor_networks.iter().all(|other_network| {
-        //             let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-        //             let other_out_node_output =
-        //                 other_network.neurons()[out_node_neuron_idx].output();
-        //             in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
-        //                 && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
-        //         })
-        //     })
-        //     .cloned()
-        //     .collect::<Vec<Rnn>>();
-
-        // let capacitor_networks = capacitor_networks
-        //     .iter()
-        //     .filter(|&network| {
-        //         let in_node_output = network.neurons()[in_node_neuron_idx].output();
-        //         let out_node_output = network.neurons()[out_node_neuron_idx].output();
-        //         capacitor_networks.iter().all(|other_network| {
-        //             let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-        //             let other_out_node_output =
-        //                 other_network.neurons()[out_node_neuron_idx].output();
-        //             in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
-        //                 && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
-        //         })
-        //     })
-        //     .cloned()
-        //     .collect::<Vec<Rnn>>();
-
-        // let source_dc_networks = source_dc_networks
-        //     .iter()
-        //     .filter(|&network| {
-        //         let in_node_output = network.neurons()[in_node_neuron_idx].output();
-        //         let out_node_output = network.neurons()[out_node_neuron_idx].output();
-        //         source_dc_networks.iter().all(|other_network| {
-        //             let other_in_node_output = other_network.neurons()[in_node_neuron_idx].output();
-        //             let other_out_node_output =
-        //                 other_network.neurons()[out_node_neuron_idx].output();
-        //             in_node_output.abs_diff_eq(&other_in_node_output, 0.01)
-        //                 && out_node_output.abs_diff_eq(&other_out_node_output, 0.01)
-        //         })
-        //     })
-        //     .cloned()
-        //     .collect::<Vec<Rnn>>();
-
-        // // creating netlist
-        // let mut netlist = Netlist::new();
-
-        // // generate components
-        // resistor_networks
-        //     .iter()
-        //     .enumerate()
-        //     .for_each(|(i, network)| {
-        //         let mut component =
-        //             ComponentBuilder::new(ComponentType::Resistor, i.to_string()).build();
-        //         let in_node = network.neurons()[in_node_neuron_idx].output().abs()
-        //             * CONFIG.genetic_algorithm.node_range as f32;
-        //         let out_node = network.neurons()[out_node_neuron_idx].output().abs()
-        //             * CONFIG.genetic_algorithm.node_range as f32;
-        //         component.add_node(Node(in_node as u32), NodeType::In);
-        //         component.add_node(Node(out_node as u32), NodeType::Out);
-        //         let _ = netlist.add_component(
-        //             component.clone(),
-        //             format!("{}{}", component.symbol, component.name),
-        //         );
-        //     });
+        netlist.generate()
         // capacitor_networks
         //     .iter()
         //     .enumerate()
@@ -533,25 +418,6 @@ impl Generate for Genotype {
         //             format!("{}{}", component.symbol, component.name),
         //         );
         //     });
-        // source_dc_networks
-        //     .iter()
-        //     .enumerate()
-        //     .for_each(|(i, network)| {
-        //         let mut component =
-        //             ComponentBuilder::new(ComponentType::VoltageSourceDc, i.to_string()).build();
-        //         // the in_node is always ground
-        //         let in_node = 0.0f32;
-        //         let out_node = network.neurons()[out_node_neuron_idx].output().abs()
-        //             * CONFIG.genetic_algorithm.node_range as f32;
-        //         component.add_node(Node(in_node as u32), NodeType::In);
-        //         component.add_node(Node(out_node as u32), NodeType::Out);
-        //         let _ = netlist.add_component(
-        //             component.clone(),
-        //             format!("{}{}", component.symbol, component.name),
-        //         );
-        //     });
-
-        // netlist.generate()
     }
 }
 
