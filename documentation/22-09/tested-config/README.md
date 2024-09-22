@@ -1,0 +1,1 @@
+Mit nur einem Bild
