@@ -1,3 +1,4 @@
+use annotations::XMLParser;
 use bevy::{log::LogPlugin, prelude::*, utils::info};
 use clap::Parser;
 use image::TrainingStage;
@@ -11,6 +12,7 @@ use std::{
     fmt::Display,
     fs::read_to_string,
     io::{self, Write},
+    path::PathBuf,
 };
 
 mod utils;
@@ -49,21 +51,9 @@ struct Args {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        // .add_systems(Startup, test_configs)
+        // .add_systems(Startup, preprocess)
         .add_systems(Startup, run_one_config)
         .run();
-
-    // env_logger::init();
-
-    // let args = Args::parse();
-
-    // // HACK: just run this once and delete when all are preprocessed
-    // if args.count == 99 {
-    //     // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_1"))?;
-    //     // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_2"))?;
-    //     // XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_3"))?;
-    //     return;
-    // }
 
     // if args.count == 0 {
     //     training::train_agents(
@@ -187,6 +177,16 @@ impl AdaptiveConfig {
         self.tournament_size = rng.gen_range(2..self.initial_population_size);
         self.init_zero_retina_weights = rng.gen_range(0.1..=0.9);
     }
+}
+
+fn preprocess(mut exit: EventWriter<AppExit>) {
+    XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_1")).unwrap();
+    XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_2")).unwrap();
+    XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_3")).unwrap();
+    XMLParser::resize_segmented_images(PathBuf::from("data/testing/drafter_5")).unwrap();
+    XMLParser::resize_segmented_images(PathBuf::from("data/testing/drafter_6")).unwrap();
+    XMLParser::resize_segmented_images(PathBuf::from("data/testing/drafter_6")).unwrap();
+    exit.send(AppExit::Success);
 }
 
 fn test_agents(mut exit: EventWriter<AppExit>) {

@@ -96,6 +96,8 @@ impl XMLParser {
                     let image_entry = image_entry?;
                     let filename = image_entry.file_name().to_string_lossy().into_owned();
                     let mut image = Image::from_path_raw(image_entry.path())?;
+
+                    // resize in regards of correct aspect ratio
                     let (width, height) = match image.format {
                         ImageFormat::Landscape => (
                             CONFIG.image_processing.goal_image_width as u32,
@@ -107,6 +109,13 @@ impl XMLParser {
                         ),
                     };
                     image.resize_all(width, height)?;
+
+                    // rotate all the images that are in Portait format to get all images in the landscape format
+                    if image.format == ImageFormat::Portrait {
+                        image.rotate90();
+                        image.format = ImageFormat::Landscape;
+                    };
+
                     image.save_grey(PathBuf::from(format!(
                         "{}/{}",
                         resized_path.clone(),

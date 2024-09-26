@@ -1,4 +1,4 @@
-use image::imageops::resize;
+use image::imageops::{resize, rotate90};
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
 use nalgebra::clamp;
@@ -149,7 +149,7 @@ impl Div<i32> for Position {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ImageFormat {
     Landscape,
     Portrait,
@@ -296,6 +296,12 @@ impl Image {
                 CONFIG.image_processing.erode_pixels as u8,
             )?;
         Ok(())
+    }
+
+    /// rotates the image clockwise
+    pub fn rotate90(&mut self) {
+        self.grey = rotate90(&self.grey);
+        self.rgba = rotate90(&self.rgba);
     }
 
     pub fn binarize(&mut self) -> Result {
