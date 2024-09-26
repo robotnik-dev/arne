@@ -52,7 +52,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         // .add_systems(Startup, preprocess)
-        .add_systems(Startup, run_one_config)
+        .add_systems(Startup, test_configs)
         .run();
 
     // if args.count == 0 {
@@ -100,19 +100,13 @@ impl Into<Box<dyn StdError>> for LocalMaximumError {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct AdaptiveConfig {
     pub number_of_network_updates: usize,
-    // not configurable
     pub neuron_lower: f32,
-    // not configurable
     pub neuron_upper: f32,
-    // not configurable
     pub retina_lower: f32,
-    // not configurable
     pub retina_upper: f32,
-    // not configurable
-    pub init_zero_retina_weights: f32,
+    pub init_non_zero_retina_weights: f32,
     pub initial_population_size: usize,
-    pub max_generations: u64,
-    // not configurable
+    pub max_generations: u64, // NOT configurable
     pub tournament_size: usize,
     pub variance: f32,
     pub variance_decay: f32,
@@ -135,8 +129,10 @@ impl AdaptiveConfig {
             neuron_upper: CONFIG.neural_network.weight_bounds.neuron_upper as f32,
             retina_lower: CONFIG.neural_network.weight_bounds.retina_lower as f32,
             retina_upper: CONFIG.neural_network.weight_bounds.retina_upper as f32,
-            init_zero_retina_weights: CONFIG.neural_network.weight_bounds.init_zero_retina_weights
-                as f32,
+            init_non_zero_retina_weights: CONFIG
+                .neural_network
+                .weight_bounds
+                .init_non_zero_retina_weights as f32,
             initial_population_size: CONFIG.genetic_algorithm.initial_population_size as usize,
             max_generations: CONFIG.genetic_algorithm.max_generations as u64,
             tournament_size: CONFIG.genetic_algorithm.tournament_size as usize,
@@ -161,21 +157,27 @@ impl AdaptiveConfig {
     }
 
     fn randomize(&mut self, rng: &mut dyn RngCore) {
+        // change here the max generations for every iteration loop
+        self.max_generations = 8000;
         self.number_of_network_updates = rng.gen_range(20..=200);
+        self.neuron_lower = rng.gen_range(-10.0..=-1.0);
+        self.neuron_upper = rng.gen_range(1.0..=10.0);
+        self.retina_lower = rng.gen_range(-10.0..=-1.0);
+        self.retina_upper = rng.gen_range(1.0..=10.0);
+        self.init_non_zero_retina_weights = rng.gen_range(0.01..=0.5);
         self.initial_population_size = rng.gen_range(50..=500);
-        self.variance = rng.gen_range(0.0..=1.0);
-        self.variance_decay = rng.gen_range(0.95..=0.99);
-        self.mean = rng.gen_range(0.0..=1.0);
-        self.delete_neuron = rng.gen_range(0.0..=1.0);
-        self.delete_weights = rng.gen_range(0.0..=1.0);
-        self.delete_bias = rng.gen_range(0.0..=1.0);
-        self.delete_self_activation = rng.gen_range(0.0..=1.0);
-        self.mutate_neuron = rng.gen_range(0.0..=1.0);
-        self.mutate_weights = rng.gen_range(0.0..=1.0);
-        self.mutate_bias = rng.gen_range(0.0..=1.0);
-        self.mutate_self_activation = rng.gen_range(0.0..=1.0);
         self.tournament_size = rng.gen_range(2..self.initial_population_size);
-        self.init_zero_retina_weights = rng.gen_range(0.1..=0.9);
+        self.variance = rng.gen_range(0.05..=0.5);
+        self.variance_decay = rng.gen_range(0.95..=0.99);
+        self.mean = rng.gen_range(0.0..=0.5);
+        self.delete_neuron = rng.gen_range(0.0..=0.9);
+        self.delete_weights = rng.gen_range(0.0..=0.9);
+        self.delete_bias = rng.gen_range(0.0..=0.9);
+        self.delete_self_activation = rng.gen_range(0.0..=0.9);
+        self.mutate_neuron = rng.gen_range(0.0..=0.9);
+        self.mutate_weights = rng.gen_range(0.0..=0.9);
+        self.mutate_bias = rng.gen_range(0.0..=0.9);
+        self.mutate_self_activation = rng.gen_range(0.0..=0.9);
     }
 }
 
@@ -195,16 +197,16 @@ fn test_agents(mut exit: EventWriter<AppExit>) {
 }
 
 fn run_one_config(mut exit: EventWriter<AppExit>) {
-    let entity = CONFIG.image_processing.training.entity as usize;
-    let path = CONFIG.image_processing.training.run_one_config_path as &str;
-    let filepath = String::from(path).replace("x", entity.to_string().as_str());
+    // let entity = CONFIG.image_processing.training.entity as usize;
+    // let path = CONFIG.image_processing.training.run_one_config_path as &str;
+    let filepath = String::from("meta/current_config.json");
     let adaptive_config: AdaptiveConfig =
         from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
     training::train_agents(
         TrainingStage::Artificial { stage: 0 },
         None,
         String::from("agents"),
-        entity,
+        0,
         &adaptive_config,
         false,
         true,
@@ -214,41 +216,34 @@ fn run_one_config(mut exit: EventWriter<AppExit>) {
 }
 
 fn test_configs(mut exit: EventWriter<AppExit>) {
-    let max_iterations = 10000;
+    let max_iterations = 100;
     let mut rng = ChaCha8Rng::from_entropy();
     let _ = std::fs::remove_dir_all("iterations");
     let _ = std::fs::remove_file("iteration_results.txt");
     let mut iteration = 0usize;
     let mut adaptive_config = AdaptiveConfig::new();
-    training::train_agents(
-        TrainingStage::Artificial { stage: 0 },
-        None,
-        "agents".to_string(),
-        iteration,
-        &adaptive_config,
-        true,
-        true,
-    )
-    .unwrap();
-    // {
-    //     if iteration >= max_iterations {
-    //         break;
-    //     }
-    //     // tweak configuration
-    //     adaptive_config.randomize(&mut rng);
+    adaptive_config.randomize(&mut rng);
+    loop {
+        training::train_agents(
+            TrainingStage::Artificial { stage: 0 },
+            None,
+            format!("iterations/{}/agents", iteration),
+            iteration,
+            &adaptive_config,
+            true,
+            true,
+        )
+        .unwrap();
 
-    //     std::fs::OpenOptions::new()
-    //         .create(true)
-    //         .append(true)
-    //         .open("iteration_results.txt")
-    //         .unwrap()
-    //         .write_fmt(format_args!("iteration: {}\n", iteration))
-    //         .unwrap();
+        if iteration >= max_iterations {
+            break;
+        }
 
-    //     info(format!("iteration: {}", iteration));
+        // tweak configuration
+        adaptive_config.randomize(&mut rng);
 
-    //     iteration += 1;
-    // }
+        iteration += 1;
+    }
     exit.send(AppExit::Success);
 }
 

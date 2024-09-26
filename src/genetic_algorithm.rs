@@ -186,12 +186,18 @@ pub struct Population {
 }
 
 impl Population {
-    pub fn new(progress_bar: &ProgressBar, size: usize) -> Self {
+    pub fn new(progress_bar: &ProgressBar, size: usize, adaptive_config: &AdaptiveConfig) -> Self {
         let agents = (0..size)
             .into_par_iter()
             .map(|_| {
                 progress_bar.inc(1);
-                Agent::new()
+                Agent::new(
+                    adaptive_config.neuron_lower,
+                    adaptive_config.neuron_upper,
+                    adaptive_config.retina_lower,
+                    adaptive_config.retina_upper,
+                    adaptive_config.init_non_zero_retina_weights,
+                )
             })
             .collect();
         Population {
@@ -311,11 +317,31 @@ pub struct Genotype {
 }
 
 impl Genotype {
-    pub fn new(rng: &mut dyn RngCore) -> Self {
-        let control_network = Rnn::new(rng, CONFIG.neural_network.control_network_neurons as usize);
+    pub fn new(
+        rng: &mut dyn RngCore,
+        neuron_lower: f32,
+        neuron_upper: f32,
+        retina_lower: f32,
+        retina_upper: f32,
+        init_non_zero: f32,
+    ) -> Self {
+        let control_network = Rnn::new(
+            rng,
+            CONFIG.neural_network.control_network_neurons as usize,
+            neuron_lower,
+            neuron_upper,
+            retina_lower,
+            retina_upper,
+            init_non_zero,
+        );
         let categorize_network = Rnn::new(
             rng,
             CONFIG.neural_network.categorize_network_neurons as usize,
+            neuron_lower,
+            neuron_upper,
+            retina_lower,
+            retina_upper,
+            init_non_zero,
         );
         Genotype {
             networks: vec![control_network, categorize_network],
@@ -444,18 +470,31 @@ impl Clone for Agent {
     }
 }
 
-impl Default for Agent {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl Default for Agent {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
 
 impl Agent {
-    pub fn new() -> Self {
+    pub fn new(
+        neuron_lower: f32,
+        neuron_upper: f32,
+        retina_lower: f32,
+        retina_upper: f32,
+        init_non_zero: f32,
+    ) -> Self {
         let mut rng = ChaCha8Rng::from_entropy();
         Agent {
             fitness: 0.0,
-            genotype: Genotype::new(&mut rng),
+            genotype: Genotype::new(
+                &mut rng,
+                neuron_lower,
+                neuron_upper,
+                retina_lower,
+                retina_upper,
+                init_non_zero,
+            ),
             // top left
             retina_start_pos: Position::new(
                 CONFIG.image_processing.retina_size as i32,

@@ -234,25 +234,43 @@ impl From<Graph<(usize, f32), f32>> for Rnn {
 }
 
 impl Rnn {
-    pub fn new(rng: &mut dyn RngCore, neuron_count: usize) -> Self {
+    pub fn new(
+        rng: &mut dyn RngCore,
+        neuron_count: usize,
+        neuron_lower: f32,
+        neuron_upper: f32,
+        retina_lower: f32,
+        retina_upper: f32,
+        init_non_zero: f32,
+    ) -> Self {
         let mut neurons = vec![];
 
+        // connect all neurons with each other
+        // let (lower, upper) = (
+        //     CONFIG.neural_network.weight_bounds.neuron_lower as f32,
+        //     CONFIG.neural_network.weight_bounds.neuron_upper as f32,
+        // );
+
         for i in 0..neuron_count {
-            let neuron = Neuron::new(rng, i, neuron_count);
+            let neuron = Neuron::new(
+                rng,
+                i,
+                neuron_count,
+                neuron_lower,
+                neuron_upper,
+                retina_lower,
+                retina_upper,
+                init_non_zero,
+            );
             neurons.push(neuron);
         }
 
-        // connect all neurons with each other
-        let (lower, upper) = (
-            CONFIG.neural_network.weight_bounds.neuron_lower as f32,
-            CONFIG.neural_network.weight_bounds.neuron_upper as f32,
-        );
         neurons.iter_mut().enumerate().for_each(|(index, neuron)| {
             for i in 0..neuron_count {
                 if i != index {
                     neuron
                         .input_connections_mut()
-                        .push((i, rng.gen_range(lower..=upper)));
+                        .push((i, rng.gen_range(neuron_lower..=neuron_upper)));
                 }
             }
         });
@@ -651,19 +669,27 @@ impl PartialEq for Neuron {
 }
 
 impl Neuron {
-    pub fn new(rng: &mut dyn RngCore, index: usize, _neuron_count: usize) -> Self {
-        let (retina_lower, retina_upper) = (
-            CONFIG.neural_network.weight_bounds.retina_lower as f32,
-            CONFIG.neural_network.weight_bounds.retina_upper as f32,
-        );
+    pub fn new(
+        rng: &mut dyn RngCore,
+        index: usize,
+        _neuron_count: usize,
+        neuron_lower: f32,
+        neuron_upper: f32,
+        retina_lower: f32,
+        retina_upper: f32,
+        init_non_zero: f32,
+    ) -> Self {
+        // let (retina_lower, retina_upper) = (
+        //     CONFIG.neural_network.weight_bounds.retina_lower as f32,
+        //     CONFIG.neural_network.weight_bounds.retina_upper as f32,
+        // );
         // maximal buffer size is the superpixel_size^2
         let superpixel_size = CONFIG.image_processing.superpixel_size as usize;
         let retina_size = CONFIG.image_processing.retina_size as usize;
         let retina_weights = (0..(retina_size / superpixel_size).pow(2))
             // set 90 % of retina weights to 0
             .map(|_| {
-                if rng.gen_bool(CONFIG.neural_network.weight_bounds.init_zero_retina_weights as f64)
-                {
+                if rng.gen_bool(init_non_zero as f64) {
                     rng.gen_range(retina_lower..=retina_upper)
                 } else {
                     0.0
@@ -672,10 +698,10 @@ impl Neuron {
             .collect::<Vec<f32>>();
 
         // let (lower, upper) = (-1.0 / (neuron_count as f32).sqrt(), 1.0 / (neuron_count as f32).sqrt());
-        let (neuron_lower, neuron_upper) = (
-            CONFIG.neural_network.weight_bounds.neuron_lower as f32,
-            CONFIG.neural_network.weight_bounds.neuron_upper as f32,
-        );
+        // let (neuron_lower, neuron_upper) = (
+        //     CONFIG.neural_network.weight_bounds.neuron_lower as f32,
+        //     CONFIG.neural_network.weight_bounds.neuron_upper as f32,
+        // );
         Neuron {
             index,
             output: 0.,
@@ -776,8 +802,22 @@ mod tests {
         // after each update create a snapshot
         // check if the snapshots are correct
 
+        let neuron_lower = -4.0;
+        let neuron_upper = 4.0;
+        let retina_lower = -4.0;
+        let retina_upper = 4.0;
+        let init_non_zero = 0.1;
+
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(&mut rng, 3);
+        let mut rnn = Rnn::new(
+            &mut rng,
+            3,
+            neuron_lower,
+            neuron_upper,
+            retina_lower,
+            retina_upper,
+            init_non_zero,
+        );
         rnn.neurons_mut()[0].output = 0.97;
         rnn.neurons_mut()[1].output = 0.88;
         rnn.neurons_mut()[2].output = 0.39;
@@ -871,9 +911,21 @@ mod tests {
         use rand::prelude::*;
         use rand_chacha::ChaCha8Rng;
 
+        let neuron_lower = -4.0;
+        let neuron_upper = 4.0;
+        let retina_lower = -4.0;
+        let retina_upper = 4.0;
+        let init_non_zero = 0.1;
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-
-        let mut rnn = Rnn::new(&mut rng, 3);
+        let mut rnn = Rnn::new(
+            &mut rng,
+            3,
+            neuron_lower,
+            neuron_upper,
+            retina_lower,
+            retina_upper,
+            init_non_zero,
+        );
         rnn.neurons_mut().iter_mut().for_each(|neuron| {
             neuron
                 .input_connections_mut()
@@ -959,8 +1011,21 @@ mod tests {
 
     #[test]
     fn test_rnn_to_graph_conversion_and_back() {
+        let neuron_lower = -4.0;
+        let neuron_upper = 4.0;
+        let retina_lower = -4.0;
+        let retina_upper = 4.0;
+        let init_non_zero = 0.1;
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let rnn = Rnn::new(&mut rng, 3);
+        let mut rnn = Rnn::new(
+            &mut rng,
+            3,
+            neuron_lower,
+            neuron_upper,
+            retina_lower,
+            retina_upper,
+            init_non_zero,
+        );
 
         let graph = Graph::<(usize, f32), f32>::from(rnn.clone());
         let rnn2 = Rnn::from(graph.clone());
@@ -970,8 +1035,21 @@ mod tests {
 
     #[test]
     fn test_retina_weights_and_inputs_same_size() {
+        let neuron_lower = -4.0;
+        let neuron_upper = 4.0;
+        let retina_lower = -4.0;
+        let retina_upper = 4.0;
+        let init_non_zero = 0.1;
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(&mut rng, 3);
+        let mut rnn = Rnn::new(
+            &mut rng,
+            3,
+            neuron_lower,
+            neuron_upper,
+            retina_lower,
+            retina_upper,
+            init_non_zero,
+        );
         let image = Image::from_vec(vec![0.0; 1001 * 1001]).unwrap();
         let retina = image
             .create_retina_at(
@@ -989,8 +1067,21 @@ mod tests {
 
     #[test]
     fn test_load_json() {
+        let neuron_lower = -4.0;
+        let neuron_upper = 4.0;
+        let retina_lower = -4.0;
+        let retina_upper = 4.0;
+        let init_non_zero = 0.1;
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut rnn = Rnn::new(&mut rng, 3);
+        let mut rnn = Rnn::new(
+            &mut rng,
+            3,
+            neuron_lower,
+            neuron_upper,
+            retina_lower,
+            retina_upper,
+            init_non_zero,
+        );
         let image = Image::from_vec(vec![0.0; 320 * 320]).unwrap();
         let retina = image
             .create_retina_at(Position::new(160, 120), 35, 7, "test".to_string())

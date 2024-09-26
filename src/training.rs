@@ -196,7 +196,7 @@ pub fn train_agents(
     let mut population = if load_path.is_some() {
         Population::from_path(load_path.unwrap())?
     } else {
-        Population::new(&population_bar, population_size)
+        Population::new(&population_bar, population_size, adaptive_config)
     };
     population_bar.finish();
 
@@ -335,6 +335,13 @@ pub fn train_agents(
                         population.generation()
                     ))
                     .unwrap();
+                // save netlists over time
+                plotting::netlists_over_time(
+                    &netlists_data,
+                    format!("iterations/{}/netlist_plot.png", iteration).as_str(),
+                    population_size,
+                    max_generations,
+                );
                 info(format!("generations survived {}", population.generation()));
                 // break out of outer loop
                 break;
@@ -368,6 +375,13 @@ pub fn train_agents(
                     ))
                     .unwrap();
                 info(format!("generations survived {}", population.generation()));
+                // save netlists over time
+                plotting::netlists_over_time(
+                    &netlists_data,
+                    format!("iterations/{}/netlist_plot.png", iteration).as_str(),
+                    population_size,
+                    max_generations,
+                );
                 // break out of outer loop
                 break;
             }
@@ -424,19 +438,44 @@ pub fn train_agents(
     }
     algorithm_bar.finish_and_clear();
 
-    std::fs::create_dir_all(format!("iterations/final")).unwrap();
-    let out = serde_json::to_string_pretty(adaptive_config).unwrap();
-    write("iterations/final/config.json", out).unwrap();
+    // save fitness and configuration the same way as it where stuck or stale
+    std::fs::create_dir_all(format!("iterations/{}", iteration)).unwrap();
     plotting::update_image(
         &average_fitness_data,
-        "iterations/final/fitness.png",
+        format!("iterations/{}/fitness.png", iteration).as_str(),
         max_generations,
     );
+    let out = serde_json::to_string_pretty(adaptive_config).unwrap();
+    write(
+        format!("iterations/{}/config.json", iteration).as_str(),
+        out,
+    )
+    .unwrap();
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("iteration_results.txt")
+        .unwrap()
+        .write_fmt(format_args!(
+            "generations survived: {} ",
+            population.generation()
+        ))
+        .unwrap();
+    info(format!("generations survived {}", population.generation()));
+
+    // std::fs::create_dir_all(format!("iterations/final")).unwrap();
+    // let out = serde_json::to_string_pretty(adaptive_config).unwrap();
+    // write("iterations/final/config.json", out).unwrap();
+    // plotting::update_image(
+    //     &average_fitness_data,
+    //     "iterations/final/fitness.png",
+    //     max_generations,
+    // );
 
     // save netlists over time
     plotting::netlists_over_time(
         &netlists_data,
-        "netlist_plot.png",
+        format!("iterations/{}/netlist_plot.png", iteration).as_str(),
         population_size,
         max_generations,
     );
