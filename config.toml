@@ -16,9 +16,6 @@ path = "data/training"
 load_all = false 
 # if all == false, how many to load
 load_amount = 1
-run_one_config_path = "documentation/10-09/best-iterations/x/config.json"
-# name of the folder replace the 'x' above with
-entity = 11
 
 [image_processing.testing]
 path = "data/testing"
@@ -32,38 +29,8 @@ control_network_neurons = 2
 # The more neurons, the more components can be categorized
 categorize_network_neurons = 3
 retina_movement_speed = 40.0
-# increases the number of updates
-number_of_network_updates = 100 
-increase = false
-increase_every_generations = 10
-by_amount = 1
-
-[neural_network.weight_bounds]
-neuron_lower = -4.0
-neuron_upper = 4.0
-retina_lower = -4.0
-retina_upper = 4.0
-# percentage of non-zero weights at initialization
-init_non_zero_retina_weights = 0.3
 
 [genetic_algorithm]
 with_seed = false
 seed = 1024
 goal_fitness = 0.95
-initial_population_size = 50
-max_generations = 500
-# minimum size is 2
-tournament_size = 5 
-
-[genetic_algorithm.mutation_rates]
-variance = 0.2
-variance_decay = 1.0
-mean = 0.0
-delete_neuron = 0.0
-delete_weights = 0.05
-delete_bias = 0.05
-delete_self_activation = 0.05
-mutate_neuron = 0.0
-mutate_weights = 0.3
-mutate_bias = 0.3
-mutate_self_activation = 0.3

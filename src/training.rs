@@ -18,6 +18,9 @@ use rayon::prelude::*;
 use serde::Serialize;
 
 fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &Image) -> f32 {
+    // the output of one neuron needs to exceed this value to count as active
+    let active_threshold = 0.95;
+
     let source_dc_neuron_idx = 0usize;
     let resistor_neuron_idx = 1usize;
     let capacitor_neuron_idx = 2usize;
@@ -33,13 +36,13 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
             // And lastly we check if the corresponding neuron is active for this component and every other neuron is inactive
             if component == "resistor".to_string() {
                 if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
-                    >= 1.0
+                    >= active_threshold
                     && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
                         .output()
-                        <= -1.0
+                        <= -active_threshold
                     && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
                         .output()
-                        <= -1.0
+                        <= -active_threshold
                     // dont add duplicate
                     && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(obj.bndbox.clone()))
                 {
@@ -51,13 +54,13 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                 }
             } else if component == "voltage".to_string() {
                 if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
-                    <= -1.0
+                    <= -active_threshold
                     && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
                         .output()
-                        >= 1.0
+                        >= active_threshold
                     && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
                         .output()
-                        <= -1.0
+                        <= -active_threshold
                     // dont add duplicate
                     && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(obj.bndbox.clone()))
                 {
@@ -69,13 +72,13 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                 }
             } else if component == "capacitor".to_string() {
                 if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
-                    <= -1.0
+                    <= -active_threshold
                     && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
                         .output()
-                        <= -1.0
+                        <= -active_threshold
                     && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
                         .output()
-                        >= 1.0
+                        >= active_threshold
                     // dont add duplicate
                     && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(obj.bndbox.clone()))
                 {
@@ -85,23 +88,23 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                         ComponentType::Capacitor,
                     );
                 }
-            } else {
-                // nothing in the retina should gain fitness when every neuron is inactive
-                if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
-                    <= -1.0
-                    && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
-                        .output()
-                        <= -1.0
-                    && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
-                        .output()
-                        <= -1.0
-                {
-                    categorize_fitness = 1f32;
-                }
-            }
+            } 
+            // else {
+            //     // nothing in the retina should gain fitness when every neuron is inactive
+            //     if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+            //         <= -active_threshold
+            //         && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+            //             .output()
+            //             <= -active_threshold
+            //         && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+            //             .output()
+            //             <= -active_threshold
+            //     {
+            //         categorize_fitness = 1f32;
+            //     }
+            // }
         }
     });
-
     let control_fitness = retina.percentage_visited();
     (categorize_fitness + control_fitness) / 2.0f32
 }
@@ -346,8 +349,9 @@ pub fn train_agents(
                 // break out of outer loop
                 break;
             }
-        } else if stuck_check {
-            if (population.generation() as f32 / adaptive_config.max_generations as f32)
+        }
+        if stuck_check {
+            if (population.generation() as f32 / adaptive_config.max_generations as f32) * 0.5
                 > avrg_of_avrg
             {
                 info("stuck");
@@ -370,7 +374,8 @@ pub fn train_agents(
                     .open("iteration_results.txt")
                     .unwrap()
                     .write_fmt(format_args!(
-                        "generations survived: {} ",
+                        "iteration: {} - generations survived: {} \n",
+                        iteration,
                         population.generation()
                     ))
                     .unwrap();
@@ -385,7 +390,8 @@ pub fn train_agents(
                 // break out of outer loop
                 break;
             }
-        } else {
+        }
+        if !stale_check && !stuck_check {
             // save average fitness nonetheless
             std::fs::create_dir_all(format!("best_iterations/{}", iteration)).unwrap();
             plotting::update_image(
@@ -429,12 +435,6 @@ pub fn train_agents(
 
         // evolve the population
         population.evolve(new_agents, &mut rng, population_size);
-
-        if population.generation() % CONFIG.neural_network.increase_every_generations as u32 == 0
-            && CONFIG.neural_network.increase as bool
-        {
-            nr_updates += CONFIG.neural_network.by_amount as usize;
-        }
     }
     algorithm_bar.finish_and_clear();
 
@@ -499,10 +499,10 @@ pub fn train_agents(
                 .genotype()
                 .control_network()
                 .short_term_memory()
-                .visualize(format!(
-                    "{}/{}/{}/memory.png",
-                    save_path, agent_folder, folder_name
-                ))
+                .visualize(
+                    format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name),
+                    adaptive_config.number_of_network_updates,
+                )
                 .unwrap();
             agent
                 .genotype_mut()
@@ -529,10 +529,10 @@ pub fn train_agents(
                 .genotype()
                 .categorize_network()
                 .short_term_memory()
-                .visualize(format!(
-                    "{}/{}/{}/memory.png",
-                    save_path, agent_folder, folder_name
-                ))
+                .visualize(
+                    format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name,),
+                    adaptive_config.number_of_network_updates,
+                )
                 .unwrap();
             agent
                 .genotype_mut()

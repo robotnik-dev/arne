@@ -52,34 +52,9 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         // .add_systems(Startup, preprocess)
-        .add_systems(Startup, test_configs)
+        // .add_systems(Startup, test_configs)
+        .add_systems(Startup, run_one_config)
         .run();
-
-    // if args.count == 0 {
-    //     training::train_agents(
-    //         TrainingStage::Artificial { stage: 0 },
-    //         None,
-    //         "agents".to_string(),
-    //     )
-    //     .unwrap();
-    //     // train first iteration of agents that every other tage builds upon
-    // } else {
-    //     std::fs::remove_dir_all("agents_trained".to_string()).unwrap_or_default();
-    //     for i in 0..args.count {
-    //         let load_path = if i == 0 {
-    //             "agents".to_string()
-    //         } else {
-    //             format!("agents_trained/agents_stage_{}", i - 1)
-    //         };
-    //         let save_path = format!("agents_trained/agents_stage_{}", i);
-    //         training::train_agents(
-    //             TrainingStage::Artificial { stage: 0 },
-    //             Some(load_path),
-    //             save_path,
-    //         )
-    //         .unwrap();
-    //     }
-    // }
 }
 
 #[derive(Debug)]
@@ -124,60 +99,51 @@ pub struct AdaptiveConfig {
 impl AdaptiveConfig {
     fn new() -> Self {
         AdaptiveConfig {
-            number_of_network_updates: CONFIG.neural_network.number_of_network_updates as usize,
-            neuron_lower: CONFIG.neural_network.weight_bounds.neuron_lower as f32,
-            neuron_upper: CONFIG.neural_network.weight_bounds.neuron_upper as f32,
-            retina_lower: CONFIG.neural_network.weight_bounds.retina_lower as f32,
-            retina_upper: CONFIG.neural_network.weight_bounds.retina_upper as f32,
-            init_non_zero_retina_weights: CONFIG
-                .neural_network
-                .weight_bounds
-                .init_non_zero_retina_weights as f32,
-            initial_population_size: CONFIG.genetic_algorithm.initial_population_size as usize,
-            max_generations: CONFIG.genetic_algorithm.max_generations as u64,
-            tournament_size: CONFIG.genetic_algorithm.tournament_size as usize,
-            variance: CONFIG.genetic_algorithm.mutation_rates.variance as f32,
-            variance_decay: CONFIG.genetic_algorithm.mutation_rates.variance_decay as f32,
-            mean: CONFIG.genetic_algorithm.mutation_rates.mean as f32,
-            delete_neuron: CONFIG.genetic_algorithm.mutation_rates.delete_neuron as f32,
-            delete_weights: CONFIG.genetic_algorithm.mutation_rates.delete_weights as f32,
-            delete_bias: CONFIG.genetic_algorithm.mutation_rates.delete_bias as f32,
-            delete_self_activation: CONFIG
-                .genetic_algorithm
-                .mutation_rates
-                .delete_self_activation as f32,
-            mutate_neuron: CONFIG.genetic_algorithm.mutation_rates.mutate_neuron as f32,
-            mutate_weights: CONFIG.genetic_algorithm.mutation_rates.mutate_weights as f32,
-            mutate_bias: CONFIG.genetic_algorithm.mutation_rates.mutate_bias as f32,
-            mutate_self_activation: CONFIG
-                .genetic_algorithm
-                .mutation_rates
-                .mutate_self_activation as f32,
+            number_of_network_updates: usize::default(),
+            neuron_lower: f32::default(),
+            neuron_upper: f32::default(),
+            retina_lower: f32::default(),
+            retina_upper: f32::default(),
+            init_non_zero_retina_weights: f32::default(),
+            initial_population_size: usize::default(),
+            max_generations: u64::default(),
+            tournament_size: usize::default(),
+            variance: f32::default(),
+            variance_decay: f32::default(),
+            mean: f32::default(),
+            delete_neuron: f32::default(),
+            delete_weights: f32::default(),
+            delete_bias: f32::default(),
+            delete_self_activation: f32::default(),
+            mutate_neuron: f32::default(),
+            mutate_weights: f32::default(),
+            mutate_bias: f32::default(),
+            mutate_self_activation: f32::default(),
         }
     }
 
     fn randomize(&mut self, rng: &mut dyn RngCore) {
         // change here the max generations for every iteration loop
-        self.max_generations = 8000;
-        self.number_of_network_updates = rng.gen_range(20..=200);
-        self.neuron_lower = rng.gen_range(-10.0..=-1.0);
-        self.neuron_upper = rng.gen_range(1.0..=10.0);
-        self.retina_lower = rng.gen_range(-10.0..=-1.0);
-        self.retina_upper = rng.gen_range(1.0..=10.0);
-        self.init_non_zero_retina_weights = rng.gen_range(0.01..=0.5);
-        self.initial_population_size = rng.gen_range(50..=500);
-        self.tournament_size = rng.gen_range(2..self.initial_population_size);
-        self.variance = rng.gen_range(0.05..=0.5);
-        self.variance_decay = rng.gen_range(0.95..=0.99);
-        self.mean = rng.gen_range(0.0..=0.5);
-        self.delete_neuron = rng.gen_range(0.0..=0.9);
-        self.delete_weights = rng.gen_range(0.0..=0.9);
-        self.delete_bias = rng.gen_range(0.0..=0.9);
-        self.delete_self_activation = rng.gen_range(0.0..=0.9);
-        self.mutate_neuron = rng.gen_range(0.0..=0.9);
-        self.mutate_weights = rng.gen_range(0.0..=0.9);
-        self.mutate_bias = rng.gen_range(0.0..=0.9);
-        self.mutate_self_activation = rng.gen_range(0.0..=0.9);
+        self.max_generations = 1000;
+        self.number_of_network_updates = rng.gen_range(80..=120);
+        self.neuron_lower = round2(rng.gen_range(-10.0..=-1.0));
+        self.neuron_upper = round2(rng.gen_range(1.0..=10.0));
+        self.retina_lower = round2(rng.gen_range(-10.0..=-1.0));
+        self.retina_upper = round2(rng.gen_range(1.0..=10.0));
+        self.init_non_zero_retina_weights = round2(rng.gen_range(0.3..=0.5));
+        self.initial_population_size = rng.gen_range(50..=100);
+        self.tournament_size = rng.gen_range(2..self.initial_population_size / 2);
+        self.variance = round2(rng.gen_range(0.05..=0.5));
+        self.variance_decay = round2(rng.gen_range(0.95..=0.99));
+        self.mean = round2(rng.gen_range(0.0..=0.5));
+        self.delete_neuron = round2(rng.gen_range(0.0..=0.9));
+        self.delete_weights = round2(rng.gen_range(0.0..=0.9));
+        self.delete_bias = round2(rng.gen_range(0.0..=0.9));
+        self.delete_self_activation = round2(rng.gen_range(0.0..=0.9));
+        self.mutate_neuron = round2(rng.gen_range(0.0..=0.9));
+        self.mutate_weights = round2(rng.gen_range(0.0..=0.9));
+        self.mutate_bias = round2(rng.gen_range(0.0..=0.9));
+        self.mutate_self_activation = round2(rng.gen_range(0.0..=0.9));
     }
 }
 
@@ -197,19 +163,17 @@ fn test_agents(mut exit: EventWriter<AppExit>) {
 }
 
 fn run_one_config(mut exit: EventWriter<AppExit>) {
-    // let entity = CONFIG.image_processing.training.entity as usize;
-    // let path = CONFIG.image_processing.training.run_one_config_path as &str;
     let filepath = String::from("meta/current_config.json");
     let adaptive_config: AdaptiveConfig =
         from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
     training::train_agents(
         TrainingStage::Artificial { stage: 0 },
         None,
-        String::from("agents"),
+        String::from("current_config_agents"),
         0,
         &adaptive_config,
         false,
-        true,
+        false,
     )
     .unwrap();
     exit.send(AppExit::Success);
@@ -230,7 +194,7 @@ fn test_configs(mut exit: EventWriter<AppExit>) {
             format!("iterations/{}/agents", iteration),
             iteration,
             &adaptive_config,
-            true,
+            false,
             true,
         )
         .unwrap();

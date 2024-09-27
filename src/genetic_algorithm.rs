@@ -1,3 +1,4 @@
+use bevy::utils::info;
 use indicatif::ProgressBar;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
@@ -104,6 +105,35 @@ impl AgentEvaluation for Agent {
 
         self.clear_short_term_memories();
 
+        // initial network update and snapshot
+        self.genotype_mut()
+            .networks_mut()
+            .iter_mut()
+            .for_each(|network| {
+                network.update_inputs_from_retina(&retina);
+                network.update();
+            });
+        let control_outputs = self
+            .genotype()
+            .control_network()
+            .neurons()
+            .iter()
+            .map(|neuron| neuron.output())
+            .collect::<Vec<f32>>();
+        let categorize_outputs = self
+            .genotype()
+            .categorize_network()
+            .neurons()
+            .iter()
+            .map(|neuron| neuron.output())
+            .collect::<Vec<f32>>();
+        let time_step = (0) as u32;
+        self.genotype_mut()
+            .control_network_mut()
+            .add_snapshot(control_outputs, time_step);
+        self.genotype_mut()
+            .categorize_network_mut()
+            .add_snapshot(categorize_outputs, time_step);
         let mut local_fitness = 0.0;
         for i in 0..number_of_updates {
             // first location of the retina
@@ -113,45 +143,56 @@ impl AgentEvaluation for Agent {
             retina.update_positions_visited();
 
             // calculate the next delta position of the retina, encoded in the neurons
-            let delta = self
-                .genotype_mut()
-                .control_network_mut()
-                .next_delta_position();
+            let delta = self.genotype().control_network().next_delta_position();
 
             // move the retina to the next position
             // here gets the data updated the retina sees
             retina.move_mut(&delta, image);
 
-            // update all super pixel input connections to each neuron
             self.genotype_mut()
                 .networks_mut()
                 .iter_mut()
                 .for_each(|network| {
+                    // update all super pixel input connections to each neuron
                     network.update_inputs_from_retina(&retina);
+                    // let sum = network
+                    //     .neurons()
+                    //     .iter()
+                    //     .fold(0.0, |acc, n| acc + n.output());
+                    // info(format!("sum before: {}", sum));
+                    // do one update step
+                    network.update();
+                    // let sum = network
+                    //     .neurons()
+                    //     .iter()
+                    //     .fold(0.0, |acc, n| acc + n.output());
+                    // info(format!("sum after: {}", sum));
                 });
 
-            // do one update step
-            self.genotype_mut()
-                .networks_mut()
-                .iter_mut()
-                .for_each(|network| {
-                    network.update();
-                });
+            // self.genotype_mut()
+            //     .control_network_mut()
+            //     .update_inputs_from_retina(&retina);
+            // self.genotype_mut().control_network_mut().update();
+
+            // self.genotype_mut()
+            //     .categorize_network_mut()
+            //     .update_inputs_from_retina(&retina);
+            // self.genotype_mut().categorize_network_mut().update();
 
             // save retina movement in buffer
             image.update_retina_movement(&retina);
 
             // creating snapshot of the network at the current time step
             let control_outputs = self
-                .genotype_mut()
-                .control_network_mut()
+                .genotype()
+                .control_network()
                 .neurons()
                 .iter()
                 .map(|neuron| neuron.output())
                 .collect::<Vec<f32>>();
             let categorize_outputs = self
-                .genotype_mut()
-                .categorize_network_mut()
+                .genotype()
+                .categorize_network()
                 .neurons()
                 .iter()
                 .map(|neuron| neuron.output())
@@ -191,13 +232,7 @@ impl Population {
             .into_par_iter()
             .map(|_| {
                 progress_bar.inc(1);
-                Agent::new(
-                    adaptive_config.neuron_lower,
-                    adaptive_config.neuron_upper,
-                    adaptive_config.retina_lower,
-                    adaptive_config.retina_upper,
-                    adaptive_config.init_non_zero_retina_weights,
-                )
+                Agent::new(adaptive_config)
             })
             .collect();
         Population {
@@ -317,31 +352,16 @@ pub struct Genotype {
 }
 
 impl Genotype {
-    pub fn new(
-        rng: &mut dyn RngCore,
-        neuron_lower: f32,
-        neuron_upper: f32,
-        retina_lower: f32,
-        retina_upper: f32,
-        init_non_zero: f32,
-    ) -> Self {
+    pub fn new(rng: &mut dyn RngCore, adaptive_config: &AdaptiveConfig) -> Self {
         let control_network = Rnn::new(
             rng,
             CONFIG.neural_network.control_network_neurons as usize,
-            neuron_lower,
-            neuron_upper,
-            retina_lower,
-            retina_upper,
-            init_non_zero,
+            adaptive_config,
         );
         let categorize_network = Rnn::new(
             rng,
             CONFIG.neural_network.categorize_network_neurons as usize,
-            neuron_lower,
-            neuron_upper,
-            retina_lower,
-            retina_upper,
-            init_non_zero,
+            adaptive_config,
         );
         Genotype {
             networks: vec![control_network, categorize_network],
@@ -477,24 +497,11 @@ impl Clone for Agent {
 // }
 
 impl Agent {
-    pub fn new(
-        neuron_lower: f32,
-        neuron_upper: f32,
-        retina_lower: f32,
-        retina_upper: f32,
-        init_non_zero: f32,
-    ) -> Self {
+    pub fn new(adaptive_config: &AdaptiveConfig) -> Self {
         let mut rng = ChaCha8Rng::from_entropy();
         Agent {
             fitness: 0.0,
-            genotype: Genotype::new(
-                &mut rng,
-                neuron_lower,
-                neuron_upper,
-                retina_lower,
-                retina_upper,
-                init_non_zero,
-            ),
+            genotype: Genotype::new(&mut rng, adaptive_config),
             // top left
             retina_start_pos: Position::new(
                 CONFIG.image_processing.retina_size as i32,
