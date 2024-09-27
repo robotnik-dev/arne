@@ -1,0 +1,1 @@
+1000 generations überlebt mit 41 Bildern aber keine Bauteile erkannt.
