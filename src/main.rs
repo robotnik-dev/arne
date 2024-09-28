@@ -166,11 +166,12 @@ fn run_one_config(mut exit: EventWriter<AppExit>) {
     let filepath = String::from("meta/current_config.json");
     let adaptive_config: AdaptiveConfig =
         from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
+    let iteration = 0;
     training::train_agents(
         TrainingStage::Artificial { stage: 0 },
         None,
-        String::from("current_config_agents"),
-        0,
+        format!("iterations/{}/agents", iteration),
+        iteration,
         &adaptive_config,
         false,
         false,

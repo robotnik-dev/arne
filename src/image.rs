@@ -7,7 +7,7 @@ use std::ops::{Add, Div, Sub};
 use std::path::PathBuf;
 use std::{fmt::Debug, ops::AddAssign};
 
-use crate::annotations::Bndbox;
+use crate::annotations::{Annotation, Bndbox, Object};
 use crate::{Error, Result, CONFIG};
 use skeletonize::edge_detection::sobel4;
 use skeletonize::foreground;
@@ -216,7 +216,7 @@ impl Image {
             dark_pixel_positions: vec![],
         };
 
-        // TODO: threshold
+        // TODO: maybe threshold
         image.generate_dark_pixel_positions(0.5)?;
         Ok(image)
     }
@@ -246,7 +246,7 @@ impl Image {
         // preprocess the image
         image.preprocess()?;
 
-        // TODO: threshold
+        // TODO: maybe threshold
         image.generate_dark_pixel_positions(0.5)?;
         Ok(image)
     }
@@ -272,7 +272,7 @@ impl Image {
             retina_positions: vec![],
             dark_pixel_positions: vec![],
         };
-        // TODO: threshold
+        // TODO: maybe threshold
         image.generate_dark_pixel_positions(0.5)?;
         Ok(image)
     }
@@ -467,7 +467,7 @@ impl Image {
                 }
             }
             superpixel_value /= superpixel_size.pow(2) as f32;
-            // TODO: threshold should be from a binarazation algorithm and not hardcoded
+            // TODO: maybe threshold should be from a binarazation algorithm and not hardcoded
             superpixel_value = if superpixel_value >= 0.5 { 1.0 } else { 0.0 };
             superpixels.push(Superpixel::new(superpixel_value));
         }
@@ -646,6 +646,21 @@ impl Image {
         let bottom_right_retina = retina.get_bottom_right_position();
         top_left_bndbox >= top_left_retina && bottom_right_bndbox <= bottom_right_retina
     }
+    // translates the orgignal bndbox to the one with resized values
+    pub fn translate_bndbox_to_size(&self, annotation: &Annotation, obj: &Object) -> Bndbox {
+        let x_factor = self.width() as f32 / annotation.size.width.parse::<u32>().unwrap() as f32;
+        let y_factor = self.height() as f32 / annotation.size.height.parse::<u32>().unwrap() as f32;
+        let xmin = ((obj.bndbox.xmin.parse::<u32>().unwrap() as f32 * x_factor) as u32).to_string();
+        let ymin = ((obj.bndbox.ymin.parse::<u32>().unwrap() as f32 * y_factor) as u32).to_string();
+        let xmax = ((obj.bndbox.xmax.parse::<u32>().unwrap() as f32 * x_factor) as u32).to_string();
+        let ymax = ((obj.bndbox.ymax.parse::<u32>().unwrap() as f32 * y_factor) as u32).to_string();
+        Bndbox {
+            xmin,
+            ymin,
+            xmax,
+            ymax,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -714,7 +729,7 @@ impl Retina {
     /// collects all dark pixel the retina currently sees and updates its list of
     /// all dark pixel visited
     pub fn update_positions_visited(&mut self) {
-        // TODO: threshold
+        // TODO: maybe threshold
         let mut new_pixels = vec![];
         self.dark_pixel_positions_in_frame(0.5)
             .into_iter()

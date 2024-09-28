@@ -408,6 +408,13 @@ impl Genotype {
         let categorize_network = self
             .categorize_network()
             .crossover_uniform(rng, with.categorize_network());
+        // take the longer one
+        // let found_components =
+        //     if self.found_components().iter().len() >= with.found_components().iter().len() {
+        //         self.found_components().clone()
+        //     } else {
+        //         with.found_components().clone()
+        //     };
         Genotype {
             networks: vec![control_network, categorize_network],
             found_components: vec![],

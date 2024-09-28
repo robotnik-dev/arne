@@ -71,8 +71,8 @@ impl Generate for Component {
             "{}{} {} {} {}{}{}{}",
             self.symbol,
             self.name,
-            self.in_nodes[0],
-            self.out_nodes[0],
+            "0", // TODO: netlist nodes
+            "0", // TODO: netlist nodes
             dc_symbol,
             self.value,
             self.prefix,
