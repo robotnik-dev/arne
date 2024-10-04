@@ -16,7 +16,7 @@ use std::{
 };
 
 mod utils;
-pub use utils::{round2, round3, round_to_decimal_places};
+pub use utils::{dot_product, netlist_empty, round2, round3, round_to_decimal_places};
 
 mod image;
 pub use image::Retina;
@@ -148,12 +148,18 @@ impl AdaptiveConfig {
 }
 
 fn preprocess(mut exit: EventWriter<AppExit>) {
-    XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_1")).unwrap();
-    XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_2")).unwrap();
-    XMLParser::resize_segmented_images(PathBuf::from("data/training/drafter_3")).unwrap();
-    XMLParser::resize_segmented_images(PathBuf::from("data/testing/drafter_5")).unwrap();
-    XMLParser::resize_segmented_images(PathBuf::from("data/testing/drafter_6")).unwrap();
-    XMLParser::resize_segmented_images(PathBuf::from("data/testing/drafter_6")).unwrap();
+    // training folder
+    for entry in std::fs::read_dir("data/training").unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        XMLParser::resize_segmented_images(path).unwrap();
+    }
+    // training folder
+    for entry in std::fs::read_dir("data/testing").unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        XMLParser::resize_segmented_images(path).unwrap();
+    }
     exit.send(AppExit::Success);
 }
 

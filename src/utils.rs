@@ -15,6 +15,14 @@ pub fn round3(value: f32) -> f32 {
     round_to_decimal_places(value, 3)
 }
 
+pub fn netlist_empty(netlist: &String) -> bool {
+    netlist.split('\n').count() <= 3
+}
+
+pub fn dot_product(v1: &[f32], v2: &[f32]) -> f32 {
+    v1.iter().zip(v2.iter()).map(|(x, y)| x * y).sum()
+}
+
 /// gives the last bit of the path as the label e.g. "path/to/file.png" -> "file"
 #[allow(dead_code)]
 pub fn get_label_from_path(path: PathBuf) -> Option<String> {
@@ -51,5 +59,19 @@ mod tests {
         let path = PathBuf::from("path/to/file.png");
         let label = get_label_from_path(path).unwrap();
         assert_eq!(label, "file");
+    }
+
+    #[test]
+    fn netlist_empty() {
+        let netlist = String::from(".SUBCKT main\n.ENDS\n.END");
+        assert!(super::netlist_empty(&netlist));
+    }
+
+    #[test]
+    fn netlist_not_empty() {
+        let netlist = String::from(".SUBCKT main\nr1 0 0 3.3k\n.ENDS\n.END");
+        assert!(!super::netlist_empty(&netlist));
+        let netlist = String::from(".SUBCKT main\nr1 0 0 3.3k\nr2 2 0 500\n.ENDS\n.END");
+        assert!(!super::netlist_empty(&netlist));
     }
 }

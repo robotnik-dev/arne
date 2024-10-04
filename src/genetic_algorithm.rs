@@ -482,6 +482,7 @@ pub struct Agent {
     fitness: f32,
     genotype: Genotype,
     retina_start_pos: Position,
+    netlist: String,
     /// String -> netlist string
     pub statistics: HashMap<ImageLabel, (Image, Genotype, String)>,
 }
@@ -492,6 +493,7 @@ impl Clone for Agent {
             fitness: self.fitness,
             genotype: self.genotype.clone(),
             retina_start_pos: self.retina_start_pos.clone(),
+            netlist: self.netlist.clone(),
             statistics: self.statistics.clone(),
         }
     }
@@ -514,6 +516,7 @@ impl Agent {
                 CONFIG.image_processing.retina_size as i32,
                 CONFIG.image_processing.retina_size as i32,
             ) / 2,
+            netlist: String::new(),
             statistics: HashMap::new(),
         }
     }
@@ -567,6 +570,7 @@ impl Agent {
                 CONFIG.image_processing.retina_size as i32,
                 CONFIG.image_processing.retina_size as i32,
             ) / 2,
+            netlist: String::new(),
             statistics: HashMap::new(),
         })
     }

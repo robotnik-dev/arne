@@ -1,7 +1,7 @@
 use crate::image::Retina;
 use crate::utils::round2;
+use crate::{dot_product, AdaptiveConfig, Error, CONFIG};
 use crate::{genetic_algorithm::Statistics, image::Position, Result};
-use crate::{AdaptiveConfig, Error, CONFIG};
 use approx::AbsDiffEq;
 use petgraph::{dot::Dot, Graph};
 use plotters::prelude::*;
@@ -168,6 +168,10 @@ impl SnapShot {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rnn {
     neurons: Vec<Neuron>,
+    // 1. weights from input to hidden state (retina weights + neuron to neruon weights)
+    // 2. weights from previous hidden to current hidden state
+    // 3. weights from hidden to output
+    // weights: (Vec<f32>, Vec<f32>, Vec<f32>),
     short_term_memory: ShortTermMemory,
     /// visual representation of the network
     graph: Graph<(usize, f32), f32>,
@@ -319,36 +323,41 @@ impl Rnn {
     }
 
     pub fn update(&mut self) {
-        // collect all outputs from neurons in a hashmap with access to the index
-        let outputs = self
+        // collect hidden state (all outputs of the RNN at this time step)
+        let h_t = self
             .neurons()
             .iter()
             .map(|neuron| (neuron.index, neuron.output()))
             .collect::<std::collections::HashMap<usize, f32>>();
 
+        // calculate new hidden state.
+        // w_xh: weights from input to hidden state -> retina_weights
+        // w_hh: weights from hidden to hidden
+        // w_ho: weights from hidden to output
         self.neurons_mut().iter_mut().for_each(|neuron| {
-            let mut activation = neuron
+            neuron
                 .input_connections()
                 .iter()
                 .map(|(index, weight)| weight * outputs[index])
                 .sum::<f32>();
-
-            // add sum of retina inputs times each retina weight to the activation
-            let retina_sum = neuron
-                .retina_inputs()
-                .iter()
-                .zip(neuron.retina_weights().iter())
-                .map(|(input, weight)| *input * weight)
-                .sum::<f32>();
-            activation += retina_sum;
-
-            // add self activation to the activation
-            activation += neuron.output() * neuron.self_activation();
-            // add the bias
-            activation += neuron.bias();
-            // apply the activation function to the neuron
-            neuron.output = activation.tanh();
         });
+
+        //     // add sum of retina inputs times each retina weight to the activation
+        //     let retina_sum = neuron
+        //         .retina_inputs()
+        //         .iter()
+        //         .zip(neuron.retina_weights().iter())
+        //         .map(|(input, weight)| *input * weight)
+        //         .sum::<f32>();
+        //     activation += retina_sum;
+
+        //     // add self activation to the activation
+        //     activation += neuron.output() * neuron.self_activation();
+        //     // add the bias
+        //     activation += neuron.bias();
+        //     // apply the activation function to the neuron
+        //     neuron.output = activation.tanh();
+        // });
     }
 
     /// generates a new RNN by performing a uniform crossover operation with another RNN, returning new genotype
