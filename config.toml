@@ -2,9 +2,9 @@
 goal_image_width = 320
 goal_image_height = 240
 # must be odd
-retina_size = 35 
+retina_size = 45 
 # must be divisor of retina size
-superpixel_size = 7
+superpixel_size = 5
 retina_circle_radius = 1.0
 retina_label_scale = 12.0
 sobel_threshold = 0.3
@@ -13,7 +13,7 @@ erode_pixels = 1
 [image_processing.training]
 path = "data/training"
 # loading all images into memory, takes a while
-load_all = false
+load_all = true
 # if all == false, how many to load
 load_amount = 1
 
@@ -28,7 +28,7 @@ load_amount = 4
 control_network_neurons = 2
 # The more neurons, the more components can be categorized
 categorize_network_neurons = 3
-retina_movement_speed = 1.0
+retina_movement_speed = 40.0
 
 [genetic_algorithm]
 with_seed = false

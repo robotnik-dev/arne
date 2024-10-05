@@ -335,29 +335,29 @@ impl Rnn {
         // w_hh: weights from hidden to hidden
         // w_ho: weights from hidden to output
         self.neurons_mut().iter_mut().for_each(|neuron| {
-            neuron
+            let mut activation = neuron
                 .input_connections()
                 .iter()
-                .map(|(index, weight)| weight * outputs[index])
+                .map(|(index, weight)| weight * h_t[index])
                 .sum::<f32>();
+            // });
+
+            // add sum of retina inputs times each retina weight to the activation
+            let retina_sum = neuron
+                .retina_inputs()
+                .iter()
+                .zip(neuron.retina_weights().iter())
+                .map(|(input, weight)| *input * weight)
+                .sum::<f32>();
+            activation += retina_sum;
+
+            // add self activation to the activation
+            activation += neuron.self_activation() * neuron.output();
+            // add the bias
+            activation += neuron.bias();
+            // apply the activation function to the neuron
+            neuron.output = activation.tanh();
         });
-
-        //     // add sum of retina inputs times each retina weight to the activation
-        //     let retina_sum = neuron
-        //         .retina_inputs()
-        //         .iter()
-        //         .zip(neuron.retina_weights().iter())
-        //         .map(|(input, weight)| *input * weight)
-        //         .sum::<f32>();
-        //     activation += retina_sum;
-
-        //     // add self activation to the activation
-        //     activation += neuron.output() * neuron.self_activation();
-        //     // add the bias
-        //     activation += neuron.bias();
-        //     // apply the activation function to the neuron
-        //     neuron.output = activation.tanh();
-        // });
     }
 
     /// generates a new RNN by performing a uniform crossover operation with another RNN, returning new genotype

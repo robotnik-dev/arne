@@ -19,7 +19,7 @@ use serde::Serialize;
 
 fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &Image) -> f32 {
     // the output of one neuron needs to exceed this value to count as active
-    let active_threshold = 0.60;
+    let active_threshold = 0.95;
 
     let mut rng = ChaCha8Rng::from_entropy();
 
@@ -42,13 +42,13 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                 // info("resistor found");
                 if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
                     >= active_threshold
-                && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
-                    .output()
-                    <= -active_threshold
-                && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
-                    .output()
-                    <= -active_threshold
-                // dont add duplicate
+                // && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+                //     .output()
+                //     <= -active_threshold
+                // && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+                //     .output()
+                //     <= -active_threshold
+                // // dont add duplicate
                 && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(bndbox.clone()))
                 {
                     // info("resistor correct recognised");
@@ -66,13 +66,13 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                 // info("voltage found");
                 if agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
                     <= -active_threshold
-                && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
-                    .output()
-                    >= active_threshold
-                && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
-                    .output()
-                    <= -active_threshold
-                // dont add duplicate
+                // && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+                //     .output()
+                //     >= active_threshold
+                // && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+                //     .output()
+                //     <= -active_threshold
+                // // dont add duplicate
                 && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(bndbox.clone()))
                 {
                     // info("voltage correct recognised");
@@ -90,13 +90,13 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                 // info("capacitor found");
                 if agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
                     <= -active_threshold
-                && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
-                    .output()
-                    <= -active_threshold
-                && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
-                    .output()
-                    >= active_threshold
-                // dont add duplicate
+                // && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+                //     .output()
+                //     <= -active_threshold
+                // && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+                //     .output()
+                //     >= active_threshold
+                // // dont add duplicate
                 && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(bndbox.clone()))
                 {
                     // info("capacitor correct recognised");
