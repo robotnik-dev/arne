@@ -13,7 +13,7 @@ erode_pixels = 1
 [image_processing.training]
 path = "data/training"
 # loading all images into memory, takes a while
-load_all = true
+load_all = false
 # if all == false, how many to load
 load_amount = 1
 

@@ -1,6 +1,5 @@
 use std::{io::Read, path::PathBuf};
 
-use bevy::log::debug;
 use indicatif::ProgressBar;
 use serde_json::Value;
 use xml2json_rs::JsonBuilder;

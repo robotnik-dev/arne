@@ -9,19 +9,15 @@ use crate::image::{Image, ImageLabel, Position, TrainingStage};
 use crate::netlist::{ComponentType, Generate};
 use crate::{
     netlist_empty, plotting, round2, round3, AdaptiveConfig, Agent, AgentEvaluation, ChaCha8Rng,
-    LocalMaximumError, Population, Result, Retina, SelectionMethod, CONFIG,
+    Population, Result, Retina, SelectionMethod, CONFIG,
 };
-use bevy::utils::info;
-use indicatif::ProgressBar;
+use log::info;
 use rand::prelude::*;
 use rayon::prelude::*;
-use serde::Serialize;
 
 fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &Image) -> f32 {
     // the output of one neuron needs to exceed this value to count as active
     let active_threshold = 0.95;
-
-    let mut rng = ChaCha8Rng::from_entropy();
 
     let source_dc_neuron_idx = 0usize;
     let resistor_neuron_idx = 1usize;
@@ -144,7 +140,7 @@ pub fn test_agents(path: String, number_of_updates: usize) -> Result {
         parser.load(drafter_path, LoadFolder::Resized, true, 0)?;
     }
 
-    info(format!("loaded {} images", parser.loaded));
+    // info(format!("loaded {} images", parser.loaded));
 
     for (annotation, image) in parser.data.iter() {
         // for each image, let the agents evaluate once
@@ -198,7 +194,7 @@ pub fn train_agents(
     stuck_check: bool,
     stale_check: bool,
 ) -> Result {
-    info(format!("{:?}", adaptive_config));
+    info!("{:?}", adaptive_config);
 
     let max_generations = adaptive_config.max_generations;
     let population_size = adaptive_config.initial_population_size;
@@ -217,13 +213,11 @@ pub fn train_agents(
     }
 
     // intialize population
-    let population_bar = ProgressBar::new(population_size as u64);
     let mut population = if load_path.is_some() {
         Population::from_path(load_path.unwrap())?
     } else {
-        Population::new(&population_bar, population_size, adaptive_config)
+        Population::new(population_size, adaptive_config)
     };
-    population_bar.finish();
 
     let mut parser = XMLParser::new();
     let dir = std::fs::read_dir(PathBuf::from(data_path))?;
@@ -245,7 +239,7 @@ pub fn train_agents(
         idx += 1;
     }
 
-    info(format!("loaded {} images", parser.loaded));
+    info!("loaded {} images", parser.loaded);
 
     let fitness_function = match stage {
         TrainingStage::Artificial { stage: 0 } => fitness,
@@ -255,8 +249,6 @@ pub fn train_agents(
         TrainingStage::Real => todo!(),
     };
 
-    let algorithm_bar = ProgressBar::new(max_generations);
-
     let mut average_fitness_data = vec![];
     let mut netlists_data = vec![];
 
@@ -264,7 +256,7 @@ pub fn train_agents(
     let nr_updates = number_of_network_updates;
     // loop until stop criterial is met
     loop {
-        algorithm_bar.inc(1);
+        info!("{} / {}", population.generation(), max_generations);
         // for each image in the dataset
         for (annotation, image) in parser.data.iter() {
             // evaluate the fitness of each individual of the population
@@ -340,7 +332,7 @@ pub fn train_agents(
             if round3(population.agents()[0].fitness())
                 == round3(population.agents().iter().last().unwrap().fitness())
             {
-                info("stale");
+                // info("stale");
 
                 std::fs::create_dir_all(format!("iterations/{}", iteration)).unwrap();
                 plotting::update_image(
@@ -371,7 +363,7 @@ pub fn train_agents(
                     population_size,
                     max_generations,
                 );
-                info(format!("generations survived {}", population.generation()));
+                // info(format!("generations survived {}", population.generation()));
                 // break out of outer loop
                 break;
             }
@@ -380,7 +372,7 @@ pub fn train_agents(
             if (population.generation() as f32 / adaptive_config.max_generations as f32) * 0.5
                 > avrg_of_avrg
             {
-                info("stuck");
+                // info("stuck");
 
                 std::fs::create_dir_all(format!("iterations/{}", iteration)).unwrap();
                 plotting::update_image(
@@ -405,7 +397,7 @@ pub fn train_agents(
                         population.generation()
                     ))
                     .unwrap();
-                info(format!("generations survived {}", population.generation()));
+                // info(format!("generations survived {}", population.generation()));
                 // save netlists over time
                 plotting::netlists_over_time(
                     &netlists_data,
@@ -460,9 +452,8 @@ pub fn train_agents(
             .collect::<Vec<Agent>>();
 
         // evolve the population
-        population.evolve(new_agents, &mut rng, population_size);
+        population.evolve(new_agents, population_size);
     }
-    algorithm_bar.finish_and_clear();
 
     // save fitness and configuration the same way as it where stuck or stale
     std::fs::create_dir_all(format!("iterations/{}", iteration)).unwrap();
@@ -487,16 +478,6 @@ pub fn train_agents(
             population.generation()
         ))
         .unwrap();
-    info(format!("generations survived {}", population.generation()));
-
-    // std::fs::create_dir_all(format!("iterations/final")).unwrap();
-    // let out = serde_json::to_string_pretty(adaptive_config).unwrap();
-    // write("iterations/final/config.json", out).unwrap();
-    // plotting::update_image(
-    //     &average_fitness_data,
-    //     "iterations/final/fitness.png",
-    //     max_generations,
-    // );
 
     // save netlists over time
     plotting::netlists_over_time(

@@ -1,8 +1,6 @@
 use plotters::prelude::*;
 use plotters::style::Color;
 
-use crate::CONFIG;
-
 pub fn netlists_over_time(
     data: &Vec<f32>,
     path: &str,

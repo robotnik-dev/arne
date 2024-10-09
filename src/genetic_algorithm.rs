@@ -1,5 +1,3 @@
-use bevy::utils::info;
-use indicatif::ProgressBar;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -12,7 +10,7 @@ use std::path::PathBuf;
 
 use crate::annotations::Annotation;
 use crate::image::{Image, ImageLabel, Position, Retina};
-use crate::netlist::{Component, ComponentBuilder, ComponentType, Generate, Netlist};
+use crate::netlist::{ComponentBuilder, ComponentType, Generate, Netlist};
 use crate::neural_network::Rnn;
 use crate::{AdaptiveConfig, Error, CONFIG};
 
@@ -227,13 +225,10 @@ pub struct Population {
 }
 
 impl Population {
-    pub fn new(progress_bar: &ProgressBar, size: usize, adaptive_config: &AdaptiveConfig) -> Self {
+    pub fn new(size: usize, adaptive_config: &AdaptiveConfig) -> Self {
         let agents = (0..size)
             .into_par_iter()
-            .map(|_| {
-                progress_bar.inc(1);
-                Agent::new(adaptive_config)
-            })
+            .map(|_| Agent::new(adaptive_config))
             .collect();
         Population {
             agents,
@@ -277,12 +272,7 @@ impl Population {
     }
 
     /// recombinate the population. Adds all new agents to the list and the drop the worst ones until population is the correct size again
-    pub fn evolve(
-        &mut self,
-        new_agents: Vec<Agent>,
-        rng: &mut dyn RngCore,
-        population_size: usize,
-    ) {
+    pub fn evolve(&mut self, new_agents: Vec<Agent>, population_size: usize) {
         let mut combined = self
             .agents
             .iter()

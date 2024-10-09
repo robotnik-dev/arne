@@ -1,20 +1,18 @@
 use annotations::XMLParser;
-use bevy::{log::LogPlugin, prelude::*, utils::info};
-use clap::Parser;
+use bevy::{
+    log::{Level, LogPlugin},
+    prelude::*,
+};
 use image::TrainingStage;
-use rand::{Rng, RngCore, SeedableRng};
+use rand::SeedableRng;
+use rand::{Rng, RngCore};
 pub use rand_chacha::ChaCha8Rng;
 use serde::{ser::StdError, Deserialize, Serialize};
 use serde_json::from_str;
 use static_toml::static_toml;
+use std::fmt::Display;
+use std::fs::read_to_string;
 pub use std::time::{Duration, Instant};
-use std::{
-    fmt::Display,
-    fs::read_to_string,
-    io::{self, Write},
-    path::PathBuf,
-};
-
 mod utils;
 pub use utils::{dot_product, netlist_empty, round2, round3, round_to_decimal_places};
 
@@ -40,17 +38,16 @@ static_toml! {
     pub static CONFIG = include_toml!("config.toml");
 }
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    /// number of times the training should run, 0 for initialize agents
-    #[arg(short, long, default_value_t = 0)]
-    count: u8,
-}
-
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins((
+            MinimalPlugins,
+            LogPlugin {
+                level: Level::DEBUG,
+                filter: "wgpu=error,bevy_render=info,bevy_ecs=trace".to_string(),
+                custom_layer: |_| None,
+            },
+        ))
         // .add_systems(Startup, preprocess)
         // .add_systems(Startup, test_configs)
         .add_systems(Startup, run_one_config)
@@ -97,6 +94,7 @@ pub struct AdaptiveConfig {
 }
 
 impl AdaptiveConfig {
+    #[allow(dead_code)]
     fn new() -> Self {
         AdaptiveConfig {
             number_of_network_updates: usize::default(),
@@ -122,6 +120,7 @@ impl AdaptiveConfig {
         }
     }
 
+    #[allow(dead_code)]
     fn randomize(&mut self, rng: &mut dyn RngCore) {
         // change here the max generations for every iteration loop
         self.max_generations = 1000;
@@ -147,6 +146,7 @@ impl AdaptiveConfig {
     }
 }
 
+#[allow(dead_code)]
 fn preprocess(mut exit: EventWriter<AppExit>) {
     // training folder
     for entry in std::fs::read_dir("data/training").unwrap() {
@@ -163,6 +163,7 @@ fn preprocess(mut exit: EventWriter<AppExit>) {
     exit.send(AppExit::Success);
 }
 
+#[allow(dead_code)]
 fn test_agents(mut exit: EventWriter<AppExit>) {
     training::test_agents(String::from("agents"), 100usize).unwrap();
     exit.send(AppExit::Success);
@@ -186,6 +187,7 @@ fn run_one_config(mut exit: EventWriter<AppExit>) {
     exit.send(AppExit::Success);
 }
 
+#[allow(dead_code)]
 fn test_configs(mut exit: EventWriter<AppExit>) {
     let max_iterations = 100;
     let mut rng = ChaCha8Rng::from_entropy();
@@ -220,9 +222,9 @@ fn test_configs(mut exit: EventWriter<AppExit>) {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::{read_to_string, write};
+    use std::fs::write;
 
-    use serde_json::{from_str, to_string_pretty};
+    use serde_json::to_string_pretty;
 
     use super::*;
 
