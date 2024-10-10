@@ -15,7 +15,7 @@ path = "data/training"
 # loading all images into memory, takes a while
 load_all = false
 # if all == false, how many to load
-load_amount = 1
+load_amount = 5
 
 [image_processing.testing]
 path = "data/testing"

@@ -33,7 +33,7 @@ pub enum TrainingStage {
 }
 
 /// Counted with one more than image idx. Image index 0 -> Position index 1.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Hash)]
 pub struct Position {
     x: i32,
     y: i32,

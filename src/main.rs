@@ -14,7 +14,9 @@ use std::fmt::Display;
 use std::fs::read_to_string;
 pub use std::time::{Duration, Instant};
 mod utils;
-pub use utils::{dot_product, netlist_empty, round2, round3, round_to_decimal_places};
+pub use utils::{
+    amount_of_components, dot_product, netlist_empty, round2, round3, round_to_decimal_places,
+};
 
 mod image;
 pub use image::Retina;
@@ -51,6 +53,7 @@ fn main() {
         // .add_systems(Startup, preprocess)
         // .add_systems(Startup, test_configs)
         .add_systems(Startup, run_one_config)
+        // .add_systems(Startup, test_agents)
         .run();
 }
 
@@ -165,10 +168,11 @@ fn preprocess(mut exit: EventWriter<AppExit>) {
 
 #[allow(dead_code)]
 fn test_agents(mut exit: EventWriter<AppExit>) {
-    training::test_agents(String::from("agents"), 100usize).unwrap();
+    training::test_agents(String::from("iterations/0/agents"), 100usize).unwrap();
     exit.send(AppExit::Success);
 }
 
+#[allow(dead_code)]
 fn run_one_config(mut exit: EventWriter<AppExit>) {
     let filepath = String::from("meta/current_config.json");
     let adaptive_config: AdaptiveConfig =

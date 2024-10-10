@@ -26,16 +26,13 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
     let mut categorize_fitness = 0f32;
     annotation.objects.iter().for_each(|obj| {
         let bndbox = image.translate_bndbox_to_size(annotation, obj);
-        // info(format!("original bndbox: {:?}\n translated bndbox: {:?}", obj.bndbox, bndbox));
         // we need to check if any bndbox specified in the annotation is currently inside the retina rectangle
         if image.wraps_bndbox(&bndbox, retina) {
             // If anyone is, then we check we check what kind of component is specified in this object
             let full_component = obj.name.clone();
             let component = full_component.split(".").take(1).collect::<String>();
-            // info("component wrapped from retina");
             // And lastly we check if the corresponding neuron is active for this component and every other neuron is inactive
             if component == "resistor".to_string() {
-                // info("resistor found");
                 if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
                     >= active_threshold
                 // && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
@@ -44,22 +41,14 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                 // && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
                 //     .output()
                 //     <= -active_threshold
-                // // dont add duplicate
-                && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(bndbox.clone()))
                 {
-                    // info("resistor correct recognised");
                     categorize_fitness = 1f32;
                     agent.genotype_mut().add_found_component(
                         Position::from(bndbox.clone()),
                         ComponentType::Resistor,
                     );
-                    // let rnd_nr: u64 = rng.gen_range(100000..=999999);
-                    // retina
-                    //     .create_png_at(format!("retina_pngs/resistor_{}", rnd_nr))
-                    //     .unwrap();
                 }
             } else if component == "voltage".to_string() {
-                // info("voltage found");
                 if agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
                     <= -active_threshold
                 // && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
@@ -68,22 +57,14 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                 // && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
                 //     .output()
                 //     <= -active_threshold
-                // // dont add duplicate
-                && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(bndbox.clone()))
                 {
-                    // info("voltage correct recognised");
                     categorize_fitness = 1f32;
                     agent.genotype_mut().add_found_component(
                         Position::from(bndbox.clone()),
                         ComponentType::VoltageSourceDc,
                     );
-                    // let rnd_nr: u64 = rng.gen_range(100000..=999999);
-                    // retina
-                    //     .create_png_at(format!("retina_pngs/voltage_{}", rnd_nr))
-                    //     .unwrap();
                 }
             } else if component == "capacitor".to_string() {
-                // info("capacitor found");
                 if agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
                     <= -active_threshold
                 // && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
@@ -92,35 +73,28 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                 // && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
                 //     .output()
                 //     >= active_threshold
-                // // dont add duplicate
-                && agent.genotype().found_components().iter().any(|(p, _)| *p == Position::from(bndbox.clone()))
                 {
-                    // info("capacitor correct recognised");
                     categorize_fitness = 1f32;
                     agent.genotype_mut().add_found_component(
                         Position::from(bndbox.clone()),
                         ComponentType::Capacitor,
                     );
-                    // let rnd_nr: u64 = rng.gen_range(100000..=999999);
-                    // retina
-                    //     .create_png_at(format!("retina_pngs/capacitor_{}", rnd_nr))
-                    //     .unwrap();
+                }
+            } else {
+                // nothing in the retina! They should gain fitness when every neuron is inactive
+                if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+                    <= -active_threshold
+                    && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+                        .output()
+                        <= -active_threshold
+                    && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+                        .output()
+                        <= -active_threshold
+                {
+                    // half as much fitness as if there was something found
+                    categorize_fitness = 0.5f32;
                 }
             }
-            // else {
-            //     // nothing in the retina! They should gain fitness when every neuron is inactive
-            //     if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
-            //         <= -active_threshold
-            //         && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
-            //             .output()
-            //             <= -active_threshold
-            //         && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
-            //             .output()
-            //             <= -active_threshold
-            //     {
-            //         categorize_fitness = 1f32;
-            //     }
-            // }
         }
     });
     let control_fitness = retina.percentage_visited();
@@ -140,9 +114,7 @@ pub fn test_agents(path: String, number_of_updates: usize) -> Result {
         parser.load(drafter_path, LoadFolder::Resized, true, 0)?;
     }
 
-    // info(format!("loaded {} images", parser.loaded));
-
-    for (annotation, image) in parser.data.iter() {
+    for (annotation, image, optimal_netlist) in parser.data.iter() {
         // for each image, let the agents evaluate once
         population
             .agents_mut()
@@ -165,21 +137,50 @@ pub fn test_agents(path: String, number_of_updates: usize) -> Result {
             let generated_netlist = agent.genotype().generate();
             if let Some((_, _, netlist)) = agent
                 .statistics_mut()
-                .get_mut(&ImageLabel(annotation.filename.clone()))
+                .get_mut(&ImageLabel(annotation.filename.replace(".jpg", "").clone()))
             {
-                *netlist = generated_netlist;
+                *netlist = generated_netlist.clone();
             }
         });
 
-        // TODO: generate the optimal netlist for this image
-        let optimal_netlist = String::from("");
-
-        // TODO: compare each generated netlist with the optimal one and create a ranking
+        // compare each generated netlist with the optimal one and create a ranking for each image
+        let mut ranking = vec![];
         population.agents().iter().for_each(|agent| {
-            agent
-                .statistics()
-                .iter()
-                .for_each(|(_, (_, _, netlist))| {});
+            let mut final_points = 0;
+            agent.statistics().iter().for_each(|(_, (_, _, netlist))| {
+                // for each image the agent collects a point when a netlist was correct:
+                // 1 point for each corrent number of components
+                // 3 points when all components are correct
+                let mut points = 0;
+                // the lines which are already compared with from the optimal netlist are stored here
+                let mut already_compared = vec![];
+                netlist.lines().for_each(|line| {
+                    if !line.starts_with(".") {
+                        points += 1;
+                        optimal_netlist
+                            .lines()
+                            .take_while(|&x| !already_compared.contains(&x.to_string()))
+                            .for_each(|l| {
+                                let component =
+                                    line.split_whitespace().take(1).collect::<Vec<&str>>()[0];
+                                let optimal_component =
+                                    l.split_whitespace().take(1).collect::<Vec<&str>>()[0];
+                                if component == optimal_component {
+                                    points += 3;
+                                }
+                            });
+                    }
+                    already_compared.push(line.to_string());
+                });
+                final_points += points;
+            });
+            ranking.push((agent.clone(), final_points));
+        });
+
+        // store the ranking in a file
+        ranking.sort_by_key(|(_, p)| p.clone());
+        ranking.iter().for_each(|(agent, points)| {
+            info!("points: {}", points);
         });
     }
     Ok(())
@@ -239,8 +240,6 @@ pub fn train_agents(
         idx += 1;
     }
 
-    info!("loaded {} images", parser.loaded);
-
     let fitness_function = match stage {
         TrainingStage::Artificial { stage: 0 } => fitness,
         TrainingStage::Artificial { stage: 1 } => fitness,
@@ -256,9 +255,14 @@ pub fn train_agents(
     let nr_updates = number_of_network_updates;
     // loop until stop criterial is met
     loop {
-        info!("{} / {}", population.generation(), max_generations);
+        info!(
+            "{} / {}; images: {}",
+            population.generation(),
+            max_generations,
+            parser.loaded
+        );
         // for each image in the dataset
-        for (annotation, image) in parser.data.iter() {
+        for (annotation, image, _) in parser.data.iter() {
             // evaluate the fitness of each individual of the population
             population
                 .agents_mut()

@@ -77,12 +77,12 @@ on_success = "back" # so that we don't open the browser at each change
 command = [
     "cargo", "run",
     "--color", "always",
-    "-vv"
     # put launch parameters for your program behind a `--` separator
 ]
 need_stdout = true
 allow_warnings = true
-background = true
+background = false
+on_success = "job:check"
 
 # This parameterized job runs the example of your choice, as soon
 # as the code compiles.

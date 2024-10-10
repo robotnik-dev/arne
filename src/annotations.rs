@@ -7,6 +7,7 @@ use xml2json_rs::JsonBuilder;
 
 use crate::{
     image::{Image, ImageFormat, Position},
+    netlist::{ComponentBuilder, Generate, Netlist},
     Error, Result, CONFIG,
 };
 
@@ -19,7 +20,8 @@ pub enum LoadFolder {
 }
 
 pub struct XMLParser {
-    pub data: Vec<(Annotation, Image)>,
+    /// String: optimal netlist for this image, once generated when loaded
+    pub data: Vec<(Annotation, Image, String)>,
     pub loaded: usize,
 }
 
@@ -67,7 +69,57 @@ impl XMLParser {
                     ));
                     // skip all annotations that have not a segmented images
                     if let Ok(image) = Image::from_path_raw(path) {
-                        self.data.push((annotation, image));
+                        // generate once the optimal netlist for this image
+                        let mut netlist = Netlist::new();
+                        let mut r_idx = 0;
+                        let mut c_idx = 0;
+                        let mut v_idx = 0;
+                        annotation.objects.iter().for_each(|object| {
+                            let full_component = object.name.clone();
+                            let component = full_component.split(".").take(1).collect::<String>();
+                            // TODO(maybe): adding correct nodes to components
+                            if component == "resistor".to_string() {
+                                netlist
+                                    .add_component(
+                                        ComponentBuilder::new(
+                                            crate::netlist::ComponentType::Resistor,
+                                            r_idx.to_string(),
+                                        )
+                                        .build(),
+                                        format!("r{}", r_idx),
+                                    )
+                                    .unwrap();
+                                r_idx += 1;
+                            }
+                            if component == "capacitor".to_string() {
+                                netlist
+                                    .add_component(
+                                        ComponentBuilder::new(
+                                            crate::netlist::ComponentType::Capacitor,
+                                            c_idx.to_string(),
+                                        )
+                                        .build(),
+                                        format!("c{}", c_idx),
+                                    )
+                                    .unwrap();
+                                c_idx += 1;
+                            }
+                            if component == "voltage".to_string() {
+                                netlist
+                                    .add_component(
+                                        ComponentBuilder::new(
+                                            crate::netlist::ComponentType::VoltageSourceDc,
+                                            v_idx.to_string(),
+                                        )
+                                        .build(),
+                                        format!("v{}", v_idx),
+                                    )
+                                    .unwrap();
+                                v_idx += 1;
+                            }
+                        });
+                        let optimal_netlist = netlist.generate();
+                        self.data.push((annotation, image, optimal_netlist));
                         self.loaded += 1;
                         count += 1;
                     }

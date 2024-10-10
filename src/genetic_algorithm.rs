@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -433,6 +434,7 @@ impl Generate for Genotype {
         self.found_components
             .iter()
             .cloned()
+            .unique()
             .enumerate()
             .for_each(|(idx, (_, component_type))| {
                 let component = ComponentBuilder::new(component_type, idx.to_string()).build();
@@ -468,6 +470,7 @@ impl Generate for Genotype {
 /// The maximum number of RNNs are set in the config file.
 /// Each RNN has a set number of Neurons. It can detect either a resitor, capacitor or voltage source for now.
 /// The fitness of the whole set of networks is determined instead of a single network.
+#[derive(Debug)]
 pub struct Agent {
     fitness: f32,
     genotype: Genotype,

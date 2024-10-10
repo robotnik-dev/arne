@@ -23,6 +23,10 @@ pub fn dot_product(v1: &[f32], v2: &[f32]) -> f32 {
     v1.iter().zip(v2.iter()).map(|(x, y)| x * y).sum()
 }
 
+pub fn amount_of_components(netlist: &String) -> usize {
+    netlist.lines().count() - 3
+}
+
 /// gives the last bit of the path as the label e.g. "path/to/file.png" -> "file"
 #[allow(dead_code)]
 pub fn get_label_from_path(path: PathBuf) -> Option<String> {
