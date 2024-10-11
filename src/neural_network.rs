@@ -336,6 +336,7 @@ impl Rnn {
         // w_ho: weights from hidden to output
         self.neurons_mut().iter_mut().for_each(|neuron| {
             let mut activation = neuron
+                // inputs TO this neuron
                 .input_connections()
                 .iter()
                 .map(|(index, weight)| weight * h_t[index])
@@ -761,6 +762,12 @@ impl Neuron {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::{create_dir_all, read_to_string};
+
+    use serde_json::from_str;
+
+    use crate::{image::Image, Agent};
+
     use super::*;
 
     #[test]
@@ -876,5 +883,46 @@ mod tests {
                 }
             });
         });
+    }
+
+    #[test]
+    fn update() {
+        let image = Image::from_vec(vec![0.; 1000 * 1000]).unwrap();
+        let retina = image
+            .create_retina_at(Position::new(100, 100), 45, 5, String::from(""))
+            .unwrap();
+        let filepath = String::from("current_config.json");
+        let adaptive_config: AdaptiveConfig =
+            from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
+        let mut agent = Agent::new(&adaptive_config);
+        let save_path = String::from("tests/rnn");
+        let time_steps = 10;
+
+        for t in 0..time_steps {
+            agent
+                .genotype_mut()
+                .networks_mut()
+                .iter_mut()
+                .enumerate()
+                .for_each(|(idx, network)| {
+                    let _ = create_dir_all(format!("{}/{}", save_path, idx));
+
+                    // saving before update step
+                    network
+                        .clone()
+                        .to_json(format!("{}/{}/t_{}.json", save_path, idx, t))
+                        .unwrap();
+
+                    // doing the update
+                    network.update_inputs_from_retina(&retina);
+                    network.update();
+
+                    // saving after update
+                    // network
+                    //     .clone()
+                    //     .to_json(format!("{}/{}/t_{}_after.json", save_path, idx, t))
+                    //     .unwrap();
+                });
+        }
     }
 }

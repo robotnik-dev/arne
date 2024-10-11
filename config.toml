@@ -15,20 +15,20 @@ path = "data/training"
 # loading all images into memory, takes a while
 load_all = false
 # if all == false, how many to load
-load_amount = 5
+load_amount = 1
 
 [image_processing.testing]
 path = "data/testing"
 # loading all images into memory, takes a while
 load_all = false
 # if all == false, how many to load
-load_amount = 4
+load_amount = 1
 
 [neural_network]
-control_network_neurons = 2
+control_network_neurons = 12
 # The more neurons, the more components can be categorized
 categorize_network_neurons = 3
-retina_movement_speed = 40.0
+retina_movement_speed = 25.0
 
 [genetic_algorithm]
 with_seed = false

@@ -174,7 +174,7 @@ fn test_agents(mut exit: EventWriter<AppExit>) {
 
 #[allow(dead_code)]
 fn run_one_config(mut exit: EventWriter<AppExit>) {
-    let filepath = String::from("meta/current_config.json");
+    let filepath = String::from("current_config.json");
     let adaptive_config: AdaptiveConfig =
         from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
     let iteration = 0;

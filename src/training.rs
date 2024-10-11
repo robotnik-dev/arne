@@ -17,7 +17,7 @@ use rayon::prelude::*;
 
 fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &Image) -> f32 {
     // the output of one neuron needs to exceed this value to count as active
-    let active_threshold = 0.95;
+    let active_threshold = 0.99;
 
     let source_dc_neuron_idx = 0usize;
     let resistor_neuron_idx = 1usize;
@@ -80,25 +80,27 @@ fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &
                         ComponentType::Capacitor,
                     );
                 }
-            } else {
-                // nothing in the retina! They should gain fitness when every neuron is inactive
-                if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
-                    <= -active_threshold
-                    && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
-                        .output()
-                        <= -active_threshold
-                    && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
-                        .output()
-                        <= -active_threshold
-                {
-                    // half as much fitness as if there was something found
-                    categorize_fitness = 0.5f32;
-                }
             }
+            // else {
+            //     // nothing in the retina! They should gain fitness when every neuron is inactive
+            //     if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+            //         <= -active_threshold
+            //         && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+            //             .output()
+            //             <= -active_threshold
+            //         && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+            //             .output()
+            //             <= -active_threshold
+            //     {
+            //         // half as much fitness as if there was something found
+            //         categorize_fitness = 0.5f32;
+            //     }
+            // }
         }
     });
     let control_fitness = retina.percentage_visited();
-    (categorize_fitness + control_fitness) / 2.0f32
+    // (categorize_fitness + control_fitness) / 2.0f32
+    control_fitness
 }
 
 pub fn test_agents(path: String, number_of_updates: usize) -> Result {

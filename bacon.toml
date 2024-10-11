@@ -82,7 +82,8 @@ command = [
 need_stdout = true
 allow_warnings = true
 background = false
-on_success = "job:check"
+on_success = "scroll-to-bottom"
+watch = ["current_config.json"]
 
 # This parameterized job runs the example of your choice, as soon
 # as the code compiles.
@@ -100,4 +101,3 @@ allow_warnings = true
 [keybindings]
 # alt-m = "job:my-job"
 c = "job:clippy-all" # comment this to have 'c' run clippy on only the default target
-w = "job:check"

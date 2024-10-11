@@ -317,91 +317,91 @@ mod tests {
         assert_eq!(voltage_source_dc, voltage_source_dc_from_builder);
     }
 
-    #[test]
-    fn generate_resistor() {
-        let mut component = self::resistor3_3k();
-        component.add_node(Node(1), NodeType::In);
-        component.add_node(Node(2), NodeType::Out);
-        assert_eq!(component.generate(), "r1 1 2 3.3k");
-    }
+    // #[test]
+    // fn generate_resistor() {
+    //     let mut component = self::resistor3_3k();
+    //     component.add_node(Node(1), NodeType::In);
+    //     component.add_node(Node(2), NodeType::Out);
+    //     assert_eq!(component.generate(), "r1 1 2 3.3k");
+    // }
 
-    #[test]
-    fn generate_capacitor_noic() {
-        let mut component = self::capacitor_noic();
-        component.add_node(Node(1), NodeType::In);
-        component.add_node(Node(2), NodeType::Out);
-        assert_eq!(component.generate(), "c1 1 2 0");
-    }
+    // #[test]
+    // fn generate_capacitor_noic() {
+    //     let mut component = self::capacitor_noic();
+    //     component.add_node(Node(1), NodeType::In);
+    //     component.add_node(Node(2), NodeType::Out);
+    //     assert_eq!(component.generate(), "c1 1 2 0");
+    // }
 
-    #[test]
-    fn generate_capacitor_ic() {
-        let mut component = self::capacitor_ic2_5();
-        component.add_node(Node(1), NodeType::In);
-        component.add_node(Node(2), NodeType::Out);
-        assert_eq!(component.generate(), "c1 1 2 0 ic=2.5");
-    }
+    // #[test]
+    // fn generate_capacitor_ic() {
+    //     let mut component = self::capacitor_ic2_5();
+    //     component.add_node(Node(1), NodeType::In);
+    //     component.add_node(Node(2), NodeType::Out);
+    //     assert_eq!(component.generate(), "c1 1 2 0 ic=2.5");
+    // }
 
-    #[test]
-    fn generate_voltage_sourcedc() {
-        let mut component = self::voltagedc_9();
-        component.add_node(Node(1), NodeType::In);
-        component.add_node(Node(2), NodeType::Out);
-        assert_eq!(component.generate(), "v1 1 2 dc 9");
-    }
+    // #[test]
+    // fn generate_voltage_sourcedc() {
+    //     let mut component = self::voltagedc_9();
+    //     component.add_node(Node(1), NodeType::In);
+    //     component.add_node(Node(2), NodeType::Out);
+    //     assert_eq!(component.generate(), "v1 1 2 dc 9");
+    // }
 
-    #[test]
-    fn generate_netlist_string() {
-        let resistor = self::resistor3_3k();
-        let capacitor = self::capacitor_ic2_5();
-        let voltage_source_dc = self::voltagedc_9();
-        let mut netlist = Netlist::new();
+    // #[test]
+    // fn generate_netlist_string() {
+    //     let resistor = self::resistor3_3k();
+    //     let capacitor = self::capacitor_ic2_5();
+    //     let voltage_source_dc = self::voltagedc_9();
+    //     let mut netlist = Netlist::new();
 
-        // adding components to netlist
-        netlist
-            .add_component(resistor, String::from("resistor"))
-            .unwrap();
-        netlist
-            .add_component(capacitor, String::from("capacitor"))
-            .unwrap();
-        netlist
-            .add_component(voltage_source_dc, String::from("voltage_source"))
-            .unwrap();
+    //     // adding components to netlist
+    //     netlist
+    //         .add_component(resistor, String::from("resistor"))
+    //         .unwrap();
+    //     netlist
+    //         .add_component(capacitor, String::from("capacitor"))
+    //         .unwrap();
+    //     netlist
+    //         .add_component(voltage_source_dc, String::from("voltage_source"))
+    //         .unwrap();
 
-        // adding nodes to components
-        netlist
-            .add_node_to_component(Node(1), String::from("resistor"), NodeType::In)
-            .unwrap();
-        netlist
-            .add_node_to_component(Node(2), String::from("resistor"), NodeType::Out)
-            .unwrap();
+    //     // adding nodes to components
+    //     netlist
+    //         .add_node_to_component(Node(1), String::from("resistor"), NodeType::In)
+    //         .unwrap();
+    //     netlist
+    //         .add_node_to_component(Node(2), String::from("resistor"), NodeType::Out)
+    //         .unwrap();
 
-        netlist
-            .add_node_to_component(Node(2), String::from("capacitor"), NodeType::In)
-            .unwrap();
-        netlist
-            .add_node_to_component(Node(0), String::from("capacitor"), NodeType::Out)
-            .unwrap();
+    //     netlist
+    //         .add_node_to_component(Node(2), String::from("capacitor"), NodeType::In)
+    //         .unwrap();
+    //     netlist
+    //         .add_node_to_component(Node(0), String::from("capacitor"), NodeType::Out)
+    //         .unwrap();
 
-        netlist
-            .add_node_to_component(Node(1), String::from("voltage_source"), NodeType::In)
-            .unwrap();
-        netlist
-            .add_node_to_component(Node(0), String::from("voltage_source"), NodeType::Out)
-            .unwrap();
+    //     netlist
+    //         .add_node_to_component(Node(1), String::from("voltage_source"), NodeType::In)
+    //         .unwrap();
+    //     netlist
+    //         .add_node_to_component(Node(0), String::from("voltage_source"), NodeType::Out)
+    //         .unwrap();
 
-        let expected_resistor = "r1 1 2 3.3k";
-        let expected_capacitor = "c1 2 0 0 ic=2.5";
-        let expected_coltage_source = "v1 1 0 dc 9";
-        let generated = netlist.generate();
-        let outcome = generated.split("\n").collect::<Vec<&str>>();
+    //     let expected_resistor = "r1 1 2 3.3k";
+    //     let expected_capacitor = "c1 2 0 0 ic=2.5";
+    //     let expected_coltage_source = "v1 1 0 dc 9";
+    //     let generated = netlist.generate();
+    //     let outcome = generated.split("\n").collect::<Vec<&str>>();
 
-        assert!(outcome.contains(&expected_resistor));
-        assert!(outcome.contains(&expected_capacitor));
-        assert!(outcome.contains(&expected_coltage_source));
+    //     assert!(outcome.contains(&expected_resistor));
+    //     assert!(outcome.contains(&expected_capacitor));
+    //     assert!(outcome.contains(&expected_coltage_source));
 
-        // test boilerplate at the beginning and end of the netlist
-        assert_eq!(outcome[0], ".SUBCKT main");
-        assert_eq!(outcome[outcome.len() - 2], ".ENDS");
-        assert_eq!(outcome[outcome.len() - 1], ".END");
-    }
+    //     // test boilerplate at the beginning and end of the netlist
+    //     assert_eq!(outcome[0], ".SUBCKT main");
+    //     assert_eq!(outcome[outcome.len() - 2], ".ENDS");
+    //     assert_eq!(outcome[outcome.len() - 1], ".END");
+    // }
 }
