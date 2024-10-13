@@ -17,7 +17,7 @@ use rayon::prelude::*;
 
 fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &Image) -> f32 {
     // the output of one neuron needs to exceed this value to count as active
-    let active_threshold = 0.99;
+    let active_threshold = 0.95;
 
     let source_dc_neuron_idx = 0usize;
     let resistor_neuron_idx = 1usize;

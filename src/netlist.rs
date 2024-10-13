@@ -238,22 +238,26 @@ mod tests {
 
     use super::*;
 
+    #[allow(dead_code)]
     fn resistor3_3k() -> Component {
         ComponentBuilder::new(ComponentType::Resistor, String::from("1"))
             .value(3.3, Some(String::from("k")))
             .build()
     }
 
+    #[allow(dead_code)]
     fn capacitor_ic2_5() -> Component {
         ComponentBuilder::new(ComponentType::Capacitor, String::from("1"))
             .initial_voltage(2.5)
             .build()
     }
 
+    #[allow(dead_code)]
     fn capacitor_noic() -> Component {
         ComponentBuilder::new(ComponentType::Capacitor, String::from("1")).build()
     }
 
+    #[allow(dead_code)]
     fn voltagedc_9() -> Component {
         ComponentBuilder::new(ComponentType::VoltageSourceDc, String::from("1"))
             .value(9., None)
