@@ -1,0 +1,22 @@
+{
+  "number_of_network_updates": 140,
+  "neuron_lower": -4.0,
+  "neuron_upper": 4.0,
+  "retina_lower": -4.0,
+  "retina_upper": 4.0,
+  "init_non_zero_retina_weights": 0.1,
+  "initial_population_size": 150,
+  "max_generations": 1000,
+  "tournament_size": 2,
+  "variance": 0.2,
+  "variance_decay": 1.0,
+  "mean": 0.1,
+  "delete_neuron": 0.0,
+  "delete_weights": 0.1,
+  "delete_bias": 0.1,
+  "delete_self_activation": 0.1,
+  "mutate_neuron": 0.4,
+  "mutate_weights": 0.5,
+  "mutate_bias": 0.5,
+  "mutate_self_activation": 0.5
+}
