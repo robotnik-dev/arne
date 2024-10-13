@@ -50,29 +50,23 @@ fn main() {
                 custom_layer: |_| None,
             },
         ))
+        .insert_state(AppState::Setup)
+        .insert_resource(AdaptiveConfig::default())
         // .add_systems(Startup, preprocess)
         // .add_systems(Startup, test_configs)
-        .add_systems(Startup, run_one_config)
+        .add_systems(Startup, (load_config))
         // .add_systems(Startup, test_agents)
         .run();
 }
 
-#[derive(Debug)]
-pub struct LocalMaximumError;
-
-impl Display for LocalMaximumError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Reached a local maximum, ending this cycle..")
-    }
+#[derive(States, Debug, PartialEq, Hash, Eq, Clone)]
+enum AppState {
+    Setup,
+    Run,
+    Cleanup,
 }
 
-impl Into<Box<dyn StdError>> for LocalMaximumError {
-    fn into(self) -> Box<dyn StdError> {
-        "local maximum".into()
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Resource)]
 pub struct AdaptiveConfig {
     pub number_of_network_updates: usize,
     pub neuron_lower: f32,
@@ -81,7 +75,7 @@ pub struct AdaptiveConfig {
     pub retina_upper: f32,
     pub init_non_zero_retina_weights: f32,
     pub initial_population_size: usize,
-    pub max_generations: u64, // NOT configurable
+    pub max_generations: u64,
     pub tournament_size: usize,
     pub variance: f32,
     pub variance_decay: f32,
@@ -96,10 +90,9 @@ pub struct AdaptiveConfig {
     pub mutate_self_activation: f32,
 }
 
-impl AdaptiveConfig {
-    #[allow(dead_code)]
-    fn new() -> Self {
-        AdaptiveConfig {
+impl Default for AdaptiveConfig {
+    fn default() -> Self {
+        Self {
             number_of_network_updates: usize::default(),
             neuron_lower: f32::default(),
             neuron_upper: f32::default(),
@@ -122,31 +115,45 @@ impl AdaptiveConfig {
             mutate_self_activation: f32::default(),
         }
     }
+}
 
-    #[allow(dead_code)]
-    fn randomize(&mut self, rng: &mut dyn RngCore) {
-        // change here the max generations for every iteration loop
-        self.max_generations = 1000;
-        self.number_of_network_updates = rng.gen_range(80..=120);
-        self.neuron_lower = round2(rng.gen_range(-10.0..=-1.0));
-        self.neuron_upper = round2(rng.gen_range(1.0..=10.0));
-        self.retina_lower = round2(rng.gen_range(-10.0..=-1.0));
-        self.retina_upper = round2(rng.gen_range(1.0..=10.0));
-        self.init_non_zero_retina_weights = round2(rng.gen_range(0.3..=0.5));
-        self.initial_population_size = rng.gen_range(50..=100);
-        self.tournament_size = rng.gen_range(2..self.initial_population_size / 2);
-        self.variance = round2(rng.gen_range(0.05..=0.5));
-        self.variance_decay = round2(rng.gen_range(0.95..=0.99));
-        self.mean = round2(rng.gen_range(0.0..=0.5));
-        self.delete_neuron = round2(rng.gen_range(0.0..=0.9));
-        self.delete_weights = round2(rng.gen_range(0.0..=0.9));
-        self.delete_bias = round2(rng.gen_range(0.0..=0.9));
-        self.delete_self_activation = round2(rng.gen_range(0.0..=0.9));
-        self.mutate_neuron = round2(rng.gen_range(0.0..=0.9));
-        self.mutate_weights = round2(rng.gen_range(0.0..=0.9));
-        self.mutate_bias = round2(rng.gen_range(0.0..=0.9));
-        self.mutate_self_activation = round2(rng.gen_range(0.0..=0.9));
-    }
+// Components we have
+// - Agent
+// - Genotype
+// - Image
+
+// Logic is we have X generations to process, and they built on top of each other so it have to run in serial.
+// Each process of a generation starts with the same population used in the generation before, but adapted.
+// (Optional) We can run multiple processes in parallel meaning multiple populations that evolve next to each other, but do not know each other.
+
+// Agent
+// we have X Agents per Population. The Entities stay the same the whole app run through so we just can manipulate the components directly
+//
+
+fn load_config(mut adaptive_config: ResMut<AdaptiveConfig>, mut next: ResMut<NextState<AppState>>) {
+    let filepath = String::from("current_config.json");
+    let loaded_adaptive_config: AdaptiveConfig =
+        from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
+    adaptive_config.number_of_network_updates = loaded_adaptive_config.number_of_network_updates;
+    adaptive_config.neuron_lower = loaded_adaptive_config.neuron_lower;
+    adaptive_config.neuron_upper = loaded_adaptive_config.neuron_upper;
+    adaptive_config.retina_lower = loaded_adaptive_config.retina_lower;
+    adaptive_config.retina_upper = loaded_adaptive_config.retina_upper;
+    adaptive_config.init_non_zero_retina_weights =
+        loaded_adaptive_config.init_non_zero_retina_weights;
+    adaptive_config.max_generations = loaded_adaptive_config.max_generations;
+    adaptive_config.tournament_size = loaded_adaptive_config.tournament_size;
+    adaptive_config.variance = loaded_adaptive_config.variance;
+    adaptive_config.variance_decay = loaded_adaptive_config.variance_decay;
+    adaptive_config.mean = loaded_adaptive_config.mean;
+    adaptive_config.delete_neuron = loaded_adaptive_config.delete_neuron;
+    adaptive_config.delete_weights = loaded_adaptive_config.delete_weights;
+    adaptive_config.delete_self_activation = loaded_adaptive_config.delete_self_activation;
+    adaptive_config.mutate_neuron = loaded_adaptive_config.mutate_neuron;
+    adaptive_config.mutate_weights = loaded_adaptive_config.mutate_weights;
+    adaptive_config.mutate_bias = loaded_adaptive_config.mutate_bias;
+    adaptive_config.mutate_self_activation = loaded_adaptive_config.mutate_self_activation;
+    next.set(AppState::Run);
 }
 
 #[allow(dead_code)]
@@ -191,56 +198,35 @@ fn run_one_config(mut exit: EventWriter<AppExit>) {
     exit.send(AppExit::Success);
 }
 
-#[allow(dead_code)]
-fn test_configs(mut exit: EventWriter<AppExit>) {
-    let max_iterations = 100;
-    let mut rng = ChaCha8Rng::from_entropy();
-    let _ = std::fs::remove_dir_all("iterations");
-    let _ = std::fs::remove_file("iteration_results.txt");
-    let mut iteration = 0usize;
-    let mut adaptive_config = AdaptiveConfig::new();
-    adaptive_config.randomize(&mut rng);
-    loop {
-        training::train_agents(
-            TrainingStage::Artificial { stage: 0 },
-            None,
-            format!("iterations/{}/agents", iteration),
-            iteration,
-            &adaptive_config,
-            false,
-            true,
-        )
-        .unwrap();
+// #[allow(dead_code)]
+// fn test_configs(mut exit: EventWriter<AppExit>) {
+//     let max_iterations = 100;
+//     let mut rng = ChaCha8Rng::from_entropy();
+//     let _ = std::fs::remove_dir_all("iterations");
+//     let _ = std::fs::remove_file("iteration_results.txt");
+//     let mut iteration = 0usize;
+//     let mut adaptive_config = AdaptiveConfig::new();
+//     adaptive_config.randomize(&mut rng);
+//     loop {
+//         training::train_agents(
+//             TrainingStage::Artificial { stage: 0 },
+//             None,
+//             format!("iterations/{}/agents", iteration),
+//             iteration,
+//             &adaptive_config,
+//             false,
+//             true,
+//         )
+//         .unwrap();
 
-        if iteration >= max_iterations {
-            break;
-        }
+//         if iteration >= max_iterations {
+//             break;
+//         }
 
-        // tweak configuration
-        adaptive_config.randomize(&mut rng);
+//         // tweak configuration
+//         adaptive_config.randomize(&mut rng);
 
-        iteration += 1;
-    }
-    exit.send(AppExit::Success);
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs::write;
-
-    use serde_json::to_string_pretty;
-
-    use super::*;
-
-    #[test]
-    fn test_load_config() {
-        let mut rng = ChaCha8Rng::from_entropy();
-        let mut config = AdaptiveConfig::new();
-        config.randomize(&mut rng);
-        let buf = to_string_pretty(&config).unwrap();
-        write("tests/config.json", buf).unwrap();
-        let loaded_str = read_to_string("tests/config.json").unwrap();
-        let loaded: AdaptiveConfig = from_str(&loaded_str).unwrap();
-        assert_eq!(config, loaded);
-    }
-}
+//         iteration += 1;
+//     }
+//     exit.send(AppExit::Success);
+// }
