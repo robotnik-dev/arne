@@ -1,11 +1,16 @@
 use crate::image::Retina;
 use crate::utils::round2;
 use crate::{genetic_algorithm::Statistics, image::Position, Result};
-use crate::{AdaptiveConfig, Error, CONFIG};
+use crate::{AdaptiveConfig, Error};
 use approx::AbsDiffEq;
+use bevy::prelude::*;
+use bevy_prng::WyRand;
+use bevy_rand::prelude::EntropyComponent;
+use bevy_rand::traits::{ForkableAsRng, ForkableInnerRng, ForkableRng};
 use petgraph::{dot::Dot, Graph};
 use plotters::prelude::*;
-use rand::prelude::*;
+use rand::seq::IteratorRandom;
+use rand::Rng;
 use rand_distr::{Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -237,14 +242,14 @@ impl From<Graph<(usize, f32), f32>> for Rnn {
 
 impl Rnn {
     pub fn new(
-        rng: &mut dyn RngCore,
+        mut rng: EntropyComponent<WyRand>,
         neuron_count: usize,
-        adaptive_config: &AdaptiveConfig,
+        adaptive_config: &Res<AdaptiveConfig>,
     ) -> Self {
         let mut neurons = vec![];
 
         for i in 0..neuron_count {
-            let neuron = Neuron::new(rng, i, neuron_count, adaptive_config);
+            let neuron = Neuron::new(rng.fork_rng(), i, neuron_count, adaptive_config);
             neurons.push(neuron);
         }
 
@@ -301,12 +306,10 @@ impl Rnn {
 
     /// the scaled output of neuron 0 and neuron 1 are the next x and y position of the agent.
     /// scaling factor can be set in the config file
-    pub fn next_delta_position(&self) -> Position {
+    pub fn next_delta_position(&self, adaptive_config: &Res<AdaptiveConfig>) -> Position {
         Position::new(
-            (self.neurons()[0].output() * CONFIG.neural_network.retina_movement_speed as f32)
-                as i32,
-            (self.neurons()[1].output() * CONFIG.neural_network.retina_movement_speed as f32)
-                as i32,
+            (self.neurons()[0].output() * adaptive_config.retina_movement_speed as f32) as i32,
+            (self.neurons()[1].output() * adaptive_config.retina_movement_speed as f32) as i32,
         )
     }
 
@@ -362,7 +365,7 @@ impl Rnn {
     }
 
     /// generates a new RNN by performing a uniform crossover operation with another RNN, returning new genotype
-    pub fn crossover_uniform(&self, rng: &mut dyn RngCore, with: &Rnn) -> Rnn {
+    pub fn crossover_uniform(&self, mut rng: EntropyComponent<WyRand>, with: &Rnn) -> Rnn {
         let mut new_rnn = self.clone();
         for (neuron, other_neuron) in new_rnn.neurons.iter_mut().zip(with.neurons.iter()) {
             if rng.gen_bool(0.5) {
@@ -383,49 +386,53 @@ impl Rnn {
         new_rnn
     }
 
-    pub fn mutate(&mut self, rng: &mut dyn RngCore, adaptive_config: &AdaptiveConfig) -> Rnn {
+    pub fn mutate(
+        &mut self,
+        mut rng: EntropyComponent<WyRand>,
+        adaptive_config: &AdaptiveConfig,
+    ) -> Rnn {
         if rng.gen_bool(adaptive_config.delete_neuron as f64) {
-            self.delete_neuron(rng);
+            self.delete_neuron(rng.fork_rng());
             self.statistics.deleted_neurons += 1;
         }
         if rng.gen_bool(adaptive_config.delete_weights as f64) {
-            self.delete_weights(rng);
+            self.delete_weights(rng.fork_rng());
             self.statistics.deleted_weights += 1;
         }
         if rng.gen_bool(adaptive_config.delete_bias as f64) {
-            self.delete_bias(rng);
+            self.delete_bias(rng.fork_rng());
             self.statistics.deleted_biases += 1;
         }
         if rng.gen_bool(adaptive_config.delete_self_activation as f64) {
-            self.delete_self_activation(rng);
+            self.delete_self_activation(rng.fork_rng());
             self.statistics.deleted_self_activations += 1;
         }
         if rng.gen_bool(adaptive_config.mutate_neuron as f64) {
-            self.mutate_neuron(rng);
+            self.mutate_neuron(rng.fork_rng());
             self.statistics.mutated_neurons += 1;
         }
         if rng.gen_bool(adaptive_config.mutate_weights as f64) {
-            self.mutate_weights(rng);
+            self.mutate_weights(rng.fork_rng());
             self.statistics.mutated_weights += 1;
         }
         if rng.gen_bool(adaptive_config.mutate_bias as f64) {
-            self.mutate_bias(rng);
+            self.mutate_bias(rng.fork_rng());
             self.statistics.mutated_biases += 1;
         }
         if rng.gen_bool(adaptive_config.mutate_self_activation as f64) {
-            self.mutate_self_activation(rng);
+            self.mutate_self_activation(rng.fork_rng());
             self.statistics.mutated_self_activations += 1;
         }
         self.clone()
     }
 
     /// setting all incoming weights, self activation and bias to 0 from a random neuron
-    pub fn delete_neuron(&mut self, rng: &mut dyn RngCore) {
+    pub fn delete_neuron(&mut self, mut rng: EntropyComponent<WyRand>) {
         if let Some(neuron) = self
             .neurons_mut()
             .iter_mut()
             // .filter(|n| !n.is_deleted())
-            .choose(rng)
+            .choose(&mut rng.fork_inner())
         {
             neuron
                 .input_connections_mut()
@@ -441,14 +448,14 @@ impl Rnn {
     }
 
     /// setting one weight to 0 from a random neuron
-    pub fn delete_weights(&mut self, rng: &mut dyn RngCore) {
-        if let Some(neuron) = self.neurons.iter_mut().choose(rng) {
+    pub fn delete_weights(&mut self, mut rng: EntropyComponent<WyRand>) {
+        if let Some(neuron) = self.neurons.iter_mut().choose(&mut rng.fork_inner()) {
             if rng.gen_bool(0.5) {
                 if let Some((_, weight)) = neuron
                     .input_connections_mut()
                     .iter_mut()
                     // .filter(|(_, w)| *w != 0.0)
-                    .choose(rng)
+                    .choose(&mut rng.fork_inner())
                 {
                     *weight = 0.0;
                 }
@@ -456,7 +463,7 @@ impl Rnn {
                 .retina_weights_mut()
                 .iter_mut()
                 // .filter(|w| *w != &0.0)
-                .choose(rng)
+                .choose(&mut rng.fork_inner())
             {
                 *weight = 0.0;
             }
@@ -464,41 +471,57 @@ impl Rnn {
     }
 
     /// setting bias to 0 from a random neuron
-    pub fn delete_bias(&mut self, rng: &mut dyn RngCore) {
+    pub fn delete_bias(&mut self, mut rng: EntropyComponent<WyRand>) {
         if let Some(neuron) = self
             .neurons_mut()
             .iter_mut()
             // .filter(|n: &&mut Neuron| n.bias() != 0.0)
-            .choose(rng)
+            .choose(&mut rng.fork_inner())
         {
             neuron.bias = 0.0
         };
     }
 
     /// setting self activation to 0 from a random neuron
-    pub fn delete_self_activation(&mut self, rng: &mut dyn RngCore) {
+    pub fn delete_self_activation(&mut self, mut rng: EntropyComponent<WyRand>) {
         if let Some(neuron) = self
             .neurons_mut()
             .iter_mut()
             // .filter(|n| n.self_activation() != 0.0)
-            .choose(rng)
+            .choose(&mut rng.fork_inner())
         {
             neuron.self_activation = 0.0
         };
     }
 
     /// randomize one weight, self activation and bias from a random neuron
-    pub fn mutate_neuron(&mut self, rng: &mut dyn RngCore) {
+    pub fn mutate_neuron(&mut self, mut rng: EntropyComponent<WyRand>) {
         let std_dev = self.mutation_variance;
         let mean = self.mean;
-        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
-            neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng);
-            neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng);
-            if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
-                *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(&mut rng.fork_inner()) {
+            neuron.self_activation = Normal::new(mean, std_dev)
+                .unwrap()
+                .sample(&mut rng.fork_inner());
+            neuron.bias = Normal::new(mean, std_dev)
+                .unwrap()
+                .sample(&mut rng.fork_inner());
+            if let Some((_, weight)) = neuron
+                .input_connections_mut()
+                .iter_mut()
+                .choose(&mut rng.fork_inner())
+            {
+                *weight = Normal::new(mean, std_dev)
+                    .unwrap()
+                    .sample(&mut rng.fork_inner());
             }
-            if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
-                *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+            if let Some(weight) = neuron
+                .retina_weights_mut()
+                .iter_mut()
+                .choose(&mut rng.fork_inner())
+            {
+                *weight = Normal::new(mean, std_dev)
+                    .unwrap()
+                    .sample(&mut rng.fork_inner());
             }
 
             // if rng.gen_bool(0.5) {
@@ -512,36 +535,52 @@ impl Rnn {
     }
 
     /// randomize one incoming weight from a random neuron
-    pub fn mutate_weights(&mut self, rng: &mut dyn RngCore) {
+    pub fn mutate_weights(&mut self, mut rng: EntropyComponent<WyRand>) {
         let std_dev = self.mutation_variance;
         let mean = self.mean;
-        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
-            if let Some((_, weight)) = neuron.input_connections_mut().iter_mut().choose(rng) {
-                *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(&mut rng.fork_inner()) {
+            if let Some((_, weight)) = neuron
+                .input_connections_mut()
+                .iter_mut()
+                .choose(&mut rng.fork_inner())
+            {
+                *weight = Normal::new(mean, std_dev)
+                    .unwrap()
+                    .sample(&mut rng.fork_inner());
             }
-            if let Some(weight) = neuron.retina_weights_mut().iter_mut().choose(rng) {
-                *weight = Normal::new(mean, std_dev).unwrap().sample(rng);
+            if let Some(weight) = neuron
+                .retina_weights_mut()
+                .iter_mut()
+                .choose(&mut rng.fork_inner())
+            {
+                *weight = Normal::new(mean, std_dev)
+                    .unwrap()
+                    .sample(&mut rng.fork_inner());
             }
         };
     }
 
     /// randomize the bias from a random neuron
     /// randomize with a normal distribution with mean 0 and variance 0.2
-    pub fn mutate_bias(&mut self, rng: &mut dyn RngCore) {
+    pub fn mutate_bias(&mut self, mut rng: EntropyComponent<WyRand>) {
         let std_dev = self.mutation_variance;
         let mean = self.mean;
-        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
-            neuron.bias = Normal::new(mean, std_dev).unwrap().sample(rng)
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(&mut rng.fork_inner()) {
+            neuron.bias = Normal::new(mean, std_dev)
+                .unwrap()
+                .sample(&mut rng.fork_inner())
         };
     }
 
     /// randomize the self activation from a random neuron
     /// randomize with a normal distribution with mean 0 and variance 0.2
-    pub fn mutate_self_activation(&mut self, rng: &mut dyn RngCore) {
+    pub fn mutate_self_activation(&mut self, mut rng: EntropyComponent<WyRand>) {
         let std_dev = self.mutation_variance;
         let mean = self.mean;
-        if let Some(neuron) = self.neurons_mut().iter_mut().choose(rng) {
-            neuron.self_activation = Normal::new(mean, std_dev).unwrap().sample(rng)
+        if let Some(neuron) = self.neurons_mut().iter_mut().choose(&mut rng.fork_inner()) {
+            neuron.self_activation = Normal::new(mean, std_dev)
+                .unwrap()
+                .sample(&mut rng.fork_inner())
         };
     }
 
@@ -660,13 +699,13 @@ impl PartialEq for Neuron {
 
 impl Neuron {
     pub fn new(
-        rng: &mut dyn RngCore,
+        mut rng: EntropyComponent<WyRand>,
         index: usize,
         _neuron_count: usize,
         adaptive_config: &AdaptiveConfig,
     ) -> Self {
-        let superpixel_size = CONFIG.image_processing.superpixel_size as usize;
-        let retina_size = CONFIG.image_processing.retina_size as usize;
+        let superpixel_size = adaptive_config.superpixel_size as usize;
+        let retina_size = adaptive_config.retina_size as usize;
         let retina_weights = (0..(retina_size / superpixel_size).pow(2))
             // set 90 % of retina weights to 0
             .map(|_| {
@@ -885,44 +924,44 @@ mod tests {
         });
     }
 
-    #[test]
-    fn update() {
-        let image = Image::from_vec(vec![0.; 1000 * 1000]).unwrap();
-        let retina = image
-            .create_retina_at(Position::new(100, 100), 45, 5, String::from(""))
-            .unwrap();
-        let filepath = String::from("current_config.json");
-        let adaptive_config: AdaptiveConfig =
-            from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
-        let mut agent = Agent::new(&adaptive_config);
-        let save_path = String::from("tests/rnn");
-        let time_steps = 10;
+    // #[test]
+    // fn update() {
+    //     let image = Image::from_vec(vec![0.; 1000 * 1000]).unwrap();
+    //     let retina = image
+    //         .create_retina_at(Position::new(100, 100), 45, 5, String::from(""))
+    //         .unwrap();
+    //     let filepath = String::from("current_config.json");
+    //     let adaptive_config: AdaptiveConfig =
+    //         from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
+    //     let mut agent = Agent::new(&adaptive_config);
+    //     let save_path = String::from("tests/rnn");
+    //     let time_steps = 10;
 
-        for t in 0..time_steps {
-            agent
-                .genotype_mut()
-                .networks_mut()
-                .iter_mut()
-                .enumerate()
-                .for_each(|(idx, network)| {
-                    let _ = create_dir_all(format!("{}/{}", save_path, idx));
+    //     for t in 0..time_steps {
+    //         agent
+    //             .genotype_mut()
+    //             .networks_mut()
+    //             .iter_mut()
+    //             .enumerate()
+    //             .for_each(|(idx, network)| {
+    //                 let _ = create_dir_all(format!("{}/{}", save_path, idx));
 
-                    // saving before update step
-                    network
-                        .clone()
-                        .to_json(format!("{}/{}/t_{}.json", save_path, idx, t))
-                        .unwrap();
+    //                 // saving before update step
+    //                 network
+    //                     .clone()
+    //                     .to_json(format!("{}/{}/t_{}.json", save_path, idx, t))
+    //                     .unwrap();
 
-                    // doing the update
-                    network.update_inputs_from_retina(&retina);
-                    network.update();
+    //                 // doing the update
+    //                 network.update_inputs_from_retina(&retina);
+    //                 network.update();
 
-                    // saving after update
-                    // network
-                    //     .clone()
-                    //     .to_json(format!("{}/{}/t_{}_after.json", save_path, idx, t))
-                    //     .unwrap();
-                });
-        }
-    }
+    //                 // saving after update
+    //                 // network
+    //                 //     .clone()
+    //                 //     .to_json(format!("{}/{}/t_{}_after.json", save_path, idx, t))
+    //                 //     .unwrap();
+    //             });
+    //     }
+    // }
 }

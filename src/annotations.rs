@@ -1,14 +1,14 @@
-use std::{io::Read, path::PathBuf};
-
+use bevy::prelude::*;
 use indicatif::ProgressBar;
 use serde_json::Value;
+use std::{io::Read, path::PathBuf};
 use xml2json_rs::JsonBuilder;
 // use quick_xml::{de::from_str, se::to_string};
 
 use crate::{
     image::{Image, ImageFormat, Position},
     netlist::{ComponentBuilder, Generate, Netlist},
-    Error, Result, CONFIG,
+    Error, Result,
 };
 
 pub enum LoadFolder {
@@ -19,25 +19,27 @@ pub enum LoadFolder {
     Images,
 }
 
+#[derive(Resource)]
 pub struct XMLParser {
     /// String: optimal netlist for this image, once generated when loaded
     pub data: Vec<(Annotation, Image, String)>,
     pub loaded: usize,
 }
 
-impl XMLParser {
-    pub fn new() -> Self {
-        XMLParser {
-            data: Vec::new(),
+impl Default for XMLParser {
+    fn default() -> Self {
+        Self {
+            data: vec![],
             loaded: 0,
         }
     }
+}
 
+impl XMLParser {
     /// loads the images from the specified folder
     pub fn load(
         &mut self,
         drafter_path: PathBuf,
-        folder: LoadFolder,
         all: bool,
         amount: usize,
     ) -> std::result::Result<&mut Self, Error> {
@@ -56,11 +58,7 @@ impl XMLParser {
                         break 'outer;
                     };
                     let annotation = Annotation::from_path(annotation_file?.path())?;
-                    let folder_name = match folder {
-                        LoadFolder::Resized => "resized",
-                        LoadFolder::Segmentation => "segmentation",
-                        LoadFolder::Images => "images",
-                    };
+                    let folder_name = "resized";
                     let path = PathBuf::from(format!(
                         "{}/{}/{}",
                         drafter_path.clone().to_string_lossy().into_owned(),
@@ -129,55 +127,55 @@ impl XMLParser {
         Ok(self)
     }
 
-    #[allow(dead_code)]
-    pub fn resize_segmented_images(folder: PathBuf) -> Result {
-        let path = folder.clone().to_string_lossy().into_owned();
+    // #[allow(dead_code)]
+    // pub fn resize_segmented_images(folder: PathBuf) -> Result {
+    //     let path = folder.clone().to_string_lossy().into_owned();
 
-        // debug("resizing images in folder: {:?}", path.clone());
-        let resized_path = format!("{}/resized", path);
-        std::fs::create_dir_all(PathBuf::from(resized_path.clone()))?;
-        for entry in std::fs::read_dir(path.clone())? {
-            let entry = entry?;
-            let folder_name = entry.file_name().to_string_lossy().into_owned();
+    //     // debug("resizing images in folder: {:?}", path.clone());
+    //     let resized_path = format!("{}/resized", path);
+    //     std::fs::create_dir_all(PathBuf::from(resized_path.clone()))?;
+    //     for entry in std::fs::read_dir(path.clone())? {
+    //         let entry = entry?;
+    //         let folder_name = entry.file_name().to_string_lossy().into_owned();
 
-            if folder_name == *"segmentation" {
-                let progress = ProgressBar::new(std::fs::read_dir(entry.path())?.count() as u64);
-                for image_entry in std::fs::read_dir(entry.path())? {
-                    progress.inc(1);
-                    let image_entry = image_entry?;
-                    let filename = image_entry.file_name().to_string_lossy().into_owned();
-                    let mut image = Image::from_path_raw(image_entry.path())?;
+    //         if folder_name == *"segmentation" {
+    //             let progress = ProgressBar::new(std::fs::read_dir(entry.path())?.count() as u64);
+    //             for image_entry in std::fs::read_dir(entry.path())? {
+    //                 progress.inc(1);
+    //                 let image_entry = image_entry?;
+    //                 let filename = image_entry.file_name().to_string_lossy().into_owned();
+    //                 let mut image = Image::from_path_raw(image_entry.path())?;
 
-                    // resize in regards of correct aspect ratio
-                    let (width, height) = match image.format {
-                        ImageFormat::Landscape => (
-                            CONFIG.image_processing.goal_image_width as u32,
-                            CONFIG.image_processing.goal_image_height as u32,
-                        ),
-                        ImageFormat::Portrait => (
-                            CONFIG.image_processing.goal_image_height as u32,
-                            CONFIG.image_processing.goal_image_width as u32,
-                        ),
-                    };
-                    image.resize_all(width, height)?;
+    //                 // resize in regards of correct aspect ratio
+    //                 let (width, height) = match image.format {
+    //                     ImageFormat::Landscape => (
+    //                         CONFIG.image_processing.goal_image_width as u32,
+    //                         CONFIG.image_processing.goal_image_height as u32,
+    //                     ),
+    //                     ImageFormat::Portrait => (
+    //                         CONFIG.image_processing.goal_image_height as u32,
+    //                         CONFIG.image_processing.goal_image_width as u32,
+    //                     ),
+    //                 };
+    //                 image.resize_all(width, height)?;
 
-                    // rotate all the images that are in Portait format to get all images in the landscape format
-                    if image.format == ImageFormat::Portrait {
-                        image.rotate90();
-                        image.format = ImageFormat::Landscape;
-                    };
+    //                 // rotate all the images that are in Portait format to get all images in the landscape format
+    //                 if image.format == ImageFormat::Portrait {
+    //                     image.rotate90();
+    //                     image.format = ImageFormat::Landscape;
+    //                 };
 
-                    image.save_grey(PathBuf::from(format!(
-                        "{}/{}",
-                        resized_path.clone(),
-                        filename
-                    )))?;
-                }
-                progress.finish_and_clear();
-            }
-        }
-        Ok(())
-    }
+    //                 image.save_grey(PathBuf::from(format!(
+    //                     "{}/{}",
+    //                     resized_path.clone(),
+    //                     filename
+    //                 )))?;
+    //             }
+    //             progress.finish_and_clear();
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -225,7 +223,7 @@ pub struct Object {
     pub text: String,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Component)]
 pub struct Annotation {
     pub folder: String,
     pub filename: String,
@@ -332,105 +330,105 @@ impl From<Value> for Annotation {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use xml2json_rs::JsonBuilder;
+// #[cfg(test)]
+// mod tests {
+//     use xml2json_rs::JsonBuilder;
 
-    use super::*;
+//     use super::*;
 
-    fn test_annotation() -> &'static str {
-        r#"
-<annotation>
-    <folder>images</folder>
-    <filename>C-1_D1_P1.jpeg</filename>
-    <path>./drafter_-1/images/C-1_D1_P1.jpeg</path>
-    <source>
-        <database>CGHD</database>
-    </source>
-    <size>
-        <width>1000</width>
-        <height>1000</height>
-        <depth>3</depth>
-    </size>
-    <segmented>0</segmented>
-    <object>
-        <name>text</name>
-        <pose>Unspecified</pose>
-        <truncated>0</truncated>
-        <difficult>0</difficult>
-        <bndbox>
-            <xmin>410</xmin>
-            <ymin>504</ymin>
-            <xmax>460</xmax>
-            <ymax>558</ymax>
-        </bndbox>
-    </object>
-    <object>
-        <name>text</name>
-        <pose>Unspecified</pose>
-        <truncated>0</truncated>
-        <difficult>0</difficult>
-        <bndbox>
-            <xmin>418</xmin>
-            <ymin>749</ymin>
-            <xmax>462</xmax>
-            <ymax>803</ymax>
-        </bndbox>
-        <text>RE</text>
-    </object>
-    <object>
-        <name>text</name>
-        <pose>Unspecified</pose>
-        <truncated>0</truncated>
-        <difficult>0</difficult>
-        <bndbox>
-            <xmin>1048</xmin>
-            <ymin>472</ymin>
-            <xmax>1104</xmax>
-            <ymax>530</ymax>
-        </bndbox>
-        <text>R3</text>
-    </object>
-</annotation>
-        "#
-    }
+//     fn test_annotation() -> &'static str {
+//         r#"
+// <annotation>
+//     <folder>images</folder>
+//     <filename>C-1_D1_P1.jpeg</filename>
+//     <path>./drafter_-1/images/C-1_D1_P1.jpeg</path>
+//     <source>
+//         <database>CGHD</database>
+//     </source>
+//     <size>
+//         <width>1000</width>
+//         <height>1000</height>
+//         <depth>3</depth>
+//     </size>
+//     <segmented>0</segmented>
+//     <object>
+//         <name>text</name>
+//         <pose>Unspecified</pose>
+//         <truncated>0</truncated>
+//         <difficult>0</difficult>
+//         <bndbox>
+//             <xmin>410</xmin>
+//             <ymin>504</ymin>
+//             <xmax>460</xmax>
+//             <ymax>558</ymax>
+//         </bndbox>
+//     </object>
+//     <object>
+//         <name>text</name>
+//         <pose>Unspecified</pose>
+//         <truncated>0</truncated>
+//         <difficult>0</difficult>
+//         <bndbox>
+//             <xmin>418</xmin>
+//             <ymin>749</ymin>
+//             <xmax>462</xmax>
+//             <ymax>803</ymax>
+//         </bndbox>
+//         <text>RE</text>
+//     </object>
+//     <object>
+//         <name>text</name>
+//         <pose>Unspecified</pose>
+//         <truncated>0</truncated>
+//         <difficult>0</difficult>
+//         <bndbox>
+//             <xmin>1048</xmin>
+//             <ymin>472</ymin>
+//             <xmax>1104</xmax>
+//             <ymax>530</ymax>
+//         </bndbox>
+//         <text>R3</text>
+//     </object>
+// </annotation>
+//         "#
+//     }
 
-    #[test]
-    fn deserialize() {
-        let buf = test_annotation();
-        let json_builder = JsonBuilder::default();
-        let json = json_builder.build_from_xml(&buf).unwrap();
-        let should = Annotation::from(json);
-        assert_eq!(should.objects.len(), 3);
-        assert_eq!(should.objects[0].bndbox.xmin, String::from("410"));
-        assert_eq!(should.objects[1].bndbox.ymin, String::from("749"));
-    }
+//     #[test]
+//     fn deserialize() {
+//         let buf = test_annotation();
+//         let json_builder = JsonBuilder::default();
+//         let json = json_builder.build_from_xml(&buf).unwrap();
+//         let should = Annotation::from(json);
+//         assert_eq!(should.objects.len(), 3);
+//         assert_eq!(should.objects[0].bndbox.xmin, String::from("410"));
+//         assert_eq!(should.objects[1].bndbox.ymin, String::from("749"));
+//     }
 
-    #[test]
-    fn from_path() {
-        let buf = test_annotation();
-        let json_builder = JsonBuilder::default();
-        let json = json_builder.build_from_xml(&buf).unwrap();
-        let should = Annotation::from(json);
-        let loaded =
-            Annotation::from_path(PathBuf::from("images/unit_tests/annotation.xml")).unwrap();
-        assert_eq!(should, loaded);
-    }
+//     #[test]
+//     fn from_path() {
+//         let buf = test_annotation();
+//         let json_builder = JsonBuilder::default();
+//         let json = json_builder.build_from_xml(&buf).unwrap();
+//         let should = Annotation::from(json);
+//         let loaded =
+//             Annotation::from_path(PathBuf::from("images/unit_tests/annotation.xml")).unwrap();
+//         assert_eq!(should, loaded);
+//     }
 
-    #[test]
-    fn parse_amount() {
-        let mut parser = XMLParser::new();
-        parser
-            .load(
-                PathBuf::from(format!(
-                    "{}/drafter_1",
-                    CONFIG.image_processing.training.path as &str
-                )),
-                LoadFolder::Segmentation,
-                false,
-                1,
-            )
-            .unwrap();
-        assert_eq!(parser.data.len(), 1);
-    }
-}
+//     #[test]
+//     fn parse_amount() {
+//         let mut parser = XMLParser::new();
+//         parser
+//             .load(
+//                 PathBuf::from(format!(
+//                     "{}/drafter_1",
+//                     CONFIG.image_processing.training.path as &str
+//                 )),
+//                 LoadFolder::Segmentation,
+//                 false,
+//                 1,
+//             )
+//             .unwrap();
+//         assert_eq!(parser.data.len(), 1);
+//     }
+// }

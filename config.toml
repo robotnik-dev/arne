@@ -1,36 +1,36 @@
-[image_processing]
-goal_image_width = 320
-goal_image_height = 240
-# must be odd
-retina_size = 45 
-# must be divisor of retina size
-superpixel_size = 5
-retina_circle_radius = 1.0
-retina_label_scale = 12.0
-sobel_threshold = 0.3
-erode_pixels = 1
+# [image_processing]
+# goal_image_width = 320
+# goal_image_height = 240
+# # must be odd
+# retina_size = 45 
+# # must be divisor of retina size
+# superpixel_size = 5
+# retina_circle_radius = 1.0
+# retina_label_scale = 12.0
+# sobel_threshold = 0.3
+# erode_pixels = 1
 
-[image_processing.training]
-path = "data/training"
-# loading all images into memory, takes a while
-load_all = false
-# if all == false, how many to load
-load_amount = 2
+# [image_processing.training]
+# path = "data/training"
+# # loading all images into memory, takes a while
+# load_all = false
+# # if all == false, how many to load
+# load_amount = 2
 
-[image_processing.testing]
-path = "data/testing"
-# loading all images into memory, takes a while
-load_all = false
-# if all == false, how many to load
-load_amount = 1
+# [image_processing.testing]
+# path = "data/testing"
+# # loading all images into memory, takes a while
+# load_all = false
+# # if all == false, how many to load
+# load_amount = 1
 
-[neural_network]
-control_network_neurons = 12
-# The more neurons, the more components can be categorized
-categorize_network_neurons = 3
-retina_movement_speed = 25.0
+# [neural_network]
+# control_network_neurons = 12
+# # The more neurons, the more components can be categorized
+# categorize_network_neurons = 3
+# retina_movement_speed = 25.0
 
-[genetic_algorithm]
-with_seed = false
-seed = 1024
-goal_fitness = 0.95
+# [genetic_algorithm]
+# with_seed = false
+# seed = 1024
+# goal_fitness = 0.95

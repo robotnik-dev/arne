@@ -10,8 +10,6 @@ edition = "2021"
 plotters = "0.3.5"
 rayon = "1.1"
 approx = "0.5.1"
-rand = "0.8.5"
-rand_chacha = "0.3.1"
 lazy_static = "1.4.0"
 rand_distr = "0.4.3"
 serde_json = "1.0"
@@ -30,6 +28,10 @@ clap = { version = "4.5.13", features = ["derive"] }
 xml2json-rs = "1.0.1"
 # indicatif-log-bridge = "0.2.3"
 itertools = "0.13"
+rand_core = "0.6"
+bevy_rand = "0.7.1"
+bevy_prng = { version = "0.7.1", features = ["rand_chacha", "wyrand"] }
+rand = "0.8.5"
 
 [dependencies.petgraph]
 version = "0.6.5"

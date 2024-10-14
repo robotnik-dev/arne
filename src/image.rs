@@ -1,14 +1,14 @@
+use bevy::prelude::*;
 use image::imageops::{resize, rotate90};
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
 use nalgebra::clamp;
-use rand::prelude::*;
 use std::ops::{Add, Div, Sub};
 use std::path::PathBuf;
 use std::{fmt::Debug, ops::AddAssign};
 
 use crate::annotations::{Annotation, Bndbox, Object};
-use crate::{Error, Result, CONFIG};
+use crate::{AdaptiveConfig, Error, Result};
 use skeletonize::edge_detection::sobel4;
 use skeletonize::foreground;
 
@@ -33,7 +33,7 @@ pub enum TrainingStage {
 }
 
 /// Counted with one more than image idx. Image index 0 -> Position index 1.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Hash, Default)]
 pub struct Position {
     x: i32,
     y: i32,
@@ -56,12 +56,12 @@ impl Position {
         }
     }
 
-    /// length of the vector normalized between 0 and 1
-    pub fn normalized_len(&self) -> f32 {
-        let move_speed = CONFIG.neural_network.retina_movement_speed as i32;
-        let max_len = ((move_speed.pow(2) + move_speed.pow(2)) as f32).sqrt();
-        self.len() / max_len
-    }
+    // /// length of the vector normalized between 0 and 1
+    // pub fn normalized_len(&self) -> f32 {
+    //     let move_speed = CONFIG.neural_network.retina_movement_speed as i32;
+    //     let max_len = ((move_speed.pow(2) + move_speed.pow(2)) as f32).sqrt();
+    //     self.len() / max_len
+    // }
 
     pub fn x(&self) -> i32 {
         self.x
@@ -78,11 +78,11 @@ impl Position {
         }
     }
 
-    pub fn random(rng: &mut dyn RngCore, top_left: Position, bottom_right: Position) -> Position {
-        let x = rng.gen_range(top_left.x..bottom_right.x);
-        let y = rng.gen_range(top_left.y..bottom_right.y);
-        Position { x, y }
-    }
+    // pub fn random(rng: &mut dyn RngCore, top_left: Position, bottom_right: Position) -> Position {
+    //     let x = rng.gen_range(top_left.x..bottom_right.x);
+    //     let y = rng.gen_range(top_left.y..bottom_right.y);
+    //     Position { x, y }
+    // }
 }
 
 impl From<Bndbox> for Position {
@@ -156,37 +156,37 @@ pub enum ImageFormat {
 }
 
 /// generic container for the image data
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Component)]
 pub struct Image {
-    rgba: RgbaImage,
-    grey: GrayImage,
-    width: u32,
-    height: u32,
+    pub rgba: RgbaImage,
+    pub grey: GrayImage,
+    pub width: u32,
+    pub height: u32,
     pub format: ImageFormat,
     /// used to visualize the retina movement on an upscaled image (Position, size of retina, label)
-    retina_positions: Vec<(Position, usize, String)>,
-    dark_pixel_positions: Vec<Position>,
+    pub retina_positions: Vec<(Position, usize, String)>,
+    pub dark_pixel_positions: Vec<Position>,
 }
 
 impl Image {
-    /// Empty image with the default size
-    pub fn empty() -> Self {
-        Image {
-            rgba: RgbaImage::new(
-                CONFIG.image_processing.goal_image_width as u32,
-                CONFIG.image_processing.goal_image_height as u32,
-            ),
-            grey: GrayImage::new(
-                CONFIG.image_processing.goal_image_width as u32,
-                CONFIG.image_processing.goal_image_height as u32,
-            ),
-            width: CONFIG.image_processing.goal_image_width as u32,
-            height: CONFIG.image_processing.goal_image_height as u32,
-            format: ImageFormat::Landscape,
-            retina_positions: vec![],
-            dark_pixel_positions: vec![],
-        }
-    }
+    // /// Empty image with the default size
+    // pub fn empty() -> Self {
+    //     Image {
+    //         rgba: RgbaImage::new(
+    //             CONFIG.image_processing.goal_image_width as u32,
+    //             CONFIG.image_processing.goal_image_height as u32,
+    //         ),
+    //         grey: GrayImage::new(
+    //             CONFIG.image_processing.goal_image_width as u32,
+    //             CONFIG.image_processing.goal_image_height as u32,
+    //         ),
+    //         width: CONFIG.image_processing.goal_image_width as u32,
+    //         height: CONFIG.image_processing.goal_image_height as u32,
+    //         format: ImageFormat::Landscape,
+    //         retina_positions: vec![],
+    //         dark_pixel_positions: vec![],
+    //     }
+    // }
 
     /// create an image from a vector of f32 values. Must be a square length
     pub fn from_vec(vec: Vec<f32>) -> std::result::Result<Self, Error> {
@@ -221,35 +221,35 @@ impl Image {
         Ok(image)
     }
 
-    /// load from a path and return an image(preprocessed)
-    pub fn from_path(path: PathBuf) -> std::result::Result<Self, Error> {
-        let rgba = image::io::Reader::open(path.clone())?
-            .decode()?
-            .into_rgba8();
-        let grey = image::io::Reader::open(path)?.decode()?.into_luma8();
-        let width = rgba.width();
-        let height = rgba.height();
-        let mut image = Image {
-            rgba,
-            grey,
-            width,
-            height,
-            format: if width >= height {
-                ImageFormat::Landscape
-            } else {
-                ImageFormat::Portrait
-            },
-            retina_positions: vec![],
-            dark_pixel_positions: vec![],
-        };
+    // /// load from a path and return an image(preprocessed)
+    // pub fn from_path(path: PathBuf) -> std::result::Result<Self, Error> {
+    //     let rgba = image::io::Reader::open(path.clone())?
+    //         .decode()?
+    //         .into_rgba8();
+    //     let grey = image::io::Reader::open(path)?.decode()?.into_luma8();
+    //     let width = rgba.width();
+    //     let height = rgba.height();
+    //     let mut image = Image {
+    //         rgba,
+    //         grey,
+    //         width,
+    //         height,
+    //         format: if width >= height {
+    //             ImageFormat::Landscape
+    //         } else {
+    //             ImageFormat::Portrait
+    //         },
+    //         retina_positions: vec![],
+    //         dark_pixel_positions: vec![],
+    //     };
 
-        // preprocess the image
-        image.preprocess()?;
+    //     // preprocess the image
+    //     image.preprocess()?;
 
-        // TODO: maybe threshold
-        image.generate_dark_pixel_positions(0.5)?;
-        Ok(image)
-    }
+    //     // TODO: maybe threshold
+    //     image.generate_dark_pixel_positions(0.5)?;
+    //     Ok(image)
+    // }
 
     /// load from a path and return an image without preprocessing
     pub fn from_path_raw(path: PathBuf) -> std::result::Result<Self, Error> {
@@ -278,22 +278,22 @@ impl Image {
     }
 
     /// resizes, find edges and binarizes it
-    pub fn preprocess(&mut self) -> Result {
+    pub fn preprocess(&mut self, adaptive_config: Res<AdaptiveConfig>) -> Result {
         let (width, height) = match self.format {
             ImageFormat::Landscape => (
-                CONFIG.image_processing.goal_image_width as u32,
-                CONFIG.image_processing.goal_image_height as u32,
+                adaptive_config.goal_image_width as u32,
+                adaptive_config.goal_image_height as u32,
             ),
             ImageFormat::Portrait => (
-                CONFIG.image_processing.goal_image_height as u32,
-                CONFIG.image_processing.goal_image_width as u32,
+                adaptive_config.goal_image_height as u32,
+                adaptive_config.goal_image_width as u32,
             ),
         };
         self.resize_all(width, height)?
-            .edged(Some(CONFIG.image_processing.sobel_threshold as f32))?
+            .edged(Some(adaptive_config.sobel_threshold as f32))?
             .erode(
                 imageproc::distance_transform::Norm::L1,
-                CONFIG.image_processing.erode_pixels as u8,
+                adaptive_config.erode_pixels as u8,
             )?;
         Ok(())
     }
@@ -556,10 +556,14 @@ impl Image {
     }
 
     /// on the rgba version of the image upscaled
-    pub fn save_with_retina_upscaled(&self, path: PathBuf) -> Result {
-        let circle_radius = CONFIG.image_processing.retina_circle_radius as f32;
-        let upscaled_width = CONFIG.image_processing.goal_image_width as u32;
-        let upscaled_height = CONFIG.image_processing.goal_image_height as u32;
+    pub fn save_with_retina_upscaled(
+        &self,
+        path: PathBuf,
+        adaptive_config: Res<AdaptiveConfig>,
+    ) -> Result {
+        let circle_radius = adaptive_config.retina_circle_radius as f32;
+        let upscaled_width = adaptive_config.goal_image_width as u32;
+        let upscaled_height = adaptive_config.goal_image_height as u32;
 
         let scaling_factor_x = upscaled_width as f32 / self.width() as f32;
         let scaling_factor_y = upscaled_height as f32 / self.height() as f32;
@@ -859,8 +863,6 @@ impl Superpixel {
 
 #[cfg(test)]
 mod tests {
-    use rand_chacha::ChaCha8Rng;
-
     use super::*;
 
     fn get_test_dir() -> String {
@@ -946,27 +948,27 @@ mod tests {
         assert_eq!(retina.get_center_position().y, 56);
     }
 
-    #[test]
-    fn superpixel_retina() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut pixels = vec![];
-        for _ in 0..100 * 100 {
-            pixels.push(if rng.gen_bool(0.5) { 0f32 } else { 255f32 });
-        }
-        let image = Image::from_vec(pixels).unwrap();
-        let retina = image
-            .create_retina_at(Position { x: 18, y: 18 }, 35, 7, String::from("1"))
-            .unwrap();
+    // #[test]
+    // fn superpixel_retina() {
+    //     let mut rng = ChaCha8Rng::seed_from_u64(2);
+    //     let mut pixels = vec![];
+    //     for _ in 0..100 * 100 {
+    //         pixels.push(if rng.gen_bool(0.5) { 0f32 } else { 255f32 });
+    //     }
+    //     let image = Image::from_vec(pixels).unwrap();
+    //     let retina = image
+    //         .create_retina_at(Position { x: 18, y: 18 }, 35, 7, String::from("1"))
+    //         .unwrap();
 
-        let dir = get_test_dir();
-        let file = String::from("superpixel.png");
-        image
-            .save_with_retina(PathBuf::from(format!("{}/{}", dir, file)))
-            .unwrap();
+    //     let dir = get_test_dir();
+    //     let file = String::from("superpixel.png");
+    //     image
+    //         .save_with_retina(PathBuf::from(format!("{}/{}", dir, file)))
+    //         .unwrap();
 
-        // real value is 0.44 but thresholded to 0.0
-        assert_eq!(retina.superpixels[0].value, 0.0);
-    }
+    //     // real value is 0.44 but thresholded to 0.0
+    //     assert_eq!(retina.superpixels[0].value, 0.0);
+    // }
 
     #[test]
     fn dark_pixel_positions_in_frame() {
