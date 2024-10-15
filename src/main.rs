@@ -1,4 +1,5 @@
 use annotations::{Annotation, XMLParser};
+use bevy::dev_tools::states::log_transitions;
 use bevy::prelude::*;
 use bevy::{
     log::{Level, LogPlugin},
@@ -11,6 +12,7 @@ use bevy_rand::traits::ForkableRng;
 use genetic_algorithm::{Agent, Genotype};
 use image::{Image, Position};
 use rand::SeedableRng;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use std::fs::read_to_string;
@@ -51,10 +53,11 @@ fn main() {
             },
         ))
         .add_plugins(EntropyPlugin::<WyRand>::default())
-        .insert_state(AppState::EvaluateStep)
+        .insert_state(AppState::EvaluateGenerations)
         .insert_resource(AdaptiveConfig::default())
         .insert_resource(XMLParser::default())
         .insert_resource(Populations::default())
+        .insert_resource(Generation::default())
         .add_systems(PreStartup, (load_config, load_images).chain())
         .add_systems(
             PostStartup,
@@ -62,13 +65,16 @@ fn main() {
                 setup_source,
                 initialize_populations,
                 intialize_genotypes_for_agents,
+                intialize_buffer_for_agents,
             )
                 .chain(),
         )
         .add_systems(
             Update,
-            (evaluation_step,).run_if(in_state(AppState::EvaluateStep)),
+            (evaluate_generation,).run_if(in_state(AppState::EvaluateGenerations)),
         )
+        .add_systems(Update, (cleanup,).run_if(in_state(AppState::Cleanup)))
+        .add_systems(Update, log_transitions::<AppState>)
         .run();
 }
 
@@ -77,8 +83,7 @@ struct Source;
 
 #[derive(States, Debug, PartialEq, Hash, Eq, Clone)]
 enum AppState {
-    EvaluateStep,
-    Run,
+    EvaluateGenerations,
     Cleanup,
 }
 
@@ -199,11 +204,15 @@ impl Default for Populations {
 #[derive(Bundle, Default)]
 struct AgentBundle {
     agent: Agent,
-    generation: Generation,
 }
 
-#[derive(Component, Default)]
-struct Generation(usize);
+#[derive(Resource, Default)]
+struct Generation(u64);
+
+#[derive(Component, Clone)]
+struct BufferMemory {
+    images: Vec<(Image, Annotation)>,
+}
 
 // #[derive(Component, Default)]
 // struct Agent {
@@ -354,31 +363,124 @@ fn intialize_genotypes_for_agents(
     }
 }
 
-fn evaluation_step(
-    mut next: ResMut<NextState<AppState>>,
-    mut q_images: Query<(&mut Image, &Annotation)>,
-    adaptive_config: Res<AdaptiveConfig>,
-    mut q_agents: Query<&mut Agent>,
+/// Each agent gets a list of image components (91 max) for them to manipulate so that the original images
+/// dont need to be mutable
+fn intialize_buffer_for_agents(
+    q_agents: Query<Entity, With<Agent>>,
+    q_images: Query<(&Image, &Annotation)>,
+    par_commands: ParallelCommands,
 ) {
-    // TODO: each agent gets a list of image components (91 max) for them to manipulate so that the original images
-    // dont need to be mutable
+    q_agents.par_iter().for_each(|agent| {
+        let mut buffer = vec![];
+        for (image, annotation) in q_images.iter() {
+            let new_buffer_image = Image {
+                rgba: image.rgba.clone(),
+                grey: image.grey.clone(),
+                width: image.width.clone(),
+                height: image.height.clone(),
+                format: image.format.clone(),
+                retina_positions: image.retina_positions.clone(),
+                dark_pixel_positions: image.dark_pixel_positions.clone(),
+            };
+            let new_annotation = Annotation {
+                folder: annotation.folder.clone(),
+                filename: annotation.filename.clone(),
+                path: annotation.path.clone(),
+                source: annotation.source.clone(),
+                size: annotation.size.clone(),
+                segmented: annotation.segmented.clone(),
+                objects: annotation.objects.clone(),
+            };
+            buffer.push((new_buffer_image, new_annotation));
+        }
+        par_commands.command_scope(|mut commands| {
+            commands
+                .entity(agent)
+                .insert(BufferMemory { images: buffer });
+        });
+    });
+}
 
-    // for each image we need to make one evaluation / training step
-    q_images.par_iter_mut().for_each(|(image, annotation)| {
-        // do exactly one update step for each agent
-        // update retina movement etc.
-        // ...
+/// Do all update steps for one generation
+fn evaluate_generation(
+    mut next: ResMut<NextState<AppState>>,
+    mut q_images: Query<(&Image, &Annotation)>,
+    adaptive_config: Res<AdaptiveConfig>,
+    mut q_agents: Query<(Entity, &Agent)>,
+    // mut q_agents: Query<(&Agent, &BufferMemory)>,
+    par_commands: ParallelCommands,
+    mut generation: Local<Generation>,
+) {
+    // each agent has its own image buffer registry now and can mutate them
+    q_images.par_iter().for_each(|(image, annotation)| {
+        q_agents.par_iter().for_each(|(entity, agent)| {
+            par_commands.command_scope(|mut commands| {
+                let mut retina = image
+                    .create_retina_at(
+                        agent.retina_start_pos.clone(),
+                        adaptive_config.retina_size,
+                        adaptive_config.superpixel_size as usize,
+                        "".to_string(),
+                    )
+                    .unwrap();
 
-        // calculate the fitness for this update step
-
-        // update the count of update steps
+                // create new memory for each network
+                // let mut memories = HashMap::new();
+                // for network in agent.genotype().networks() {
+                //     memories.insert(network, ShortTermMemory::new());
+                // }
+                let mut local_fitness = 0.0;
+                for i in 0..adaptive_config.number_of_network_updates {
+                    // image.update_retina_movement(&retina);
+                    retina.update_positions_visited();
+                    let delta = agent
+                        .genotype()
+                        .control_network()
+                        .next_delta_position(&adaptive_config);
+                    retina.move_mut(&delta, image);
+                    // agent
+                    //     .genotype_mut()
+                    //     .networks_mut()
+                    //     .iter_mut()
+                    //     .for_each(|network| {
+                    //         network.update_inputs_from_retina(&retina);
+                    //         network.update();
+                    //     });
+                }
+            })
+        });
     });
 
-    // if we have reached the last update step, go into next state
+    generation.0 += 1;
 
-    // stop criteria met
-    // next.set(AppState::Cleanup);
+    if generation.0 >= adaptive_config.max_generations {
+        next.set(AppState::Cleanup);
+    }
+
+    // (agent_1, all_images) (agent_2, all_images)
+    // (agent_2, all_images) (agent_3, all_images)
+    // (agent_1, all_images) (agent_3, all_images)
+    // ...
+    // (agent_1, all_images) (agent_100, all_images)
+
+    // do exactly one update step for each agent
+    // update retina movement etc.
+    // ...
+
+    // calculate the fitness for this update step
+
+    // update the count of update steps
 }
+
+fn cleanup(mut exit: EventWriter<AppExit>) {
+    info("DONE");
+    exit.send(AppExit::Success);
+}
+
+// if we have reached the last update step, go into next state
+
+// stop criteria met
+// next.set(AppState::Cleanup);
 
 // #[allow(dead_code)]
 // fn preprocess(mut exit: EventWriter<AppExit>) {

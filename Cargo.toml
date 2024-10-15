@@ -32,6 +32,7 @@ rand_core = "0.6"
 bevy_rand = "0.7.1"
 bevy_prng = { version = "0.7.1", features = ["rand_chacha", "wyrand"] }
 rand = "0.8.5"
+# bevy_dev_tools = "0.14.2"
 
 [dependencies.petgraph]
 version = "0.6.5"
@@ -62,6 +63,7 @@ features = [
 #   "tonemapping_luts",   # Support different camera Tonemapping modes (enables KTX2+zstd)
 #   "default_font",       # Embed a minimal default font for text/UI
  # Development/Debug features:
+  "bevy_dev_tools",
   "dynamic_linking",   # Dynamic linking for faster compile-times
   # "trace",             # Enable tracing for performance measurement
   # "detailed_trace",    # Make traces more verbose

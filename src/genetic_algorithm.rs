@@ -480,7 +480,7 @@ pub struct Agent {
     pub retina_start_pos: Position,
     // netlist: String,
     // String -> netlist string
-    // pub statistics: HashMap<ImageLabel, (Image, Genotype, String)>,
+    // pub image_buffer: HashMap<ImageLabel, (Image, Genotype, String)>,
 }
 
 impl Clone for Agent {
@@ -490,7 +490,7 @@ impl Clone for Agent {
             genotype: self.genotype.clone(),
             retina_start_pos: self.retina_start_pos.clone(),
             // netlist: self.netlist.clone(),
-            // statistics: self.statistics.clone(),
+            // image_buffer: self.image_buffer.clone(),
         }
     }
 }
@@ -524,14 +524,14 @@ impl Agent {
         // initialize retina
         let retina_size = adaptive_config.retina_size as usize;
         // create a retina at a random position
-        let top_left = Position::new(retina_size as i32, retina_size as i32);
-        let bottom_right = Position::new(
-            image.width() as i32 - retina_size as i32,
-            image.height() as i32 - retina_size as i32,
-        );
+        // let top_left = Position::new(retina_size as i32, retina_size as i32);
+        // let bottom_right = Position::new(
+        //     image.width() as i32 - retina_size as i32,
+        //     image.height() as i32 - retina_size as i32,
+        // );
 
-        let _image_center_position =
-            Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
+        // let _image_center_position =
+        //     Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
 
         let mut retina = image.create_retina_at(
             self.retina_start_pos.clone(),
@@ -713,7 +713,7 @@ impl Agent {
                 adaptive_config.retina_size as i32,
             ) / 2,
             // netlist: String::new(),
-            // statistics: HashMap::new(),
+            // image_buffer: HashMap::new(),
         })
     }
 
@@ -788,8 +788,9 @@ impl Agent {
         Position::new(random_x, random_y)
     }
 
-    pub fn clear_short_term_memories(&mut self) {
+    pub fn clear_short_term_memories(&mut self) -> &mut Self {
         self.genotype.clear_short_term_memories();
+        self
     }
 
     pub fn debug_get_neuron_outputs(&self) -> Vec<f32> {

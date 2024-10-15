@@ -15,7 +15,7 @@ use crate::{
 use log::info;
 use rayon::prelude::*;
 
-pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &Image) -> f32 {
+pub fn fitness(agent: &Agent, annotation: &Annotation, retina: &Retina, image: &Image) -> f32 {
     // the output of one neuron needs to exceed this value to count as active
     let active_threshold = 0.95;
 
@@ -43,10 +43,11 @@ pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, imag
                 //     <= -active_threshold
                 {
                     categorize_fitness = 1f32;
-                    agent.genotype_mut().add_found_component(
-                        Position::from(bndbox.clone()),
-                        ComponentType::Resistor,
-                    );
+                    // TODO: event
+                    // agent.genotype_mut().add_found_component(
+                    //     Position::from(bndbox.clone()),
+                    //     ComponentType::Resistor,
+                    // );
                 }
             } else if component == "voltage".to_string() {
                 if agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
@@ -59,10 +60,11 @@ pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, imag
                 //     <= -active_threshold
                 {
                     categorize_fitness = 1f32;
-                    agent.genotype_mut().add_found_component(
-                        Position::from(bndbox.clone()),
-                        ComponentType::VoltageSourceDc,
-                    );
+                    // TODO: event
+                    // agent.genotype_mut().add_found_component(
+                    //     Position::from(bndbox.clone()),
+                    //     ComponentType::VoltageSourceDc,
+                    // );
                 }
             } else if component == "capacitor".to_string() {
                 if agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
@@ -75,10 +77,11 @@ pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, imag
                 //     >= active_threshold
                 {
                     categorize_fitness = 1f32;
-                    agent.genotype_mut().add_found_component(
-                        Position::from(bndbox.clone()),
-                        ComponentType::Capacitor,
-                    );
+                    // TODO: event
+                    // agent.genotype_mut().add_found_component(
+                    //     Position::from(bndbox.clone()),
+                    //     ComponentType::Capacitor,
+                    // );
                 }
             }
             // else {

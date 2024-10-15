@@ -20,7 +20,7 @@ use std::{
 };
 
 /// A short term memory that can be used to store the state of the network
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Component)]
 pub struct ShortTermMemory {
     snapshots: Vec<SnapShot>,
 }
