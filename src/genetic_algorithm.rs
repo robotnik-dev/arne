@@ -524,7 +524,7 @@ impl Agent {
         // initialize retina
         let retina_size = adaptive_config.retina_size as usize;
         // create a retina at a random position
-        // let top_left = Position::new(retina_size as i32, retina_size as i32);
+        let top_left = Position::new(retina_size as i32, retina_size as i32);
         // let bottom_right = Position::new(
         //     image.width() as i32 - retina_size as i32,
         //     image.height() as i32 - retina_size as i32,
@@ -534,7 +534,7 @@ impl Agent {
         //     Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
 
         let mut retina = image.create_retina_at(
-            self.retina_start_pos.clone(),
+            top_left,
             retina_size,
             adaptive_config.superpixel_size as usize,
             "".to_string(),

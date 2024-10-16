@@ -1,20 +1,25 @@
 use annotations::{Annotation, XMLParser};
 use bevy::dev_tools::states::log_transitions;
 use bevy::prelude::*;
+use bevy::utils::hashbrown::HashMap;
 use bevy::{
     log::{Level, LogPlugin},
     state::app::StatesPlugin,
-    utils::{info, HashMap},
+    utils::info,
 };
 use bevy_prng::{ChaCha8Rng, WyRand};
 use bevy_rand::prelude::{EntropyComponent, EntropyPlugin};
-use bevy_rand::traits::ForkableRng;
+use bevy_rand::traits::{ForkableInnerRng, ForkableRng};
 use genetic_algorithm::{Agent, Genotype};
 use image::{Image, Position};
+use itertools::Itertools;
+use rand::seq::SliceRandom;
 use rand::SeedableRng;
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
+use std::default;
+use std::fmt::Display;
 use std::fs::read_to_string;
 use std::path::PathBuf;
 pub use std::time::{Duration, Instant};
@@ -53,25 +58,29 @@ fn main() {
             },
         ))
         .add_plugins(EntropyPlugin::<WyRand>::default())
-        .insert_state(AppState::EvaluateGenerations)
+        .insert_state(AppState::default())
         .insert_resource(AdaptiveConfig::default())
         .insert_resource(XMLParser::default())
         .insert_resource(Populations::default())
         .insert_resource(Generation::default())
         .add_systems(PreStartup, (load_config, load_images).chain())
+        .add_systems(Startup, (setup_source, initialize_populations).chain())
         .add_systems(
-            PostStartup,
-            (
-                setup_source,
-                initialize_populations,
-                intialize_genotypes_for_agents,
-                intialize_buffer_for_agents,
-            )
-                .chain(),
+            Update,
+            (intialize_genotypes_for_agents,)
+                .chain()
+                .run_if(in_state(AppState::InitializeNewGeneration)),
         )
         .add_systems(
             Update,
-            (evaluate_generation,).run_if(in_state(AppState::EvaluateGenerations)),
+            (
+                evaluate_agents,
+                genetic_algorithm_step,
+                clear_stats,
+                increase_generation_count,
+            )
+                .chain()
+                .run_if(in_state(AppState::EvaluateGenerations)),
         )
         .add_systems(Update, (cleanup,).run_if(in_state(AppState::Cleanup)))
         .add_systems(Update, log_transitions::<AppState>)
@@ -81,8 +90,11 @@ fn main() {
 #[derive(Component)]
 struct Source;
 
-#[derive(States, Debug, PartialEq, Hash, Eq, Clone)]
+#[derive(States, Debug, PartialEq, Hash, Eq, Clone, Default)]
 enum AppState {
+    #[default]
+    Setup,
+    InitializeNewGeneration,
     EvaluateGenerations,
     Cleanup,
 }
@@ -214,6 +226,12 @@ struct BufferMemory {
     images: Vec<(Image, Annotation)>,
 }
 
+#[derive(Component, Debug)]
+struct Stats {
+    agent: Agent,
+    image: Image,
+}
+
 // #[derive(Component, Default)]
 // struct Agent {
 //     genotype: Genotype,
@@ -232,7 +250,7 @@ fn setup_source(mut commands: Commands, adaptive_config: Res<AdaptiveConfig>) {
 }
 
 fn load_config(mut adaptive_config: ResMut<AdaptiveConfig>) {
-    let filepath = String::from("current_config.json");
+    let filepath = String::from("bevy_port_config.json");
     let loaded_adaptive_config: AdaptiveConfig =
         from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
     adaptive_config.number_of_populations = loaded_adaptive_config.number_of_populations;
@@ -243,6 +261,7 @@ fn load_config(mut adaptive_config: ResMut<AdaptiveConfig>) {
     adaptive_config.retina_upper = loaded_adaptive_config.retina_upper;
     adaptive_config.init_non_zero_retina_weights =
         loaded_adaptive_config.init_non_zero_retina_weights;
+    adaptive_config.population_size = loaded_adaptive_config.population_size;
     adaptive_config.max_generations = loaded_adaptive_config.max_generations;
     adaptive_config.tournament_size = loaded_adaptive_config.tournament_size;
     adaptive_config.variance = loaded_adaptive_config.variance;
@@ -275,8 +294,7 @@ fn load_config(mut adaptive_config: ResMut<AdaptiveConfig>) {
     adaptive_config.with_seed = loaded_adaptive_config.with_seed;
     adaptive_config.seed = loaded_adaptive_config.seed;
     adaptive_config.goal_fitness = loaded_adaptive_config.goal_fitness;
-    info("config loaded");
-    info(adaptive_config);
+    println!("{:#?}", adaptive_config);
 }
 
 fn load_images(
@@ -303,7 +321,6 @@ fn load_images(
             .unwrap();
         idx += 1;
     }
-    info(format!("images loaded: {}", xml_parser.loaded));
 
     for (annotation, image, netlist) in xml_parser.data.iter() {
         commands
@@ -334,6 +351,7 @@ fn initialize_populations(
     adaptive_config: Res<AdaptiveConfig>,
     mut commands: Commands,
     mut q_source: Query<&mut EntropyComponent<WyRand>, With<Source>>,
+    mut next: ResMut<NextState<AppState>>,
 ) {
     let mut source = q_source.single_mut();
     for p in 0..adaptive_config.number_of_populations {
@@ -349,18 +367,22 @@ fn initialize_populations(
                 .id();
             agents.push(entity);
         }
-        // save them in the popiulation
+        // save them in the population
         populations.0.insert(p, agents);
     }
+
+    next.set(AppState::InitializeNewGeneration);
 }
 
 fn intialize_genotypes_for_agents(
     mut q_agents: Query<(&mut Agent, &mut EntropyComponent<WyRand>)>,
     adaptive_config: Res<AdaptiveConfig>,
+    mut next: ResMut<NextState<AppState>>,
 ) {
     for (mut agent, mut rng) in q_agents.iter_mut() {
         agent.genotype = Genotype::init(rng.fork_rng(), &adaptive_config)
     }
+    next.set(AppState::EvaluateGenerations);
 }
 
 /// Each agent gets a list of image components (91 max) for them to manipulate so that the original images
@@ -402,77 +424,315 @@ fn intialize_buffer_for_agents(
 }
 
 /// Do all update steps for one generation
-fn evaluate_generation(
+fn evaluate_agents(
     mut next: ResMut<NextState<AppState>>,
-    mut q_images: Query<(&Image, &Annotation)>,
+    q_images: Query<(&Image, &Annotation)>,
     adaptive_config: Res<AdaptiveConfig>,
-    mut q_agents: Query<(Entity, &Agent)>,
-    // mut q_agents: Query<(&Agent, &BufferMemory)>,
+    q_agents: Query<(&Agent, &EntropyComponent<WyRand>)>,
+    parser: Res<XMLParser>,
     par_commands: ParallelCommands,
-    mut generation: Local<Generation>,
+    mut generation: Res<Generation>,
 ) {
-    // each agent has its own image buffer registry now and can mutate them
-    q_images.par_iter().for_each(|(image, annotation)| {
-        q_agents.par_iter().for_each(|(entity, agent)| {
+    q_agents.par_iter().for_each(|(agent, rng)| {
+        // for every one of the 150 agents
+        q_images.par_iter().for_each(|(image, annotation)| {
             par_commands.command_scope(|mut commands| {
-                let mut retina = image
-                    .create_retina_at(
-                        agent.retina_start_pos.clone(),
-                        adaptive_config.retina_size,
-                        adaptive_config.superpixel_size as usize,
-                        "".to_string(),
-                    )
+                // for every one of the 4 images bspw.
+                let mut temp_image = image.clone();
+                let mut temp_agent = agent.clone();
+                let new_rng = rng.clone().fork_rng();
+                let fitness = temp_agent
+                    .evaluate(&adaptive_config, &mut temp_image, annotation)
                     .unwrap();
+                temp_agent.add_to_fitness(fitness);
+                // TODO: generate a netlist for this image and this agent and save it somewhere or send an event
 
-                // create new memory for each network
-                // let mut memories = HashMap::new();
-                // for network in agent.genotype().networks() {
-                //     memories.insert(network, ShortTermMemory::new());
-                // }
-                let mut local_fitness = 0.0;
-                for i in 0..adaptive_config.number_of_network_updates {
-                    // image.update_retina_movement(&retina);
-                    retina.update_positions_visited();
-                    let delta = agent
-                        .genotype()
-                        .control_network()
-                        .next_delta_position(&adaptive_config);
-                    retina.move_mut(&delta, image);
-                    // agent
-                    //     .genotype_mut()
-                    //     .networks_mut()
-                    //     .iter_mut()
-                    //     .for_each(|network| {
-                    //         network.update_inputs_from_retina(&retina);
-                    //         network.update();
-                    //     });
-                }
-            })
-        });
+                // insert a stats component for another system to grab the information
+                commands
+                    .spawn(Stats {
+                        agent: temp_agent.clone(),
+                        image: temp_image.clone(),
+                    })
+                    .insert(new_rng);
+            });
+        })
     });
 
-    generation.0 += 1;
+    // info(generation.0);
+    // info(adaptive_config.max_generations);
+    // if generation.0 >= adaptive_config.max_generations {
+    //     info("cleanup");
+    //     next.set(AppState::Cleanup);
+    // }
+}
 
+fn genetic_algorithm_step(
+    q_images: Query<(&Image, &Annotation)>,
+    q_stats: Query<(&mut Stats, &EntropyComponent<WyRand>), Without<Source>>,
+    par_commands: ParallelCommands,
+    mut commands: Commands,
+    adaptive_config: Res<AdaptiveConfig>,
+    q_agents: Query<Entity, With<Agent>>,
+    mut q_source: Query<&mut EntropyComponent<WyRand>, With<Source>>,
+) {
+    info(q_stats.iter().len());
+    let number_of_images = q_images.iter().len();
+    // collect the agents with the same image
+    // let mut matched = HashMap::new();
+    // q_images.iter().for_each(|(img, ann)| {
+    //     let agents = q_stats
+    //         .iter()
+    //         .filter(|stats| &stats.image == img)
+    //         .map(|stats| &stats.agent)
+    //         .collect::<Vec<&Agent>>();
+    //     matched.insert((img, ann), agents);
+    // });
+
+    // TODO: this below is need in the cleanup or create statistics state to create the actual image files etc.
+    // // this is a mulitplier of all agents, here we have agents x images (z.b. 150 agents x 4 images = 600 agents in this loop -> 150 agents per iteration)
+    // for ((image, annotation), agents) in matched.iter_mut() {
+    //     // create local copies
+    //     let mut local_agents = vec![];
+    //     agents.iter_mut().for_each(|agent| {
+    //         local_agents.push(agent.clone());
+    //     });
+    //     // average each agents fitness over the number of images
+    //     local_agents.par_iter_mut().for_each(|agent| {
+    //         agent.set_fitness(agent.fitness() / number_of_images as f32);
+    //     });
+    // }
+
+    // collect all (images x agents) [4 x 150 = 600] agents and create a new population with maximum of e.g. 150 Agents
+    let mut agents = vec![];
+    q_stats.iter().for_each(|(stats, _)| {
+        agents.push(stats.agent.clone());
+    });
+
+    // sort the population by fitness
+    // agents.sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
+
+    // TODO: save fitness data for plotting over generations
+    // TODO: after 50 % of max generations, decrease the variance by 10 % each generation
+
+    // select, crossover and mutate
+    let new_agents = q_stats
+        .iter()
+        .map(|(_, rng)| {
+            // select
+            let mut tournament = Vec::with_capacity(adaptive_config.tournament_size);
+            for _ in 0..adaptive_config.tournament_size {
+                tournament.push(agents.choose(&mut rng.clone()).unwrap());
+            }
+            tournament.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap());
+            // crossover
+            let mut offspring = tournament[0].crossover(rng.clone(), tournament[1]);
+            // mutate
+            offspring.mutate(rng.clone(), &adaptive_config);
+            offspring
+        })
+        .collect::<Vec<Agent>>();
+
+    // evolve the population
+
+    let mut combined = agents
+        .iter()
+        .cloned()
+        .chain(new_agents.iter().cloned())
+        .collect::<Vec<Agent>>();
+    combined.sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
+    // combined.shuffle(rng);
+    let new_population = combined
+        .iter()
+        .cloned()
+        .take(adaptive_config.population_size)
+        // // resets the fitness
+        // .map(|mut a| {
+        //     a.set_fitness(0.0f32);
+        //     a
+        // })
+        .collect::<Vec<Agent>>();
+
+    // despawn all current Agents
+    q_agents.par_iter().for_each(|entity| {
+        par_commands.command_scope(|mut commands| {
+            commands.entity(entity).despawn_recursive();
+        })
+    });
+    // spawn new ones from the select, crossover and mutate step
+    let mut source = q_source.single_mut();
+    for agent in new_population.iter() {
+        commands
+            .spawn(AgentBundle {
+                agent: agent.clone(),
+            })
+            // rng component forked
+            .insert(source.fork_rng());
+    }
+}
+
+fn increase_generation_count(
+    mut generation: ResMut<Generation>,
+    adaptive_config: Res<AdaptiveConfig>,
+    mut next: ResMut<NextState<AppState>>,
+) {
+    generation.0 += 1;
     if generation.0 >= adaptive_config.max_generations {
         next.set(AppState::Cleanup);
     }
+}
 
-    // (agent_1, all_images) (agent_2, all_images)
-    // (agent_2, all_images) (agent_3, all_images)
-    // (agent_1, all_images) (agent_3, all_images)
-    // ...
-    // (agent_1, all_images) (agent_100, all_images)
+fn clear_stats(
+    q_stats: Query<(Entity, &mut Stats)>,
+    par_commands: ParallelCommands,
+    mut next: ResMut<NextState<AppState>>,
+) {
+    // despawn every stat entity to process the next generation
+    q_stats.par_iter().for_each(|(entity, _)| {
+        par_commands.command_scope(|mut commands| {
+            commands.entity(entity).despawn_recursive();
+        })
+    });
 
-    // do exactly one update step for each agent
-    // update retina movement etc.
-    // ...
-
-    // calculate the fitness for this update step
-
-    // update the count of update steps
+    next.set(AppState::InitializeNewGeneration);
 }
 
 fn cleanup(mut exit: EventWriter<AppExit>) {
+    // save fitness and configuration the same way as it where stuck or stale
+    //     std::fs::create_dir_all(format!("iterations/{}", iteration)).unwrap();
+    //     plotting::update_image(
+    //         &average_fitness_data,
+    //         format!("iterations/{}/fitness.png", iteration).as_str(),
+    //         max_generations,
+    //     );
+    //     let out = serde_json::to_string_pretty(adaptive_config).unwrap();
+    //     write(
+    //         format!("iterations/{}/config.json", iteration).as_str(),
+    //         out,
+    //     )
+    //     .unwrap();
+    //     std::fs::OpenOptions::new()
+    //         .create(true)
+    //         .append(true)
+    //         .open("iteration_results.txt")
+    //         .unwrap()
+    //         .write_fmt(format_args!(
+    //             "generations survived: {} ",
+    //             population.generation()
+    //         ))
+    //         .unwrap();
+
+    // save netlists over time
+    //     plotting::netlists_over_time(
+    //         &netlists_data,
+    //         format!("iterations/{}/netlist_plot.png", iteration).as_str(),
+    //         population_size,
+    //         max_generations,
+    //     );
+
+    // remove 'agents' directory if it exists
+    //     std::fs::remove_dir_all(save_path.clone()).unwrap_or_default();
+
+    // create files
+    //     population
+    //         .agents_mut()
+    //         .par_iter_mut()
+    //         .enumerate()
+    //         .for_each(|(index, agent)| {
+    //             // saves the folder name with index + fitness round2
+    //             let agent_folder = format!("{}_{}", round2(agent.fitness()), index);
+    //             std::fs::create_dir_all(format!("{}/{}", save_path, agent_folder)).unwrap();
+    //             // save control network
+    //             let folder_name = "control";
+    //             std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name))
+    //                 .unwrap();
+    //             agent
+    //                 .genotype()
+    //                 .control_network()
+    //                 .short_term_memory()
+    //                 .visualize(
+    //                     format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name),
+    //                     adaptive_config.number_of_network_updates,
+    //                 )
+    //                 .unwrap();
+    //             agent
+    //                 .genotype_mut()
+    //                 .control_network_mut()
+    //                 .to_json(format!(
+    //                     "{}/{}/{}/network.json",
+    //                     save_path, agent_folder, folder_name
+    //                 ))
+    //                 .unwrap();
+    //             agent
+    //                 .genotype()
+    //                 .control_network()
+    //                 .to_dot(format!(
+    //                     "{}/{}/{}/network.dot",
+    //                     save_path, agent_folder, folder_name
+    //                 ))
+    //                 .unwrap();
+
+    //             // save categorize network
+    //             let folder_name = "categorize";
+    //             std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name))
+    //                 .unwrap();
+    //             agent
+    //                 .genotype()
+    //                 .categorize_network()
+    //                 .short_term_memory()
+    //                 .visualize(
+    //                     format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name,),
+    //                     adaptive_config.number_of_network_updates,
+    //                 )
+    //                 .unwrap();
+    //             agent
+    //                 .genotype_mut()
+    //                 .categorize_network_mut()
+    //                 .to_json(format!(
+    //                     "{}/{}/{}/network.json",
+    //                     save_path, agent_folder, folder_name
+    //                 ))
+    //                 .unwrap();
+    //             agent
+    //                 .genotype()
+    //                 .categorize_network()
+    //                 .to_dot(format!(
+    //                     "{}/{}/{}/network.dot",
+    //                     save_path, agent_folder, folder_name
+    //                 ))
+    //                 .unwrap();
+    //         });
+
+    // for the best agent, create the images
+    // population.agents().iter().take(1).for_each(|agent| {
+    //         agent
+    //             .statistics()
+    //             .par_iter()
+    //             .for_each(|(label, (image, _, netlist))| {
+    //                 let folder_name = format!("best_agent_{}", round2(agent.fitness()));
+    //                 std::fs::create_dir_all(format!("{}/{}/{}", save_path, folder_name, label))
+    //                     .unwrap();
+
+    //                 image
+    //                     .save_with_retina(PathBuf::from(format!(
+    //                         "{}/{}/{}/retina.png",
+    //                         save_path, folder_name, label
+    //                     )))
+    //                     .unwrap();
+    //                 image
+    //                     .save_with_retina_upscaled(PathBuf::from(format!(
+    //                         "{}/{}/{}/retina_orig.png",
+    //                         save_path, folder_name, label
+    //                     )))
+    //                     .unwrap();
+
+    //                 // save netlist
+    //                 std::fs::write(
+    //                     format!("{}/{}/{}/netlist.net", save_path, folder_name, label),
+    //                     netlist.clone(),
+    //                 )
+    //                 .unwrap();
+    //             });
+    //     });
     info("DONE");
     exit.send(AppExit::Success);
 }

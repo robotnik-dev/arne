@@ -43,7 +43,7 @@ pub enum NodeType {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Component {
+pub struct EComponent {
     pub symbol: String,
     pub name: String,
     prefix: String,
@@ -54,7 +54,7 @@ pub struct Component {
     dc_symbol: Option<String>,
 }
 
-impl Generate for Component {
+impl Generate for EComponent {
     fn generate(&self) -> String {
         let dc_symbol = if self.dc_symbol.is_some() {
             format!("{} ", self.dc_symbol.clone().unwrap())
@@ -81,7 +81,7 @@ impl Generate for Component {
     }
 }
 
-impl Component {
+impl EComponent {
     pub fn add_node(&mut self, node: Node, node_type: NodeType) {
         match node_type {
             NodeType::In => self.in_nodes.push(node),
@@ -125,9 +125,9 @@ impl ComponentBuilder {
     }
 
     #[allow(dead_code)]
-    pub fn build(self) -> Component {
+    pub fn build(self) -> EComponent {
         match self.component_type {
-            ComponentType::Resistor => Component {
+            ComponentType::Resistor => EComponent {
                 symbol: String::from("r"),
                 name: self.name,
                 prefix: self.prefix.unwrap_or_default(),
@@ -137,7 +137,7 @@ impl ComponentBuilder {
                 initial_voltage: None,
                 dc_symbol: None,
             },
-            ComponentType::Capacitor => Component {
+            ComponentType::Capacitor => EComponent {
                 symbol: String::from("c"),
                 name: self.name,
                 prefix: self.prefix.unwrap_or_default(),
@@ -147,7 +147,7 @@ impl ComponentBuilder {
                 initial_voltage: self.initial_voltage,
                 dc_symbol: None,
             },
-            ComponentType::VoltageSourceDc => Component {
+            ComponentType::VoltageSourceDc => EComponent {
                 symbol: String::from("v"),
                 name: self.name,
                 prefix: self.prefix.unwrap_or_default(),
@@ -172,7 +172,7 @@ impl std::fmt::Display for Node {
 
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct Netlist {
-    pub components: HashMap<String, Component>,
+    pub components: HashMap<String, EComponent>,
 }
 
 impl Generate for Netlist {
@@ -198,7 +198,7 @@ impl Netlist {
     }
 
     #[allow(dead_code)]
-    pub fn add_component(&mut self, component: Component, label: String) -> Result {
+    pub fn add_component(&mut self, component: EComponent, label: String) -> Result {
         if self.components.contains_key(&label) {
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
@@ -228,7 +228,7 @@ impl Netlist {
     }
 
     #[allow(unused)]
-    pub fn get_component_with_label(&self, label: String) -> Option<&Component> {
+    pub fn get_component_with_label(&self, label: String) -> Option<&EComponent> {
         self.components.get(&label)
     }
 }
@@ -239,26 +239,26 @@ mod tests {
     use super::*;
 
     #[allow(dead_code)]
-    fn resistor3_3k() -> Component {
+    fn resistor3_3k() -> EComponent {
         ComponentBuilder::new(ComponentType::Resistor, String::from("1"))
             .value(3.3, Some(String::from("k")))
             .build()
     }
 
     #[allow(dead_code)]
-    fn capacitor_ic2_5() -> Component {
+    fn capacitor_ic2_5() -> EComponent {
         ComponentBuilder::new(ComponentType::Capacitor, String::from("1"))
             .initial_voltage(2.5)
             .build()
     }
 
     #[allow(dead_code)]
-    fn capacitor_noic() -> Component {
+    fn capacitor_noic() -> EComponent {
         ComponentBuilder::new(ComponentType::Capacitor, String::from("1")).build()
     }
 
     #[allow(dead_code)]
-    fn voltagedc_9() -> Component {
+    fn voltagedc_9() -> EComponent {
         ComponentBuilder::new(ComponentType::VoltageSourceDc, String::from("1"))
             .value(9., None)
             .build()
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn build_resistor() {
-        let resistor = Component {
+        let resistor = EComponent {
             symbol: String::from("r"),
             name: String::from("1"),
             prefix: String::from("k"),
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn build_capacitor() {
-        let capacitor = Component {
+        let capacitor = EComponent {
             symbol: String::from("c"),
             name: String::from("1"),
             prefix: String::from(""),
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn build_voltage_source_dc() {
-        let voltage_source_dc = Component {
+        let voltage_source_dc = EComponent {
             symbol: String::from("v"),
             name: String::from("1"),
             prefix: String::from(""),

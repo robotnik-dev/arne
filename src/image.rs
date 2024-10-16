@@ -149,14 +149,14 @@ impl Div<i32> for Position {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ImageFormat {
     Landscape,
     Portrait,
 }
 
 /// generic container for the image data
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone, Component, PartialEq, Eq, Hash)]
 pub struct Image {
     pub rgba: RgbaImage,
     pub grey: GrayImage,

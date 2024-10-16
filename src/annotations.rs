@@ -178,19 +178,19 @@ impl XMLParser {
     // }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct Database {
     pub value: String,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct Size {
     pub width: String,
     pub height: String,
     pub depth: String,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct Bndbox {
     pub xmin: String,
     pub ymin: String,
@@ -212,7 +212,7 @@ impl Bndbox {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct Object {
     pub name: String,
     pub pose: String,
@@ -223,7 +223,7 @@ pub struct Object {
     pub text: String,
 }
 
-#[derive(Debug, PartialEq, Clone, Component)]
+#[derive(Debug, PartialEq, Clone, Component, Hash, Eq)]
 pub struct Annotation {
     pub folder: String,
     pub filename: String,
