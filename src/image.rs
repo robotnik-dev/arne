@@ -21,17 +21,6 @@ impl std::fmt::Display for ImageLabel {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum TrainingStage {
-    Artificial {
-        stage: u8,
-    },
-    #[allow(dead_code)]
-    RealBinarized,
-    #[allow(dead_code)]
-    Real,
-}
-
 /// Counted with one more than image idx. Image index 0 -> Position index 1.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Hash, Default)]
 pub struct Position {
@@ -559,7 +548,7 @@ impl Image {
     pub fn save_with_retina_upscaled(
         &self,
         path: PathBuf,
-        adaptive_config: Res<AdaptiveConfig>,
+        adaptive_config: &Res<AdaptiveConfig>,
     ) -> Result {
         let circle_radius = adaptive_config.retina_circle_radius as f32;
         let upscaled_width = adaptive_config.goal_image_width as u32;
@@ -864,12 +853,6 @@ impl Superpixel {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn get_test_dir() -> String {
-        let dir = "tests/images".to_string();
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
 
     fn get_test_image() -> Image {
         Image::from_vec(vec![0.0; 101 * 101]).unwrap()

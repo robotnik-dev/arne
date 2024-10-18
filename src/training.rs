@@ -1,19 +1,4 @@
-use bevy::prelude::*;
-use core::panic;
-use std::fs::write;
-use std::io::Write;
-use std::path::PathBuf;
-use std::u8;
-
-use crate::annotations::{Annotation, LoadFolder, XMLParser};
-use crate::image::{Image, ImageLabel, Position, TrainingStage};
-use crate::netlist::{ComponentType, Generate};
-use crate::{
-    netlist_empty, plotting, round2, round3, AdaptiveConfig, Agent, ChaCha8Rng, Result, Retina,
-    SelectionMethod,
-};
-use log::info;
-use rayon::prelude::*;
+use crate::{annotations::Annotation, genetic_algorithm::Agent, image::Image, Retina};
 
 pub fn fitness(agent: &Agent, annotation: &Annotation, retina: &Retina, image: &Image) -> f32 {
     // the output of one neuron needs to exceed this value to count as active

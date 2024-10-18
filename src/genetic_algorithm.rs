@@ -1,5 +1,5 @@
 use crate::annotations::Annotation;
-use crate::image::{Image, ImageLabel, Position, Retina};
+use crate::image::{Image, Position};
 use crate::netlist::{ComponentBuilder, ComponentType, Generate, Netlist};
 use crate::neural_network::Rnn;
 use crate::{training, AdaptiveConfig, Error};
@@ -10,9 +10,7 @@ use bevy_rand::traits::{ForkableInnerRng, ForkableRng};
 use itertools::Itertools;
 use rand::seq::SliceRandom;
 use rand::Rng;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
 use std::io::Read;
@@ -207,124 +205,7 @@ pub enum SelectionMethod {
 //     }
 // }
 
-pub struct Population {
-    agents: Vec<Agent>,
-    generation: u32,
-}
-
-impl Population {
-    // pub fn new(size: usize, adaptive_config: &Res<AdaptiveConfig>) -> Self {
-    //     let agents = (0..size)
-    //         .into_par_iter()
-    //         .map(|_| Agent::new(adaptive_config))
-    //         .collect();
-    //     Population {
-    //         agents,
-    //         generation: 0,
-    //     }
-    // }
-
-    /// load agents from a path to work with these as the first generation
-    pub fn from_path(
-        path: String,
-        adaptive_config: &Res<AdaptiveConfig>,
-    ) -> std::result::Result<Self, Error> {
-        let mut agents = vec![];
-        fs::read_dir(path).unwrap().for_each(|entry| {
-            let path_buf = entry.unwrap().path();
-            if !path_buf
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with("best_agent")
-            {
-                let agent = Agent::from_path(path_buf, adaptive_config).unwrap();
-                agents.push(agent);
-            }
-        });
-
-        let population = Population {
-            agents,
-            generation: 0,
-        };
-        Ok(population)
-    }
-
-    pub fn agents(&self) -> &Vec<Agent> {
-        &self.agents
-    }
-
-    pub fn agents_mut(&mut self) -> &mut Vec<Agent> {
-        &mut self.agents
-    }
-
-    pub fn generation(&self) -> u32 {
-        self.generation
-    }
-
-    /// recombinate the population. Adds all new agents to the list and the drop the worst ones until population is the correct size again
-    pub fn evolve(&mut self, new_agents: Vec<Agent>, population_size: usize) {
-        let mut combined = self
-            .agents
-            .iter()
-            .cloned()
-            .chain(new_agents.iter().cloned())
-            .collect::<Vec<Agent>>();
-        combined.sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
-        // combined.shuffle(rng);
-        let new_population = combined
-            .iter()
-            .cloned()
-            .take(population_size)
-            // resets the fitness
-            .map(|mut a| {
-                a.set_fitness(0.0f32);
-                a
-            })
-            .collect::<Vec<Agent>>();
-        self.agents = new_population;
-        self.generation += 1;
-    }
-
-    pub fn select(
-        &self,
-        rng: EntropyComponent<WyRand>,
-        method: SelectionMethod,
-        tournament_size: Option<usize>,
-    ) -> (&Agent, &Agent) {
-        match method {
-            SelectionMethod::Tournament => self.select_tournament(rng, tournament_size),
-            SelectionMethod::Weighted => self.select_weighted(rng),
-        }
-    }
-
-    fn select_tournament(
-        &self,
-        mut rng: EntropyComponent<WyRand>,
-        tournament_size: Option<usize>,
-    ) -> (&Agent, &Agent) {
-        let tournament_size = tournament_size.unwrap_or_default();
-        let mut tournament = Vec::with_capacity(tournament_size);
-        for _ in 0..tournament_size {
-            tournament.push(self.agents.choose(&mut rng.fork_inner()).unwrap());
-        }
-        tournament.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap());
-        (tournament[0], tournament[1])
-    }
-
-    fn select_weighted(&self, mut rng: EntropyComponent<WyRand>) -> (&Agent, &Agent) {
-        (
-            self.agents
-                .choose_weighted(&mut rng.fork_inner(), |agent| agent.fitness.max(0.000001))
-                .unwrap(),
-            self.agents
-                .choose_weighted(&mut rng.fork_inner(), |agent| agent.fitness.max(0.000001))
-                .unwrap(),
-        )
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Genotype {
     /// the first is the control network and second the categorize network
     networks: Vec<Rnn>,
@@ -402,13 +283,6 @@ impl Genotype {
         let categorize_network = self
             .categorize_network()
             .crossover_uniform(rng.fork_rng(), with.categorize_network());
-        // take the longer one
-        // let found_components =
-        //     if self.found_components().iter().len() >= with.found_components().iter().len() {
-        //         self.found_components().clone()
-        //     } else {
-        //         with.found_components().clone()
-        //     };
         Genotype {
             networks: vec![control_network, categorize_network],
             found_components: vec![],
@@ -469,52 +343,18 @@ impl Generate for Genotype {
     }
 }
 
-/// Conductor to control all networks. The idea is to set off multiple RNNs per update step and to collect the results.
-/// The maximum number of RNNs are set in the config file.
-/// Each RNN has a set number of Neurons. It can detect either a resitor, capacitor or voltage source for now.
-/// The fitness of the whole set of networks is determined instead of a single network.
-#[derive(Debug, Component, Default)]
+#[derive(Debug, Component, Default, PartialEq, Clone)]
 pub struct Agent {
     pub fitness: f32,
     pub genotype: Genotype,
     pub retina_start_pos: Position,
+    // pub images: Vec<Image>,
     // netlist: String,
     // String -> netlist string
-    // pub image_buffer: HashMap<ImageLabel, (Image, Genotype, String)>,
+    // pub statistics: HashMap<ImageLabel, (Image, String)>,
 }
-
-impl Clone for Agent {
-    fn clone(&self) -> Self {
-        Agent {
-            fitness: self.fitness,
-            genotype: self.genotype.clone(),
-            retina_start_pos: self.retina_start_pos.clone(),
-            // netlist: self.netlist.clone(),
-            // image_buffer: self.image_buffer.clone(),
-        }
-    }
-}
-
-// impl Default for Agent {
-//     fn default() -> Self {
-//         Self::new()
-//     }
-// }
 
 impl Agent {
-    // pub fn new(adaptive_config: &Res<AdaptiveConfig>) -> Self {
-    //     let mut rng = ChaCha8Rng::from_entropy();
-    //     let retina_size = adaptive_config.retina_size;
-    //     Agent {
-    //         fitness: 0.0,
-    //         genotype: Genotype::new(&mut rng, adaptive_config),
-    //         // top left
-    //         retina_start_pos: Position::new(retina_size as i32, retina_size as i32) / 2,
-    //         netlist: String::new(),
-    //         statistics: HashMap::new(),
-    //     }
-    // }
-
     pub fn evaluate(
         &mut self,
         adaptive_config: &Res<AdaptiveConfig>,
@@ -593,31 +433,9 @@ impl Agent {
                 .networks_mut()
                 .iter_mut()
                 .for_each(|network| {
-                    // update all super pixel input connections to each neuron
                     network.update_inputs_from_retina(&retina);
-                    // let sum = network
-                    //     .neurons()
-                    //     .iter()
-                    //     .fold(0.0, |acc, n| acc + n.output());
-                    // info(format!("sum before: {}", sum));
-                    // do one update step
                     network.update();
-                    // let sum = network
-                    //     .neurons()
-                    //     .iter()
-                    //     .fold(0.0, |acc, n| acc + n.output());
-                    // info(format!("sum after: {}", sum));
                 });
-
-            // self.genotype_mut()
-            //     .control_network_mut()
-            //     .update_inputs_from_retina(&retina);
-            // self.genotype_mut().control_network_mut().update();
-
-            // self.genotype_mut()
-            //     .categorize_network_mut()
-            //     .update_inputs_from_retina(&retina);
-            // self.genotype_mut().categorize_network_mut().update();
 
             // save retina movement in buffer
             image.update_retina_movement(&retina);
@@ -648,19 +466,12 @@ impl Agent {
             // calculate the fitness of the genotype
             local_fitness += training::fitness(self, annotation, &retina, &image);
         }
-        // save the image in the hashmap of the agent with label
-        // let image = image.clone();
-        // let genotype = self.genotype().clone();
-        // self.statistics_mut().insert(
-        //     ImageLabel(annotation.filename.replace(".jpg", "").clone()),
-        //     (image, genotype, String::new()),
-        // );
 
         let fitness = local_fitness / adaptive_config.number_of_network_updates as f32;
         Ok(fitness)
     }
 
-    /// builds a new Aegnt from a multiple json files located at 'path'
+    /// builds a new Agent from a multiple json files located at 'path'
     pub fn from_path(
         path: PathBuf,
         adaptive_config: &Res<AdaptiveConfig>,
@@ -712,8 +523,9 @@ impl Agent {
                 adaptive_config.retina_size as i32,
                 adaptive_config.retina_size as i32,
             ) / 2,
+            // images: vec![],
             // netlist: String::new(),
-            // image_buffer: HashMap::new(),
+            // statistics: HashMap::new(),
         })
     }
 
@@ -738,11 +550,11 @@ impl Agent {
         &mut self.genotype
     }
 
-    // pub fn statistics(&self) -> &HashMap<ImageLabel, (Image, Genotype, String)> {
+    // pub fn statistics(&self) -> &HashMap<ImageLabel, (Image, String)> {
     //     &self.statistics
     // }
 
-    // pub fn statistics_mut(&mut self) -> &mut HashMap<ImageLabel, (Image, Genotype, String)> {
+    // pub fn statistics_mut(&mut self) -> &mut HashMap<ImageLabel, (Image, String)> {
     //     &mut self.statistics
     // }
 
@@ -791,13 +603,5 @@ impl Agent {
     pub fn clear_short_term_memories(&mut self) -> &mut Self {
         self.genotype.clear_short_term_memories();
         self
-    }
-
-    pub fn debug_get_neuron_outputs(&self) -> Vec<f32> {
-        self.genotype
-            .networks()
-            .iter()
-            .flat_map(|network| network.neurons().iter().map(|neuron| neuron.output()))
-            .collect()
     }
 }

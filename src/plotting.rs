@@ -42,7 +42,7 @@ pub fn netlists_over_time(
     root.present().unwrap();
 }
 
-pub fn update_image(data: &Vec<f32>, path: &str, max_generations: u64) {
+pub fn plot_average_fitness(data: &Vec<f32>, path: &str, max_generations: u64) {
     let root = BitMapBackend::new(path, (640, 480)).into_drawing_area();
     root.fill(&WHITE).unwrap();
     let x_max = max_generations as f32;

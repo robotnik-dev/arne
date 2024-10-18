@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use indicatif::ProgressBar;
 use serde_json::Value;
 use std::{io::Read, path::PathBuf};
 use xml2json_rs::JsonBuilder;
@@ -8,16 +7,8 @@ use xml2json_rs::JsonBuilder;
 use crate::{
     image::{Image, ImageFormat, Position},
     netlist::{ComponentBuilder, Generate, Netlist},
-    Error, Result,
+    AdaptiveConfig, Error,
 };
-
-pub enum LoadFolder {
-    #[allow(dead_code)]
-    Segmentation,
-    Resized,
-    #[allow(dead_code)]
-    Images,
-}
 
 #[derive(Resource)]
 pub struct XMLParser {
@@ -127,55 +118,52 @@ impl XMLParser {
         Ok(self)
     }
 
-    // #[allow(dead_code)]
-    // pub fn resize_segmented_images(folder: PathBuf) -> Result {
-    //     let path = folder.clone().to_string_lossy().into_owned();
+    pub fn resize_segmented_images(folder: PathBuf, adaptive_config: &Res<AdaptiveConfig>) {
+        let path = folder.clone().to_string_lossy().into_owned();
 
-    //     // debug("resizing images in folder: {:?}", path.clone());
-    //     let resized_path = format!("{}/resized", path);
-    //     std::fs::create_dir_all(PathBuf::from(resized_path.clone()))?;
-    //     for entry in std::fs::read_dir(path.clone())? {
-    //         let entry = entry?;
-    //         let folder_name = entry.file_name().to_string_lossy().into_owned();
+        // debug("resizing images in folder: {:?}", path.clone());
+        let resized_path = format!("{}/resized", path);
+        std::fs::create_dir_all(PathBuf::from(resized_path.clone())).unwrap();
+        for entry in std::fs::read_dir(path.clone()).unwrap() {
+            let entry = entry.unwrap();
+            let folder_name = entry.file_name().to_string_lossy().into_owned();
 
-    //         if folder_name == *"segmentation" {
-    //             let progress = ProgressBar::new(std::fs::read_dir(entry.path())?.count() as u64);
-    //             for image_entry in std::fs::read_dir(entry.path())? {
-    //                 progress.inc(1);
-    //                 let image_entry = image_entry?;
-    //                 let filename = image_entry.file_name().to_string_lossy().into_owned();
-    //                 let mut image = Image::from_path_raw(image_entry.path())?;
+            if folder_name == *"segmentation" {
+                for image_entry in std::fs::read_dir(entry.path()).unwrap() {
+                    let image_entry = image_entry.unwrap();
+                    let filename = image_entry.file_name().to_string_lossy().into_owned();
+                    let mut image = Image::from_path_raw(image_entry.path()).unwrap();
 
-    //                 // resize in regards of correct aspect ratio
-    //                 let (width, height) = match image.format {
-    //                     ImageFormat::Landscape => (
-    //                         CONFIG.image_processing.goal_image_width as u32,
-    //                         CONFIG.image_processing.goal_image_height as u32,
-    //                     ),
-    //                     ImageFormat::Portrait => (
-    //                         CONFIG.image_processing.goal_image_height as u32,
-    //                         CONFIG.image_processing.goal_image_width as u32,
-    //                     ),
-    //                 };
-    //                 image.resize_all(width, height)?;
+                    // resize in regards of correct aspect ratio
+                    let (width, height) = match image.format {
+                        ImageFormat::Landscape => (
+                            adaptive_config.goal_image_width as u32,
+                            adaptive_config.goal_image_height as u32,
+                        ),
+                        ImageFormat::Portrait => (
+                            adaptive_config.goal_image_height as u32,
+                            adaptive_config.goal_image_width as u32,
+                        ),
+                    };
+                    image.resize_all(width, height).unwrap();
 
-    //                 // rotate all the images that are in Portait format to get all images in the landscape format
-    //                 if image.format == ImageFormat::Portrait {
-    //                     image.rotate90();
-    //                     image.format = ImageFormat::Landscape;
-    //                 };
+                    // rotate all the images that are in Portait format to get all images in the landscape format
+                    if image.format == ImageFormat::Portrait {
+                        image.rotate90();
+                        image.format = ImageFormat::Landscape;
+                    };
 
-    //                 image.save_grey(PathBuf::from(format!(
-    //                     "{}/{}",
-    //                     resized_path.clone(),
-    //                     filename
-    //                 )))?;
-    //             }
-    //             progress.finish_and_clear();
-    //         }
-    //     }
-    //     Ok(())
-    // }
+                    image
+                        .save_grey(PathBuf::from(format!(
+                            "{}/{}",
+                            resized_path.clone(),
+                            filename
+                        )))
+                        .unwrap();
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone)]

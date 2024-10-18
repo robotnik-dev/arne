@@ -7,7 +7,7 @@
   "retina_upper": 4.0,
   "init_non_zero_retina_weights": 0.1,
   "population_size": 150,
-  "max_generations": 3,
+  "max_generations": 2,
   "tournament_size": 2,
   "variance": 0.2,
   "variance_decay": 1.0,
@@ -28,6 +28,7 @@
   "retina_label_scale": 12.0,
   "sobel_threshold": 0.3,
   "erode_pixels": 1,
+  "preprocess": false,
   "training_path": "data/training",
   "training_load_all": false,
   "training_load_amount": 2,
@@ -38,7 +39,8 @@
   "categorize_network_neurons": 3,
   "retina_movement_speed": 25.0,
   "with_seed": true,
-  "seed": 3,
-  "goal_fitness": 0.95
+  "seed": 1,
+  "goal_fitness": 0.95,
+  "agent_save_path": "agents"
 }
   

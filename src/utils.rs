@@ -1,7 +1,3 @@
-use std::path::PathBuf;
-
-use crate::{image::Image, Error};
-
 pub fn round_to_decimal_places(value: f32, decimal_places: u32) -> f32 {
     let multiplier = 10_f32.powi(decimal_places as i32);
     (value * multiplier).round() / multiplier
@@ -56,14 +52,6 @@ pub fn amount_of_components(netlist: &String) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    // #[test]
-    // fn test_get_label() {
-    //     let path = PathBuf::from("path/to/file.png");
-    //     let label = get_label_from_path(path).unwrap();
-    //     assert_eq!(label, "file");
-    // }
 
     #[test]
     fn netlist_empty() {
