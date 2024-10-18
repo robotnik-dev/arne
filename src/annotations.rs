@@ -2,7 +2,6 @@ use bevy::prelude::*;
 use serde_json::Value;
 use std::{io::Read, path::PathBuf};
 use xml2json_rs::JsonBuilder;
-// use quick_xml::{de::from_str, se::to_string};
 
 use crate::{
     image::{Image, ImageFormat, Position},
@@ -12,8 +11,7 @@ use crate::{
 
 #[derive(Resource)]
 pub struct XMLParser {
-    /// String: optimal netlist for this image, once generated when loaded
-    pub data: Vec<(Annotation, Image, String)>,
+    pub data: Vec<(Annotation, Image, Netlist)>,
     pub loaded: usize,
 }
 
@@ -107,8 +105,7 @@ impl XMLParser {
                                 v_idx += 1;
                             }
                         });
-                        let optimal_netlist = netlist.generate();
-                        self.data.push((annotation, image, optimal_netlist));
+                        self.data.push((annotation, image, netlist));
                         self.loaded += 1;
                         count += 1;
                     }
@@ -121,7 +118,6 @@ impl XMLParser {
     pub fn resize_segmented_images(folder: PathBuf, adaptive_config: &Res<AdaptiveConfig>) {
         let path = folder.clone().to_string_lossy().into_owned();
 
-        // debug("resizing images in folder: {:?}", path.clone());
         let resized_path = format!("{}/resized", path);
         std::fs::create_dir_all(PathBuf::from(resized_path.clone())).unwrap();
         for entry in std::fs::read_dir(path.clone()).unwrap() {

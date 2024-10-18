@@ -18,8 +18,14 @@
 // VOLTAGE SOURCES (DC)
 // General form: v[name] [+node] [-node] dc [voltage] Example 1: v1 1 0 dc 12
 
+use bevy::prelude::Component;
+
 use crate::Result;
 use std::{collections::HashMap, io::ErrorKind::NotFound};
+
+pub trait Build {
+    fn build(&self) -> Netlist;
+}
 
 pub trait Generate {
     fn generate(&self) -> String;
@@ -170,7 +176,7 @@ impl std::fmt::Display for Node {
     }
 }
 
-#[derive(Debug, PartialEq, Default, Clone)]
+#[derive(Debug, PartialEq, Default, Clone, Component)]
 pub struct Netlist {
     pub components: HashMap<String, EComponent>,
 }

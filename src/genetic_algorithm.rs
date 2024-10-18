@@ -1,6 +1,6 @@
 use crate::annotations::Annotation;
 use crate::image::{Image, Position};
-use crate::netlist::{ComponentBuilder, ComponentType, Generate, Netlist};
+use crate::netlist::{Build, ComponentBuilder, ComponentType, Generate, Netlist};
 use crate::neural_network::Rnn;
 use crate::{training, AdaptiveConfig, Error};
 use bevy::prelude::*;
@@ -13,6 +13,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
+use std::hash::Hash;
 use std::io::Read;
 use std::path::PathBuf;
 
@@ -302,8 +303,8 @@ impl Genotype {
     }
 }
 
-impl Generate for Genotype {
-    fn generate(&self) -> String {
+impl Build for Genotype {
+    fn build(&self) -> Netlist {
         // we have a list of found components with the boundingbox position saved (Position, ComponentType)
         // there a already only unique positions listed
         let mut netlist = Netlist::new();
@@ -322,29 +323,13 @@ impl Generate for Genotype {
                 );
             });
 
-        netlist.generate()
-        // capacitor_networks
-        //     .iter()
-        //     .enumerate()
-        //     .for_each(|(i, network)| {
-        //         let mut component =
-        //             ComponentBuilder::new(ComponentType::Capacitor, i.to_string()).build();
-        //         let in_node = network.neurons()[in_node_neuron_idx].output().abs()
-        //             * CONFIG.genetic_algorithm.node_range as f32;
-        //         let out_node = network.neurons()[out_node_neuron_idx].output().abs()
-        //             * CONFIG.genetic_algorithm.node_range as f32;
-        //         component.add_node(Node(in_node as u32), NodeType::In);
-        //         component.add_node(Node(out_node as u32), NodeType::Out);
-        //         let _ = netlist.add_component(
-        //             component.clone(),
-        //             format!("{}{}", component.symbol, component.name),
-        //         );
-        //     });
+        netlist
     }
 }
 
 #[derive(Debug, Component, Default, PartialEq, Clone)]
 pub struct Agent {
+    pub id: u64,
     pub fitness: f32,
     pub genotype: Genotype,
     pub retina_start_pos: Position,
@@ -352,6 +337,17 @@ pub struct Agent {
     // netlist: String,
     // String -> netlist string
     // pub statistics: HashMap<ImageLabel, (Image, String)>,
+}
+
+impl Agent {
+    pub fn new(mut rng: EntropyComponent<WyRand>) -> Self {
+        Self {
+            id: rng.gen(),
+            fitness: f32::default(),
+            genotype: Genotype::default(),
+            retina_start_pos: Position::default(),
+        }
+    }
 }
 
 impl Agent {
@@ -516,6 +512,8 @@ impl Agent {
             found_components: vec![],
         };
         Ok(Agent {
+            //HACK
+            id: 0,
             fitness: 0.0,
             genotype,
             // top left
