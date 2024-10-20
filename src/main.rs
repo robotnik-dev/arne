@@ -77,13 +77,13 @@ fn main() {
         )
         .add_systems(
             Update,
-            (evaluate_agents, debug_system, genetic_algorithm_step)
+            (evaluate_agents, genetic_algorithm_step)
                 .chain()
                 .run_if(in_state(AppState::EvaluateGeneration)),
         )
         .add_systems(
             Update,
-            (increase_generation_count, clear_stats)
+            (increase_generation_count, clear_stats, tick)
                 .chain()
                 .run_if(in_state(AppState::PrepareNewGeneration)),
         )
@@ -307,7 +307,6 @@ fn initialize_population(
     mut commands: Commands,
     mut q_source: Query<&mut EntropyComponent<WyRand>, With<Source>>,
 ) {
-    // info("Init Population");
     let mut source = q_source.single_mut();
     let mut agents = vec![];
     for _ in 0..adaptive_config.population_size {
@@ -324,19 +323,11 @@ fn initialize_population(
     }
 }
 
-fn debug_system() {
-    // info("Debug System");
-    // info(
-    //     q_stats
-    //         .iter()
-    //         .map(|s| s.0.evaluated_agent.id)
-    //         .unique()
-    //         .count(),
-    // );
+fn tick(time: Res<Time<Real>>) {
+    info(format!("elapsed time: {:?}", time.elapsed()));
 }
 
 fn initialize_average_fitness(mut commands: Commands, mut next: ResMut<NextState<AppState>>) {
-    // info("Init average fitness");
     commands.spawn(AverageFitness::default());
     next.set(AppState::EvaluateGeneration);
 }
