@@ -10,19 +10,12 @@ use crate::{
 };
 
 #[derive(Resource)]
+#[derive(Default)]
 pub struct XMLParser {
     pub data: Vec<(Annotation, Image, Netlist)>,
     pub loaded: usize,
 }
 
-impl Default for XMLParser {
-    fn default() -> Self {
-        Self {
-            data: vec![],
-            loaded: 0,
-        }
-    }
-}
 
 impl XMLParser {
     /// loads the images from the specified folder
@@ -65,7 +58,7 @@ impl XMLParser {
                             let full_component = object.name.clone();
                             let component = full_component.split(".").take(1).collect::<String>();
                             // TODO(maybe): adding correct nodes to components
-                            if component == "resistor".to_string() {
+                            if component == *"resistor" {
                                 netlist
                                     .add_component(
                                         ComponentBuilder::new(
@@ -78,7 +71,7 @@ impl XMLParser {
                                     .unwrap();
                                 r_idx += 1;
                             }
-                            if component == "capacitor".to_string() {
+                            if component == *"capacitor" {
                                 netlist
                                     .add_component(
                                         ComponentBuilder::new(
@@ -91,7 +84,7 @@ impl XMLParser {
                                     .unwrap();
                                 c_idx += 1;
                             }
-                            if component == "voltage".to_string() {
+                            if component == *"voltage" {
                                 netlist
                                     .add_component(
                                         ComponentBuilder::new(

@@ -207,6 +207,7 @@ pub enum SelectionMethod {
 // }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Default)]
 pub struct Genotype {
     /// the first is the control network and second the categorize network
     networks: Vec<Rnn>,
@@ -214,25 +215,17 @@ pub struct Genotype {
     found_components: Vec<(Position, ComponentType)>,
 }
 
-impl Default for Genotype {
-    fn default() -> Self {
-        Self {
-            networks: vec![],
-            found_components: vec![],
-        }
-    }
-}
 
 impl Genotype {
     pub fn init(mut rng: EntropyComponent<WyRand>, adaptive_config: &Res<AdaptiveConfig>) -> Self {
         let control_network = Rnn::new(
             rng.fork_rng(),
-            adaptive_config.control_network_neurons as usize,
+            adaptive_config.control_network_neurons,
             adaptive_config,
         );
         let categorize_network = Rnn::new(
             rng.fork_rng(),
-            adaptive_config.categorize_network_neurons as usize,
+            adaptive_config.categorize_network_neurons,
             adaptive_config,
         );
         Genotype {
@@ -358,7 +351,7 @@ impl Agent {
         annotation: &Annotation,
     ) -> std::result::Result<f32, Error> {
         // initialize retina
-        let retina_size = adaptive_config.retina_size as usize;
+        let retina_size = adaptive_config.retina_size;
         // create a retina at a random position
         let top_left = Position::new(retina_size as i32, retina_size as i32);
         // let bottom_right = Position::new(
@@ -372,7 +365,7 @@ impl Agent {
         let mut retina = image.create_retina_at(
             top_left,
             retina_size,
-            adaptive_config.superpixel_size as usize,
+            adaptive_config.superpixel_size,
             "".to_string(),
         )?;
 
@@ -400,7 +393,7 @@ impl Agent {
             .iter()
             .map(|neuron| neuron.output())
             .collect::<Vec<f32>>();
-        let time_step = (0) as u32;
+        let time_step = 0_u32;
         self.genotype_mut()
             .control_network_mut()
             .add_snapshot(control_outputs, time_step);
@@ -460,7 +453,7 @@ impl Agent {
                 .add_snapshot(categorize_outputs, time_step);
 
             // calculate the fitness of the genotype
-            local_fitness += training::fitness(self, annotation, &retina, &image);
+            local_fitness += training::fitness(self, annotation, &retina, image);
         }
 
         let fitness = local_fitness / adaptive_config.number_of_network_updates as f32;

@@ -308,8 +308,8 @@ impl Rnn {
     /// scaling factor can be set in the config file
     pub fn next_delta_position(&self, adaptive_config: &Res<AdaptiveConfig>) -> Position {
         Position::new(
-            (self.neurons()[0].output() * adaptive_config.retina_movement_speed as f32) as i32,
-            (self.neurons()[1].output() * adaptive_config.retina_movement_speed as f32) as i32,
+            (self.neurons()[0].output() * adaptive_config.retina_movement_speed) as i32,
+            (self.neurons()[1].output() * adaptive_config.retina_movement_speed) as i32,
         )
     }
 
@@ -704,8 +704,8 @@ impl Neuron {
         _neuron_count: usize,
         adaptive_config: &AdaptiveConfig,
     ) -> Self {
-        let superpixel_size = adaptive_config.superpixel_size as usize;
-        let retina_size = adaptive_config.retina_size as usize;
+        let superpixel_size = adaptive_config.superpixel_size;
+        let retina_size = adaptive_config.retina_size;
         let retina_weights = (0..(retina_size / superpixel_size).pow(2))
             // set 90 % of retina weights to 0
             .map(|_| {
@@ -842,7 +842,7 @@ mod tests {
                     time_step: 2,
                 },
                 SnapShot {
-                    outputs: vec![2.955555557, 0.88, -0.39],
+                    outputs: vec![2.955_555_4, 0.88, -0.39],
                     time_step: 3,
                 },
                 SnapShot {
@@ -862,7 +862,7 @@ mod tests {
                     time_step: 2,
                 },
                 SnapShot {
-                    outputs: vec![2.955555557, 0.88, -0.39],
+                    outputs: vec![2.955_555_4, 0.88, -0.39],
                     time_step: 3,
                 },
                 SnapShot {

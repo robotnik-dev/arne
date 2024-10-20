@@ -282,7 +282,7 @@ impl Image {
             ),
         };
         self.resize_all(width, height)?
-            .edged(Some(adaptive_config.sobel_threshold as f32))?
+            .edged(Some(adaptive_config.sobel_threshold))?
             .erode(
                 imageproc::distance_transform::Norm::L1,
                 adaptive_config.erode_pixels as u8,
@@ -553,7 +553,7 @@ impl Image {
         path: PathBuf,
         adaptive_config: &Res<AdaptiveConfig>,
     ) -> Result {
-        let circle_radius = adaptive_config.retina_circle_radius as f32;
+        let circle_radius = adaptive_config.retina_circle_radius;
         let upscaled_width = adaptive_config.goal_image_width as u32;
         let upscaled_height = adaptive_config.goal_image_height as u32;
 

@@ -42,7 +42,7 @@ use plotters::style::Color;
 //     root.present().unwrap();
 // }
 
-pub fn plot_average_fitness(data: &Vec<f32>, path: &str, max_generations: u64) {
+pub fn plot_average_fitness(data: &[f32], path: &str, max_generations: u64) {
     let root = BitMapBackend::new(path, (640, 480)).into_drawing_area();
     root.fill(&WHITE).unwrap();
     let x_max = max_generations as f32;
@@ -63,10 +63,7 @@ pub fn plot_average_fitness(data: &Vec<f32>, path: &str, max_generations: u64) {
         .unwrap();
 
     // convert data to moving avarage
-    let moving_avarage = data.iter().map(|x| {
-        // TODO: smooth curve
-        x
-    });
+    let moving_avarage = data.iter();
 
     chart
         .draw_series(LineSeries::new(
@@ -77,7 +74,7 @@ pub fn plot_average_fitness(data: &Vec<f32>, path: &str, max_generations: u64) {
 
     chart
         .configure_series_labels()
-        .background_style(&WHITE.mix(0.8))
+        .background_style(WHITE.mix(0.8))
         .draw()
         .unwrap();
 

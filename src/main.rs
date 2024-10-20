@@ -105,7 +105,7 @@ enum AppState {
     AlgorithmDone,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Resource)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Resource, Default)]
 pub struct AdaptiveConfig {
     pub number_of_populations: usize,
     pub number_of_network_updates: usize,
@@ -150,56 +150,6 @@ pub struct AdaptiveConfig {
     pub seed: usize,
     pub goal_fitness: f32,
     pub agent_save_path: String,
-}
-
-impl Default for AdaptiveConfig {
-    fn default() -> Self {
-        Self {
-            number_of_populations: usize::default(),
-            number_of_network_updates: usize::default(),
-            neuron_lower: f32::default(),
-            neuron_upper: f32::default(),
-            retina_lower: f32::default(),
-            retina_upper: f32::default(),
-            init_non_zero_retina_weights: f32::default(),
-            population_size: usize::default(),
-            max_generations: u64::default(),
-            tournament_size: usize::default(),
-            variance: f32::default(),
-            variance_decay: f32::default(),
-            mean: f32::default(),
-            delete_neuron: f32::default(),
-            delete_weights: f32::default(),
-            delete_bias: f32::default(),
-            delete_self_activation: f32::default(),
-            mutate_neuron: f32::default(),
-            mutate_weights: f32::default(),
-            mutate_bias: f32::default(),
-            mutate_self_activation: f32::default(),
-            goal_image_width: usize::default(),
-            goal_image_height: usize::default(),
-            retina_size: usize::default(),
-            superpixel_size: usize::default(),
-            retina_circle_radius: f32::default(),
-            retina_label_scale: f32::default(),
-            sobel_threshold: f32::default(),
-            erode_pixels: usize::default(),
-            preprocess: bool::default(),
-            training_path: String::default(),
-            training_load_all: bool::default(),
-            training_load_amount: usize::default(),
-            testing_path: String::default(),
-            testing_load_all: bool::default(),
-            testing_load_amount: usize::default(),
-            control_network_neurons: usize::default(),
-            categorize_network_neurons: usize::default(),
-            retina_movement_speed: f32::default(),
-            with_seed: bool::default(),
-            seed: usize::default(),
-            goal_fitness: f32::default(),
-            agent_save_path: String::default(),
-        }
-    }
 }
 
 #[derive(Resource, Default)]
@@ -312,22 +262,18 @@ fn load_images(
     // info("Load Images");
     let data_path = adaptive_config.training_path.to_string();
     let dir = std::fs::read_dir(PathBuf::from(data_path)).unwrap();
-    let mut idx = 0usize;
-    for folder in dir {
-        if idx == adaptive_config.training_load_amount as usize
-            && !adaptive_config.training_load_all
-        {
+    for (idx, folder) in dir.enumerate() {
+        if idx == adaptive_config.training_load_amount && !adaptive_config.training_load_all {
             break;
         };
         let drafter_path = folder.unwrap().path();
         xml_parser
             .load(
                 drafter_path,
-                adaptive_config.training_load_all as bool,
-                adaptive_config.training_load_amount as usize,
+                adaptive_config.training_load_all,
+                adaptive_config.training_load_amount,
             )
             .unwrap();
-        idx += 1;
     }
 
     let mut rng = q_source.single_mut().fork_rng();
@@ -337,8 +283,8 @@ fn load_images(
                 id: rng.gen(),
                 rgba: image.rgba.clone(),
                 grey: image.grey.clone(),
-                width: image.width.clone(),
-                height: image.height.clone(),
+                width: image.width,
+                height: image.height,
                 format: image.format.clone(),
                 retina_positions: image.retina_positions.clone(),
                 dark_pixel_positions: image.dark_pixel_positions.clone(),
@@ -436,6 +382,7 @@ fn evaluate_agents(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn genetic_algorithm_step(
     q_stats: Query<(&mut Stats, &EntropyComponent<WyRand>), Without<Source>>,
     par_commands: ParallelCommands,
@@ -515,8 +462,8 @@ fn genetic_algorithm_step(
 
     let new_population = combined
         .iter()
-        .cloned()
         .take(adaptive_config.population_size)
+        .cloned()
         // resets the fitness
         .map(|mut a| {
             a.0.set_fitness(0.0f32);
@@ -524,10 +471,7 @@ fn genetic_algorithm_step(
         })
         .collect::<Vec<Agent>>();
 
-    assert_eq!(
-        new_population.iter().count(),
-        adaptive_config.population_size
-    );
+    assert_eq!(new_population.len(), adaptive_config.population_size);
 
     // despawn all current Agents
     q_agents.par_iter().for_each(|entity| {

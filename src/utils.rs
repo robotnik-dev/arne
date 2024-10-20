@@ -11,7 +11,7 @@ pub fn round3(value: f32) -> f32 {
     round_to_decimal_places(value, 3)
 }
 
-pub fn netlist_empty(netlist: &String) -> bool {
+pub fn netlist_empty(netlist: &str) -> bool {
     netlist.split('\n').count() <= 3
 }
 
@@ -19,7 +19,7 @@ pub fn dot_product(v1: &[f32], v2: &[f32]) -> f32 {
     v1.iter().zip(v2.iter()).map(|(x, y)| x * y).sum()
 }
 
-pub fn amount_of_components(netlist: &String) -> usize {
+pub fn amount_of_components(netlist: &str) -> usize {
     netlist.lines().count() - 3
 }
 
