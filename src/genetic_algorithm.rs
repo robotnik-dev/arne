@@ -1,21 +1,21 @@
 use crate::annotations::Annotation;
 use crate::image::{Image, Position};
-use crate::netlist::{Build, ComponentBuilder, ComponentType, Generate, Netlist};
+use crate::netlist::{Build, ComponentBuilder, ComponentType, Netlist};
 use crate::neural_network::Rnn;
 use crate::{training, AdaptiveConfig, Error};
 use bevy::prelude::*;
 use bevy_prng::WyRand;
 use bevy_rand::prelude::EntropyComponent;
-use bevy_rand::traits::{ForkableInnerRng, ForkableRng};
+use bevy_rand::traits::ForkableRng;
 use itertools::Itertools;
-use rand::seq::SliceRandom;
+
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::ffi::OsStr;
-use std::fs::{self, OpenOptions};
-use std::hash::Hash;
-use std::io::Read;
-use std::path::PathBuf;
+// use std::ffi::OsStr;
+// use std::fs::{self, OpenOptions};
+
+// use std::io::Read;
+// use std::path::PathBuf;
 
 /// statisteics per Agent to store some data relevant for human statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,9 +241,9 @@ impl Genotype {
         }
     }
 
-    pub fn networks(&self) -> &Vec<Rnn> {
-        &self.networks
-    }
+    // pub fn networks(&self) -> &Vec<Rnn> {
+    //     &self.networks
+    // }
 
     pub fn networks_mut(&mut self) -> &mut Vec<Rnn> {
         &mut self.networks
@@ -265,9 +265,9 @@ impl Genotype {
         &mut self.networks[1]
     }
 
-    pub fn found_components(&self) -> &Vec<(Position, ComponentType)> {
-        &self.found_components
-    }
+    // pub fn found_components(&self) -> &Vec<(Position, ComponentType)> {
+    //     &self.found_components
+    // }
 
     pub fn add_found_component(&mut self, position: Position, component_type: ComponentType) {
         self.found_components.push((position, component_type));
@@ -467,65 +467,65 @@ impl Agent {
         Ok(fitness)
     }
 
-    /// builds a new Agent from a multiple json files located at 'path'
-    pub fn from_path(
-        path: PathBuf,
-        adaptive_config: &Res<AdaptiveConfig>,
-    ) -> std::result::Result<Self, Error> {
-        let mut networks = vec![];
-        fs::read_dir(path.clone()).unwrap().for_each(|entry| {
-            let network_path = entry.unwrap().path();
-            if network_path.is_dir() {
-                if network_path.file_name().unwrap().to_string_lossy() == *"control" {
-                    fs::read_dir(network_path.clone())
-                        .unwrap()
-                        .for_each(|file| {
-                            let file_path = file.unwrap().path();
-                            if Some(OsStr::new("network.json")) == file_path.file_name() {
-                                let mut file =
-                                    OpenOptions::new().read(true).open(file_path).unwrap();
-                                let mut buffer = String::new();
-                                file.read_to_string(&mut buffer).unwrap();
-                                let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
-                                networks.insert(0, rnn);
-                            }
-                        })
-                } else if network_path.file_name().unwrap().to_string_lossy() == *"categorize" {
-                    fs::read_dir(network_path.clone())
-                        .unwrap()
-                        .for_each(|file| {
-                            let file_path = file.unwrap().path();
-                            if Some(OsStr::new("network.json")) == file_path.file_name() {
-                                let mut file =
-                                    OpenOptions::new().read(true).open(file_path).unwrap();
-                                let mut buffer = String::new();
-                                file.read_to_string(&mut buffer).unwrap();
-                                let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
-                                networks.insert(1, rnn);
-                            }
-                        })
-                }
-            }
-        });
-        let genotype = Genotype {
-            networks: vec![networks[0].clone(), networks[1].clone()],
-            found_components: vec![],
-        };
-        Ok(Agent {
-            //HACK
-            id: 0,
-            fitness: 0.0,
-            genotype,
-            // top left
-            retina_start_pos: Position::new(
-                adaptive_config.retina_size as i32,
-                adaptive_config.retina_size as i32,
-            ) / 2,
-            // images: vec![],
-            // netlist: String::new(),
-            // statistics: HashMap::new(),
-        })
-    }
+    // /// builds a new Agent from a multiple json files located at 'path'
+    // pub fn from_path(
+    //     path: PathBuf,
+    //     adaptive_config: &Res<AdaptiveConfig>,
+    // ) -> std::result::Result<Self, Error> {
+    //     let mut networks = vec![];
+    //     fs::read_dir(path.clone()).unwrap().for_each(|entry| {
+    //         let network_path = entry.unwrap().path();
+    //         if network_path.is_dir() {
+    //             if network_path.file_name().unwrap().to_string_lossy() == *"control" {
+    //                 fs::read_dir(network_path.clone())
+    //                     .unwrap()
+    //                     .for_each(|file| {
+    //                         let file_path = file.unwrap().path();
+    //                         if Some(OsStr::new("network.json")) == file_path.file_name() {
+    //                             let mut file =
+    //                                 OpenOptions::new().read(true).open(file_path).unwrap();
+    //                             let mut buffer = String::new();
+    //                             file.read_to_string(&mut buffer).unwrap();
+    //                             let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
+    //                             networks.insert(0, rnn);
+    //                         }
+    //                     })
+    //             } else if network_path.file_name().unwrap().to_string_lossy() == *"categorize" {
+    //                 fs::read_dir(network_path.clone())
+    //                     .unwrap()
+    //                     .for_each(|file| {
+    //                         let file_path = file.unwrap().path();
+    //                         if Some(OsStr::new("network.json")) == file_path.file_name() {
+    //                             let mut file =
+    //                                 OpenOptions::new().read(true).open(file_path).unwrap();
+    //                             let mut buffer = String::new();
+    //                             file.read_to_string(&mut buffer).unwrap();
+    //                             let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
+    //                             networks.insert(1, rnn);
+    //                         }
+    //                     })
+    //             }
+    //         }
+    //     });
+    //     let genotype = Genotype {
+    //         networks: vec![networks[0].clone(), networks[1].clone()],
+    //         found_components: vec![],
+    //     };
+    //     Ok(Agent {
+    //         //HACK
+    //         id: 0,
+    //         fitness: 0.0,
+    //         genotype,
+    //         // top left
+    //         retina_start_pos: Position::new(
+    //             adaptive_config.retina_size as i32,
+    //             adaptive_config.retina_size as i32,
+    //         ) / 2,
+    //         // images: vec![],
+    //         // netlist: String::new(),
+    //         // statistics: HashMap::new(),
+    //     })
+    // }
 
     /// adds the fitness to the current fitness of the agent
     pub fn add_to_fitness(&mut self, fitness: f32) {
@@ -567,36 +567,36 @@ impl Agent {
         self.genotype.mutate(rng, adaptive_config);
     }
 
-    pub fn get_current_variance(&self) -> f32 {
-        self.genotype
-            .networks()
-            .iter()
-            .map(|network| network.variance())
-            .sum::<f32>()
-            / self.genotype.networks().len() as f32
-    }
+    // pub fn get_current_variance(&self) -> f32 {
+    //     self.genotype
+    //         .networks()
+    //         .iter()
+    //         .map(|network| network.variance())
+    //         .sum::<f32>()
+    //         / self.genotype.networks().len() as f32
+    // }
 
-    pub fn update_variance(&mut self, variance: f32) {
-        self.genotype_mut()
-            .networks_mut()
-            .iter_mut()
-            .for_each(|network| {
-                network.update_variance(variance);
-            });
-    }
+    // pub fn update_variance(&mut self, variance: f32) {
+    //     self.genotype_mut()
+    //         .networks_mut()
+    //         .iter_mut()
+    //         .for_each(|network| {
+    //             network.update_variance(variance);
+    //         });
+    // }
 
-    pub fn get_starting_position(
-        &self,
-        mut rng: EntropyComponent<WyRand>,
-        low_x: i32,
-        high_x: i32,
-        low_y: i32,
-        high_y: i32,
-    ) -> Position {
-        let random_x = rng.gen_range(low_x..=high_x);
-        let random_y = rng.gen_range(low_y..=high_y);
-        Position::new(random_x, random_y)
-    }
+    // pub fn get_starting_position(
+    //     &self,
+    //     mut rng: EntropyComponent<WyRand>,
+    //     low_x: i32,
+    //     high_x: i32,
+    //     low_y: i32,
+    //     high_y: i32,
+    // ) -> Position {
+    //     let random_x = rng.gen_range(low_x..=high_x);
+    //     let random_y = rng.gen_range(low_y..=high_y);
+    //     Position::new(random_x, random_y)
+    // }
 
     pub fn clear_short_term_memories(&mut self) -> &mut Self {
         self.genotype.clear_short_term_memories();

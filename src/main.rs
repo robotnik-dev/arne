@@ -1,7 +1,5 @@
 use annotations::{Annotation, XMLParser};
-use bevy::dev_tools::states::log_transitions;
 use bevy::prelude::*;
-use bevy::utils::hashbrown::HashMap;
 use bevy::{
     log::{Level, LogPlugin},
     state::app::StatesPlugin,
@@ -69,8 +67,8 @@ fn main() {
         .add_systems(
             Update,
             (
-                load_images,
                 setup_source,
+                load_images,
                 initialize_population,
                 initialize_average_fitness,
             )
@@ -209,11 +207,9 @@ struct Generation(u64);
 
 #[derive(Component, Debug, Clone)]
 struct Stats {
-    agent_entity: Entity,
     original_agent: Agent,
     evaluated_agent: Agent,
-    original_image: Image,
-    image: Image,
+    evaluated_image: Image,
     annotation: Annotation,
     netlist: Netlist,
     optimal_netlist: Netlist,
@@ -311,6 +307,7 @@ fn load_images(
     mut xml_parser: ResMut<XMLParser>,
     mut commands: Commands,
     adaptive_config: Res<AdaptiveConfig>,
+    mut q_source: Query<&mut EntropyComponent<WyRand>, With<Source>>,
 ) {
     // info("Load Images");
     let data_path = adaptive_config.training_path.to_string();
@@ -333,9 +330,11 @@ fn load_images(
         idx += 1;
     }
 
+    let mut rng = q_source.single_mut().fork_rng();
     for (annotation, image, netlist) in xml_parser.data.iter() {
         commands
             .spawn(Image {
+                id: rng.gen(),
                 rgba: image.rgba.clone(),
                 grey: image.grey.clone(),
                 width: image.width.clone(),
@@ -379,7 +378,7 @@ fn initialize_population(
     }
 }
 
-fn debug_system(q_stats: Query<(&mut Stats, &EntropyComponent<WyRand>), Without<Source>>) {
+fn debug_system() {
     // info("Debug System");
     // info(
     //     q_stats
@@ -403,10 +402,7 @@ fn evaluate_agents(
     q_agents: Query<(Entity, &Agent, &EntropyComponent<WyRand>)>,
     par_commands: ParallelCommands,
 ) {
-    // info("Evaluate agents");
-    // TODO: DO it not in parralel but in sequence!
-
-    q_agents.par_iter().for_each(|(entity, agent, rng)| {
+    q_agents.par_iter().for_each(|(_, agent, rng)| {
         q_images
             .par_iter()
             .for_each(|(image, annotation, optimal_netlist)| {
@@ -414,9 +410,6 @@ fn evaluate_agents(
                     let mut temp_agent = agent.clone();
                     let mut temp_image = image.clone();
                     let new_rng = rng.clone().fork_rng();
-                    // agent 1 gets avaluated and gets image 1.
-                    // image changes (retina positions)
-                    // agent changes too (snapshots)
                     let fitness = temp_agent
                         .evaluate(&adaptive_config, &mut temp_image, annotation)
                         .unwrap();
@@ -426,17 +419,13 @@ fn evaluate_agents(
 
                     // generate a netlist for this image and this agent and append it
                     let netlist = temp_agent.genotype().build();
-                    // the agent 1 with its changed genotype is mapped to the evaluated image 1
-                    // but agent 1 is also mapped in another iteration to image 2 which is a different image
                     commands
                         .spawn(Stats {
-                            agent_entity: entity,
                             // this is the original agent before evaluation and not changed snapshots
                             original_agent: agent.clone(),
                             // this is the changed agent with snapshots
                             evaluated_agent: temp_agent.clone(),
-                            original_image: image.clone(),
-                            image: temp_image.clone(),
+                            evaluated_image: temp_image.clone(),
                             annotation: annotation.clone(),
                             netlist,
                             optimal_netlist: optimal_netlist.clone(),
@@ -457,29 +446,34 @@ fn genetic_algorithm_step(
     mut q_average_fitness: Query<&mut AverageFitness>,
     mut next: ResMut<NextState<AppState>>,
     generation: ResMut<Generation>,
+    xml_parser: Res<XMLParser>,
 ) {
-    // info("Genetic Algorithm step");
+    let mut source = q_source.single_mut();
+    assert_eq!(
+        q_stats.iter().len() / xml_parser.loaded,
+        adaptive_config.population_size
+    );
 
-    let mut agents = q_stats
+    let mut stats = q_stats
         .iter()
-        .unique_by(|s| s.0.evaluated_agent.id)
-        .map(|s| s.0.evaluated_agent.clone())
-        .collect::<Vec<Agent>>();
-
-    assert_eq!(agents.iter().count(), adaptive_config.population_size);
+        .unique_by(|(stat, _)| stat.original_agent.id)
+        .map(|(s, _)| {
+            (
+                s.evaluated_agent.clone(),
+                s.evaluated_image.clone(),
+                s.annotation.clone(),
+            )
+        })
+        .collect::<Vec<(Agent, Image, Annotation)>>();
+    assert_eq!(stats.iter().len(), adaptive_config.population_size);
 
     // take the best {population_size} agents for further processing
-    agents.sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
-
-    // average each agents fitness over the number of images
-    // agents.par_iter_mut().for_each(|agent| {
-    //     agent.set_fitness(agent.fitness() / number_of_images as f32);
-    // });
+    stats.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
 
     // save fitness data for plotting over generations
     let mut fitness_comp = q_average_fitness.single_mut();
     let average_fitness =
-        agents.iter().fold(0f32, |acc, a| acc + a.fitness()) / agents.iter().len() as f32;
+        stats.iter().fold(0f32, |acc, a| acc + a.0.fitness()) / stats.iter().len() as f32;
     fitness_comp.0.push(average_fitness);
 
     // TODO: after 50 % of max generations, decrease the variance by 10 % each generation
@@ -491,38 +485,42 @@ fn genetic_algorithm_step(
     }
 
     // select, crossover and mutate
-    let new_agents = q_stats
+    let new_agents = stats
         .iter()
-        .map(|(_, rng)| {
+        .map(|(_, image, annotation)| {
             // select
             let mut tournament = Vec::with_capacity(adaptive_config.tournament_size);
             for _ in 0..adaptive_config.tournament_size {
-                tournament.push(agents.choose(&mut rng.clone()).unwrap());
+                tournament.push(stats.choose(&mut source.fork_rng()).unwrap());
             }
-            tournament.sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
+            tournament.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
             // crossover
-            let mut offspring = tournament[0].crossover(rng.clone(), tournament[1]);
+            let mut offspring = tournament[0]
+                .0
+                .crossover(source.fork_rng(), &tournament[1].0);
             // mutate
-            offspring.mutate(rng.clone(), &adaptive_config);
-            offspring
+            offspring.mutate(source.fork_rng(), &adaptive_config);
+            (offspring, image.clone(), annotation.clone())
         })
-        .collect::<Vec<Agent>>();
+        .collect::<Vec<(Agent, Image, Annotation)>>();
 
     // evolve the population
-    let mut combined = agents
+    let mut combined = stats
         .iter()
         .cloned()
         .chain(new_agents.iter().cloned())
-        .collect::<Vec<Agent>>();
-    combined.sort_by(|a, b| b.fitness().partial_cmp(&a.fitness()).unwrap());
+        .collect::<Vec<(Agent, Image, Annotation)>>();
+
+    combined.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
+
     let new_population = combined
         .iter()
         .cloned()
         .take(adaptive_config.population_size)
         // resets the fitness
         .map(|mut a| {
-            a.set_fitness(0.0f32);
-            a
+            a.0.set_fitness(0.0f32);
+            a.0
         })
         .collect::<Vec<Agent>>();
 
@@ -538,7 +536,7 @@ fn genetic_algorithm_step(
         })
     });
     // spawn new ones from the select, crossover and mutate step
-    let mut source = q_source.single_mut();
+
     for agent in new_population.iter() {
         let mut new_agent = agent.clone();
         // generate new random id for agent
@@ -555,7 +553,6 @@ fn increase_generation_count(
     q_images: Query<(&Image, &Annotation)>,
     adaptive_config: Res<AdaptiveConfig>,
 ) {
-    // info("increase population count");
     let image_number = q_images.iter().len();
     generation.0 += 1;
     info(format!(
@@ -569,7 +566,6 @@ fn clear_stats(
     par_commands: ParallelCommands,
     mut next: ResMut<NextState<AppState>>,
 ) {
-    // info("Clear stats");
     // despawn every stat entity to process the next generation
     q_stats.par_iter().for_each(|(entity, _)| {
         par_commands.command_scope(|mut commands| {
@@ -584,34 +580,46 @@ fn cleanup(
     mut exit: EventWriter<AppExit>,
     adaptive_config: Res<AdaptiveConfig>,
     q_average_fitness: Query<&AverageFitness>,
-    q_stats: Query<(Entity, &mut Stats), Without<Source>>,
+    q_stats: Query<(&mut Stats, &EntropyComponent<WyRand>), Without<Source>>,
+    xml_parser: Res<XMLParser>,
 ) {
-    // info("cleaning up");
-    // sort only the best X agents
-    let mut best_agents = vec![];
-    let mut agent_ids_already_seen = vec![];
-    q_stats.iter().for_each(|(_, stats)| {
-        // each agent only once
-        if !agent_ids_already_seen.contains(&stats.evaluated_agent.id) {
-            let a = stats.evaluated_agent.clone();
-            // get all images for this agent id
-            let mut mapping = vec![];
-            for (_, s) in q_stats.iter() {
-                if s.evaluated_agent.id == a.id {
-                    let img = s.image.clone();
-                    let ann = s.annotation.clone();
-                    mapping.push((img, ann));
-                }
-            }
-            best_agents.push((a.clone(), mapping.clone()));
-            // push to list to avoid a second iteation on this agent
-            agent_ids_already_seen.push(stats.evaluated_agent.id);
+    assert_eq!(
+        q_stats.iter().len() / xml_parser.loaded,
+        adaptive_config.population_size
+    );
+    let mut stats = q_stats
+        .iter()
+        .unique_by(|(stat, _)| stat.original_agent.id)
+        .map(|(s, _)| {
+            (
+                s.evaluated_agent.clone(),
+                s.evaluated_image.clone(),
+                s.annotation.clone(),
+                s.original_agent.id,
+            )
+        })
+        .collect::<Vec<(Agent, Image, Annotation, u64)>>();
+    assert_eq!(stats.iter().len(), adaptive_config.population_size);
+
+    // take the best agent and put all images in the list
+    // 1. find out the agent id of the best agent
+    stats.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
+    // let mut files_creation = vec![];
+    let mut images_creation = vec![];
+    for (s, _) in q_stats.iter() {
+        // 2. collect all evaluated images of this agent id in a list
+        if s.original_agent.id == stats[0].3 {
+            images_creation.push((
+                s.evaluated_agent.clone(),
+                s.evaluated_image.clone(),
+                s.annotation.clone(),
+                s.netlist.clone(),
+                s.optimal_netlist.clone(),
+            ));
         }
-    });
+    }
 
-    best_agents.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
-
-    assert_eq!(best_agents.iter().len(), adaptive_config.population_size);
+    assert_eq!(images_creation.iter().len(), xml_parser.loaded);
 
     // remove 'agents' directory if it exists
     std::fs::remove_dir_all(&adaptive_config.agent_save_path).unwrap_or_default();
@@ -632,17 +640,16 @@ fn cleanup(
     )
     .unwrap();
 
-    // save netlists over time
-    //     plotting::netlists_over_time(
-    //         &netlists_data,
-    //         format!("iterations/{}/netlist_plot.png", iteration).as_str(),
-    //         population_size,
-    //         max_generations,
-    //     );
+    // // save netlists over time
+    // plotting::netlists_over_time(
+    //     &netlists_data,
+    //     format!("iterations/{}/netlist_plot.png", iteration).as_str(),
+    //     population_size,
+    //     max_generations,
+    // );
 
     info("creating files");
-    // create files
-    best_agents.par_iter().for_each(|(a, images)| {
+    stats.par_iter().for_each(|(a, _, _, _)| {
         let mut agent = a.clone();
 
         // saves the folder name with fitness + entity_index
@@ -726,53 +733,52 @@ fn cleanup(
     });
 
     info("creating images");
-    // for the best x agents, create the images
-    // TODO: enable more images creation for the best X agents via adaptive config
-    let best_agent = best_agents[0].clone();
-    best_agent.1.par_iter().for_each(|(image, annotation)| {
-        let folder_name = format!("best_agent_{}", best_agent.0.id);
-        std::fs::create_dir_all(format!(
-            "{}/{}/{}",
-            adaptive_config.agent_save_path, folder_name, annotation.filename
-        ))
-        .unwrap();
-
-        image
-            .save_with_retina(PathBuf::from(format!(
-                "{}/{}/{}/retina.png",
+    images_creation
+        .iter()
+        .for_each(|(agent, image, annotation, netlist, optimal_netlist)| {
+            let folder_name = format!("best_agent_{}", agent.id);
+            std::fs::create_dir_all(format!(
+                "{}/{}/{}",
                 adaptive_config.agent_save_path, folder_name, annotation.filename
-            )))
+            ))
             .unwrap();
-        image
-            .save_with_retina_upscaled(
-                PathBuf::from(format!(
-                    "{}/{}/{}/retina_orig.png",
+
+            image
+                .save_with_retina(PathBuf::from(format!(
+                    "{}/{}/{}/retina.png",
                     adaptive_config.agent_save_path, folder_name, annotation.filename
-                )),
-                &adaptive_config,
+                )))
+                .unwrap();
+            image
+                .save_with_retina_upscaled(
+                    PathBuf::from(format!(
+                        "{}/{}/{}/retina_orig.png",
+                        adaptive_config.agent_save_path, folder_name, annotation.filename
+                    )),
+                    &adaptive_config,
+                )
+                .unwrap();
+
+            // save optimal netlist
+            std::fs::write(
+                format!(
+                    "{}/{}/{}/optimal_netlist.net",
+                    adaptive_config.agent_save_path, folder_name, annotation.filename
+                ),
+                optimal_netlist.generate(),
             )
             .unwrap();
 
-        // // save optimal netlist
-        // std::fs::write(
-        //     format!(
-        //         "{}/{}/{}/optimal_netlist.net",
-        //         adaptive_config.agent_save_path, folder_name, annotation.filename
-        //     ),
-        //     stats.optimal_netlist.generate(),
-        // )
-        // .unwrap();
-
-        // // save netlist
-        // std::fs::write(
-        //     format!(
-        //         "{}/{}/{}/netlist.net",
-        //         adaptive_config.agent_save_path, folder_name, stats.annotation.filename
-        //     ),
-        //     stats.netlist.generate(),
-        // )
-        // .unwrap();
-    });
+            // save netlist
+            std::fs::write(
+                format!(
+                    "{}/{}/{}/netlist.net",
+                    adaptive_config.agent_save_path, folder_name, annotation.filename
+                ),
+                netlist.generate(),
+            )
+            .unwrap();
+        });
     info("Finished");
     exit.send(AppExit::Success);
 }

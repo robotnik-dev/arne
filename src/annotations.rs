@@ -5,7 +5,7 @@ use xml2json_rs::JsonBuilder;
 
 use crate::{
     image::{Image, ImageFormat, Position},
-    netlist::{ComponentBuilder, Generate, Netlist},
+    netlist::{ComponentBuilder, Netlist},
     AdaptiveConfig, Error,
 };
 

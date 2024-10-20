@@ -6,7 +6,7 @@ use approx::AbsDiffEq;
 use bevy::prelude::*;
 use bevy_prng::WyRand;
 use bevy_rand::prelude::EntropyComponent;
-use bevy_rand::traits::{ForkableAsRng, ForkableInnerRng, ForkableRng};
+use bevy_rand::traits::{ForkableInnerRng, ForkableRng};
 use petgraph::{dot::Dot, Graph};
 use plotters::prelude::*;
 use rand::seq::IteratorRandom;
@@ -801,12 +801,6 @@ impl Neuron {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::{create_dir_all, read_to_string};
-
-    use serde_json::from_str;
-
-    use crate::{image::Image, Agent};
-
     use super::*;
 
     #[test]

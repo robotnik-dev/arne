@@ -147,6 +147,7 @@ pub enum ImageFormat {
 /// generic container for the image data
 #[derive(Debug, Clone, Component, PartialEq, Eq, Hash)]
 pub struct Image {
+    pub id: u64,
     pub rgba: RgbaImage,
     pub grey: GrayImage,
     pub width: u32,
@@ -196,6 +197,7 @@ impl Image {
             }
         }
         let mut image = Image {
+            id: 0,
             rgba,
             grey,
             width,
@@ -249,6 +251,7 @@ impl Image {
         let width = rgba.width();
         let height = rgba.height();
         let mut image = Image {
+            id: 0,
             rgba,
             grey,
             width,
