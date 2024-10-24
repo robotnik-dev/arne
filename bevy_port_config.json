@@ -7,7 +7,7 @@
   "retina_upper": 4.0,
   "init_non_zero_retina_weights": 0.1,
   "population_size": 150,
-  "max_generations": 300,
+  "max_generations": 500,
   "tournament_size": 2,
   "variance": 0.2,
   "variance_decay": 1.0,
@@ -30,17 +30,19 @@
   "erode_pixels": 1,
   "preprocess": false,
   "training_path": "data/training",
-  "training_load_all": false,
+  "training_load_all": true,
   "training_load_amount": 1,
   "testing_path": "data/testing",
   "testing_load_all": false,
   "testing_load_amount": 1,
   "control_network_neurons": 12,
-  "categorize_network_neurons": 10,
+  "categorize_network_neurons": 5,
   "retina_movement_speed": 25.0,
   "with_seed": true,
   "seed": 1,
   "goal_fitness": 0.95,
-  "agent_save_path": "agents"
+  "agent_save_path": "agents",
+  "tested_agent_save_path": "agents_tested",
+  "testing_stage": false
 }
   

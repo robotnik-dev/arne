@@ -61,6 +61,7 @@ fn main() {
         .insert_resource(Generation::default())
         // first loading the config
         .add_systems(Startup, (load_config,))
+        // .add_systems(PostStartup, decide_training_or_testing)
         // after this do the preprocessing of images if enabled in the config
         .add_systems(Update, (preprocess,).run_if(in_state(AppState::Preprocess)))
         // next load all images and setup the run
@@ -71,21 +72,28 @@ fn main() {
                 load_images,
                 initialize_population,
                 initialize_average_fitness,
+                decide_which_algorithm,
             )
                 .chain()
                 .run_if(in_state(AppState::Setup)),
         )
         .add_systems(
             Update,
-            (evaluate_agents, genetic_algorithm_step)
+            (evaluate_agents_testing, create_ranking)
                 .chain()
-                .run_if(in_state(AppState::EvaluateGeneration)),
+                .run_if(in_state(AppState::EvaluateGenerationTesting)),
+        )
+        .add_systems(
+            Update,
+            (evaluate_agents_training, genetic_algorithm_step)
+                .chain()
+                .run_if(in_state(AppState::EvaluateGenerationTraining)),
         )
         .add_systems(
             Update,
             (increase_generation_count, clear_stats, tick)
                 .chain()
-                .run_if(in_state(AppState::PrepareNewGeneration)),
+                .run_if(in_state(AppState::PrepareNewGenerationTraining)),
         )
         .add_systems(Update, (cleanup,).run_if(in_state(AppState::AlgorithmDone)))
         // .add_systems(Update, log_transitions::<AppState>)
@@ -100,8 +108,9 @@ enum AppState {
     #[default]
     Preprocess,
     Setup,
-    EvaluateGeneration,
-    PrepareNewGeneration,
+    EvaluateGenerationTraining,
+    PrepareNewGenerationTraining,
+    EvaluateGenerationTesting,
     AlgorithmDone,
 }
 
@@ -150,6 +159,8 @@ pub struct AdaptiveConfig {
     pub seed: usize,
     pub goal_fitness: f32,
     pub agent_save_path: String,
+    pub tested_agent_save_path: String,
+    pub testing_stage: bool,
 }
 
 #[derive(Resource, Default)]
@@ -169,7 +180,6 @@ struct Stats {
 struct AverageFitness(Vec<f32>);
 
 fn setup_source(mut commands: Commands, adaptive_config: Res<AdaptiveConfig>) {
-    // info("Setup source");
     if adaptive_config.with_seed {
         commands.spawn((
             Source,
@@ -183,7 +193,6 @@ fn setup_source(mut commands: Commands, adaptive_config: Res<AdaptiveConfig>) {
 /// preprocesses images, only once needed for each image (just enable this to create more images to be used by the algorithm)
 /// and put beforehand all the images you need into the data/training ord data/testing folder
 fn preprocess(adaptive_config: Res<AdaptiveConfig>, mut next: ResMut<NextState<AppState>>) {
-    // info("Preprocess");
     if adaptive_config.preprocess {
         info("preprocessing images");
         // training folder
@@ -199,11 +208,11 @@ fn preprocess(adaptive_config: Res<AdaptiveConfig>, mut next: ResMut<NextState<A
             XMLParser::resize_segmented_images(path, &adaptive_config);
         }
     }
+
     next.set(AppState::Setup);
 }
 
 fn load_config(mut adaptive_config: ResMut<AdaptiveConfig>) {
-    // info("Load Config");
     let filepath = String::from("bevy_port_config.json");
     let loaded_adaptive_config: AdaptiveConfig =
         from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
@@ -250,6 +259,8 @@ fn load_config(mut adaptive_config: ResMut<AdaptiveConfig>) {
     adaptive_config.seed = loaded_adaptive_config.seed;
     adaptive_config.goal_fitness = loaded_adaptive_config.goal_fitness;
     adaptive_config.agent_save_path = loaded_adaptive_config.agent_save_path;
+    adaptive_config.tested_agent_save_path = loaded_adaptive_config.tested_agent_save_path;
+    adaptive_config.testing_stage = loaded_adaptive_config.testing_stage;
     println!("{:#?}", adaptive_config);
 }
 
@@ -259,20 +270,26 @@ fn load_images(
     adaptive_config: Res<AdaptiveConfig>,
     mut q_source: Query<&mut EntropyComponent<WyRand>, With<Source>>,
 ) {
-    // info("Load Images");
-    let data_path = adaptive_config.training_path.to_string();
+    let (data_path, load_amount, load_all) = match adaptive_config.testing_stage {
+        true => (
+            adaptive_config.testing_path.to_string(),
+            adaptive_config.testing_load_amount,
+            adaptive_config.testing_load_all,
+        ),
+        false => (
+            adaptive_config.training_path.to_string(),
+            adaptive_config.training_load_amount,
+            adaptive_config.training_load_all,
+        ),
+    };
     let dir = std::fs::read_dir(PathBuf::from(data_path)).unwrap();
     for (idx, folder) in dir.enumerate() {
-        if idx == adaptive_config.training_load_amount && !adaptive_config.training_load_all {
+        if idx == load_amount && !load_all {
             break;
         };
         let drafter_path = folder.unwrap().path();
         xml_parser
-            .load(
-                drafter_path,
-                adaptive_config.training_load_all,
-                adaptive_config.training_load_amount,
-            )
+            .load(drafter_path, load_all, load_amount)
             .unwrap();
     }
 
@@ -309,17 +326,36 @@ fn initialize_population(
 ) {
     let mut source = q_source.single_mut();
     let mut agents = vec![];
-    for _ in 0..adaptive_config.population_size {
-        // spawn a new Agent
-        let mut rng = source.fork_rng();
-        let mut agent = Agent::new(rng.fork_rng());
-        agent.genotype = Genotype::init(rng.fork_rng(), &adaptive_config);
-        let entity = commands
+    if adaptive_config.testing_stage {
+        // load agents from path
+        let path = adaptive_config.agent_save_path.to_string();
+        std::fs::read_dir(path).unwrap().for_each(|entry| {
+            let path_buf = entry.unwrap().path();
+            if !path_buf
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("best_agent")
+            {
+                let agent = Agent::from_path(path_buf, &adaptive_config).unwrap();
+                agents.push(agent);
+            }
+        });
+    } else {
+        // training stage -> generate new agents
+        for _ in 0..adaptive_config.population_size {
+            // spawn a new Agent
+            let mut rng = source.fork_rng();
+            let mut agent = Agent::new(rng.fork_rng());
+            agent.genotype = Genotype::init(rng.fork_rng(), &adaptive_config);
+            agents.push(agent);
+        }
+    }
+    for agent in agents {
+        commands
             .spawn(agent)
             // rng component forked
-            .insert(rng)
-            .id();
-        agents.push(entity);
+            .insert(source.fork_rng());
     }
 }
 
@@ -327,13 +363,70 @@ fn tick(time: Res<Time<Real>>) {
     info(format!("elapsed time: {:?}", time.elapsed()));
 }
 
-fn initialize_average_fitness(mut commands: Commands, mut next: ResMut<NextState<AppState>>) {
+fn initialize_average_fitness(mut commands: Commands) {
     commands.spawn(AverageFitness::default());
-    next.set(AppState::EvaluateGeneration);
+}
+
+fn decide_which_algorithm(
+    adaptive_config: Res<AdaptiveConfig>,
+    mut next: ResMut<NextState<AppState>>,
+) {
+    if adaptive_config.testing_stage {
+        next.set(AppState::EvaluateGenerationTesting);
+    } else {
+        next.set(AppState::EvaluateGenerationTraining);
+    }
+}
+
+/// Test agents. Do all evaluation steps for all agents over all images
+fn evaluate_agents_testing(
+    q_images: Query<(&Image, &Annotation, &Netlist)>,
+    adaptive_config: Res<AdaptiveConfig>,
+    q_agents: Query<(Entity, &Agent, &EntropyComponent<WyRand>)>,
+    par_commands: ParallelCommands,
+) {
+    q_agents.par_iter().for_each(|(_, agent, rng)| {
+        q_images
+            .par_iter()
+            .for_each(|(image, annotation, optimal_netlist)| {
+                par_commands.command_scope(|mut commands| {
+                    let mut temp_agent = agent.clone();
+                    let mut temp_image = image.clone();
+                    let new_rng = rng.clone().fork_rng();
+                    let fitness = temp_agent
+                        .evaluate(&adaptive_config, &mut temp_image, annotation)
+                        .unwrap();
+                    assert_eq!(temp_agent.fitness(), 0.);
+                    assert!(fitness <= 1.0);
+                    temp_agent.add_to_fitness(fitness);
+
+                    // generate a netlist for this image and this agent and append it
+                    let netlist = temp_agent.genotype().build();
+                    commands
+                        .spawn(Stats {
+                            // this is the original agent before evaluation and not changed snapshots
+                            original_agent: agent.clone(),
+                            // this is the changed agent with snapshots
+                            evaluated_agent: temp_agent.clone(),
+                            evaluated_image: temp_image.clone(),
+                            annotation: annotation.clone(),
+                            netlist,
+                            optimal_netlist: optimal_netlist.clone(),
+                        })
+                        .insert(new_rng);
+                });
+            });
+    });
+}
+
+fn create_ranking(mut next: ResMut<NextState<AppState>>) {
+    // TODO: ranking
+
+    next.set(AppState::AlgorithmDone);
 }
 
 /// Do all update steps for one generation
-fn evaluate_agents(
+fn evaluate_agents_training(
     q_images: Query<(&Image, &Annotation, &Netlist)>,
     adaptive_config: Res<AdaptiveConfig>,
     q_agents: Query<(Entity, &Agent, &EntropyComponent<WyRand>)>,
@@ -480,7 +573,7 @@ fn genetic_algorithm_step(
         commands.spawn(new_agent).insert(rng);
     }
 
-    next.set(AppState::PrepareNewGeneration);
+    next.set(AppState::PrepareNewGenerationTraining);
 }
 
 fn increase_generation_count(
@@ -508,7 +601,7 @@ fn clear_stats(
         })
     });
 
-    next.set(AppState::EvaluateGeneration);
+    next.set(AppState::EvaluateGenerationTraining);
 }
 
 fn cleanup(
@@ -518,6 +611,11 @@ fn cleanup(
     q_stats: Query<(&mut Stats, &EntropyComponent<WyRand>), Without<Source>>,
     xml_parser: Res<XMLParser>,
 ) {
+    let save_path = match adaptive_config.testing_stage {
+        true => adaptive_config.tested_agent_save_path.clone(),
+        false => adaptive_config.agent_save_path.clone(),
+    };
+
     assert_eq!(
         q_stats.iter().len() / xml_parser.loaded,
         adaptive_config.population_size
@@ -557,23 +655,19 @@ fn cleanup(
     assert_eq!(images_creation.iter().len(), xml_parser.loaded);
 
     // remove 'agents' directory if it exists
-    std::fs::remove_dir_all(&adaptive_config.agent_save_path).unwrap_or_default();
+    std::fs::remove_dir_all(&save_path).unwrap_or_default();
 
     // save fitness data
     let average_fitness_data = q_average_fitness.single();
-    std::fs::create_dir_all(&adaptive_config.agent_save_path).unwrap();
+    std::fs::create_dir_all(&save_path).unwrap();
     plotting::plot_average_fitness(
         &average_fitness_data.0,
-        format!("{}/fitness.png", adaptive_config.agent_save_path).as_str(),
+        format!("{}/fitness.png", save_path).as_str(),
         adaptive_config.max_generations,
     );
 
     let out = format!("{:#?}", adaptive_config);
-    write(
-        format!("{}/config.txt", adaptive_config.agent_save_path).as_str(),
-        out,
-    )
-    .unwrap();
+    write(format!("{}/config.txt", save_path).as_str(), out).unwrap();
 
     // // save netlists over time
     // plotting::netlists_over_time(
@@ -589,27 +683,16 @@ fn cleanup(
 
         // saves the folder name with fitness + entity_index
         let agent_folder = format!("{}_{}", round2(agent.fitness()), agent.id);
-        std::fs::create_dir_all(format!(
-            "{}/{}",
-            adaptive_config.agent_save_path, agent_folder
-        ))
-        .unwrap();
+        std::fs::create_dir_all(format!("{}/{}", save_path, agent_folder)).unwrap();
         // save control network
         let folder_name = "control";
-        std::fs::create_dir_all(format!(
-            "{}/{}/{}",
-            adaptive_config.agent_save_path, agent_folder, folder_name
-        ))
-        .unwrap();
+        std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name)).unwrap();
         agent
             .genotype()
             .control_network()
             .short_term_memory()
             .visualize(
-                format!(
-                    "{}/{}/{}/memory.png",
-                    adaptive_config.agent_save_path, agent_folder, folder_name
-                ),
+                format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name),
                 adaptive_config.number_of_network_updates,
             )
             .unwrap();
@@ -618,7 +701,7 @@ fn cleanup(
             .control_network_mut()
             .to_json(format!(
                 "{}/{}/{}/network.json",
-                adaptive_config.agent_save_path, agent_folder, folder_name
+                save_path, agent_folder, folder_name
             ))
             .unwrap();
         agent
@@ -626,26 +709,19 @@ fn cleanup(
             .control_network()
             .to_dot(format!(
                 "{}/{}/{}/network.dot",
-                adaptive_config.agent_save_path, agent_folder, folder_name
+                save_path, agent_folder, folder_name
             ))
             .unwrap();
 
         // save categorize network
         let folder_name = "categorize";
-        std::fs::create_dir_all(format!(
-            "{}/{}/{}",
-            adaptive_config.agent_save_path, agent_folder, folder_name
-        ))
-        .unwrap();
+        std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name)).unwrap();
         agent
             .genotype()
             .categorize_network()
             .short_term_memory()
             .visualize(
-                format!(
-                    "{}/{}/{}/memory.png",
-                    adaptive_config.agent_save_path, agent_folder, folder_name,
-                ),
+                format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name,),
                 adaptive_config.number_of_network_updates,
             )
             .unwrap();
@@ -654,7 +730,7 @@ fn cleanup(
             .categorize_network_mut()
             .to_json(format!(
                 "{}/{}/{}/network.json",
-                adaptive_config.agent_save_path, agent_folder, folder_name
+                save_path, agent_folder, folder_name
             ))
             .unwrap();
         agent
@@ -662,7 +738,7 @@ fn cleanup(
             .categorize_network()
             .to_dot(format!(
                 "{}/{}/{}/network.dot",
-                adaptive_config.agent_save_path, agent_folder, folder_name
+                save_path, agent_folder, folder_name
             ))
             .unwrap();
     });
@@ -674,21 +750,21 @@ fn cleanup(
             let folder_name = format!("best_agent_{}", agent.id);
             std::fs::create_dir_all(format!(
                 "{}/{}/{}",
-                adaptive_config.agent_save_path, folder_name, annotation.filename
+                save_path, folder_name, annotation.filename
             ))
             .unwrap();
 
             image
                 .save_with_retina(PathBuf::from(format!(
                     "{}/{}/{}/retina.png",
-                    adaptive_config.agent_save_path, folder_name, annotation.filename
+                    save_path, folder_name, annotation.filename
                 )))
                 .unwrap();
             image
                 .save_with_retina_upscaled(
                     PathBuf::from(format!(
                         "{}/{}/{}/retina_orig.png",
-                        adaptive_config.agent_save_path, folder_name, annotation.filename
+                        save_path, folder_name, annotation.filename
                     )),
                     &adaptive_config,
                 )
@@ -698,7 +774,7 @@ fn cleanup(
             std::fs::write(
                 format!(
                     "{}/{}/{}/optimal_netlist.net",
-                    adaptive_config.agent_save_path, folder_name, annotation.filename
+                    save_path, folder_name, annotation.filename
                 ),
                 optimal_netlist.generate(),
             )
@@ -708,7 +784,7 @@ fn cleanup(
             std::fs::write(
                 format!(
                     "{}/{}/{}/netlist.net",
-                    adaptive_config.agent_save_path, folder_name, annotation.filename
+                    save_path, folder_name, annotation.filename
                 ),
                 netlist.generate(),
             )

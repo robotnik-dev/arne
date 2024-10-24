@@ -1,3 +1,8 @@
+use std::ffi::OsStr;
+use std::fs::OpenOptions;
+use std::io::Read;
+use std::path::PathBuf;
+
 use crate::annotations::Annotation;
 use crate::image::{Image, Position};
 use crate::netlist::{Build, ComponentBuilder, ComponentType, Netlist};
@@ -206,15 +211,13 @@ pub enum SelectionMethod {
 //     }
 // }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Genotype {
     /// the first is the control network and second the categorize network
     networks: Vec<Rnn>,
     #[serde(skip)]
     found_components: Vec<(Position, ComponentType)>,
 }
-
 
 impl Genotype {
     pub fn init(mut rng: EntropyComponent<WyRand>, adaptive_config: &Res<AdaptiveConfig>) -> Self {
@@ -341,27 +344,78 @@ impl Agent {
             retina_start_pos: Position::default(),
         }
     }
-}
 
-impl Agent {
+    /// builds a new Agent from json files located at 'path'
+    pub fn from_path(
+        path: PathBuf,
+        adaptive_config: &Res<AdaptiveConfig>,
+    ) -> std::result::Result<Self, Error> {
+        let mut networks = vec![];
+        let path_binding = path.clone();
+        let agent_folder_name = path_binding.file_name().unwrap().to_str().unwrap();
+        let agent_id_str = agent_folder_name.split("_").collect::<Vec<&str>>()[1];
+        let agent_id = agent_id_str.parse::<u64>().unwrap();
+        std::fs::read_dir(path.clone()).unwrap().for_each(|entry| {
+            let network_path = entry.unwrap().path();
+            if network_path.is_dir() {
+                if network_path.file_name().unwrap().to_string_lossy() == *"control" {
+                    std::fs::read_dir(network_path.clone())
+                        .unwrap()
+                        .for_each(|file| {
+                            let file_path = file.unwrap().path();
+                            if Some(OsStr::new("network.json")) == file_path.file_name() {
+                                let mut file =
+                                    OpenOptions::new().read(true).open(file_path).unwrap();
+                                let mut buffer = String::new();
+                                file.read_to_string(&mut buffer).unwrap();
+                                let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
+                                networks.insert(0, rnn);
+                            }
+                        })
+                } else if network_path.file_name().unwrap().to_string_lossy() == *"categorize" {
+                    std::fs::read_dir(network_path.clone())
+                        .unwrap()
+                        .for_each(|file| {
+                            let file_path = file.unwrap().path();
+                            if Some(OsStr::new("network.json")) == file_path.file_name() {
+                                let mut file =
+                                    OpenOptions::new().read(true).open(file_path).unwrap();
+                                let mut buffer = String::new();
+                                file.read_to_string(&mut buffer).unwrap();
+                                let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
+                                networks.insert(1, rnn);
+                            }
+                        })
+                }
+            }
+        });
+        let genotype = Genotype {
+            networks: vec![networks[0].clone(), networks[1].clone()],
+            found_components: vec![],
+        };
+        Ok(Agent {
+            id: agent_id,
+            fitness: 0.0,
+            genotype,
+            // top left
+            retina_start_pos: Position::new(
+                adaptive_config.retina_size as i32,
+                adaptive_config.retina_size as i32,
+            ) / 2,
+            // images: vec![],
+            // netlist: String::new(),
+            // statistics: HashMap::new(),
+        })
+    }
+
     pub fn evaluate(
         &mut self,
         adaptive_config: &Res<AdaptiveConfig>,
         image: &mut Image,
         annotation: &Annotation,
     ) -> std::result::Result<f32, Error> {
-        // initialize retina
         let retina_size = adaptive_config.retina_size;
-        // create a retina at a random position
         let top_left = Position::new(retina_size as i32, retina_size as i32);
-        // let bottom_right = Position::new(
-        //     image.width() as i32 - retina_size as i32,
-        //     image.height() as i32 - retina_size as i32,
-        // );
-
-        // let _image_center_position =
-        //     Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
-
         let mut retina = image.create_retina_at(
             top_left,
             retina_size,
@@ -459,66 +513,6 @@ impl Agent {
         let fitness = local_fitness / adaptive_config.number_of_network_updates as f32;
         Ok(fitness)
     }
-
-    // /// builds a new Agent from a multiple json files located at 'path'
-    // pub fn from_path(
-    //     path: PathBuf,
-    //     adaptive_config: &Res<AdaptiveConfig>,
-    // ) -> std::result::Result<Self, Error> {
-    //     let mut networks = vec![];
-    //     fs::read_dir(path.clone()).unwrap().for_each(|entry| {
-    //         let network_path = entry.unwrap().path();
-    //         if network_path.is_dir() {
-    //             if network_path.file_name().unwrap().to_string_lossy() == *"control" {
-    //                 fs::read_dir(network_path.clone())
-    //                     .unwrap()
-    //                     .for_each(|file| {
-    //                         let file_path = file.unwrap().path();
-    //                         if Some(OsStr::new("network.json")) == file_path.file_name() {
-    //                             let mut file =
-    //                                 OpenOptions::new().read(true).open(file_path).unwrap();
-    //                             let mut buffer = String::new();
-    //                             file.read_to_string(&mut buffer).unwrap();
-    //                             let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
-    //                             networks.insert(0, rnn);
-    //                         }
-    //                     })
-    //             } else if network_path.file_name().unwrap().to_string_lossy() == *"categorize" {
-    //                 fs::read_dir(network_path.clone())
-    //                     .unwrap()
-    //                     .for_each(|file| {
-    //                         let file_path = file.unwrap().path();
-    //                         if Some(OsStr::new("network.json")) == file_path.file_name() {
-    //                             let mut file =
-    //                                 OpenOptions::new().read(true).open(file_path).unwrap();
-    //                             let mut buffer = String::new();
-    //                             file.read_to_string(&mut buffer).unwrap();
-    //                             let rnn: Rnn = serde_json::from_str(buffer.trim()).unwrap();
-    //                             networks.insert(1, rnn);
-    //                         }
-    //                     })
-    //             }
-    //         }
-    //     });
-    //     let genotype = Genotype {
-    //         networks: vec![networks[0].clone(), networks[1].clone()],
-    //         found_components: vec![],
-    //     };
-    //     Ok(Agent {
-    //         //HACK
-    //         id: 0,
-    //         fitness: 0.0,
-    //         genotype,
-    //         // top left
-    //         retina_start_pos: Position::new(
-    //             adaptive_config.retina_size as i32,
-    //             adaptive_config.retina_size as i32,
-    //         ) / 2,
-    //         // images: vec![],
-    //         // netlist: String::new(),
-    //         // statistics: HashMap::new(),
-    //     })
-    // }
 
     /// adds the fitness to the current fitness of the agent
     pub fn add_to_fitness(&mut self, fitness: f32) {

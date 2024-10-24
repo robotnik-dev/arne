@@ -31,7 +31,7 @@ pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, imag
                 && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
                     <= -active_threshold
             {
-                categorize_fitness = 0.33f32;
+                categorize_fitness = 1f32;
                 agent
                     .genotype_mut()
                     .add_found_component(Position::from(bndbox.clone()), ComponentType::Resistor);
@@ -43,7 +43,7 @@ pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, imag
                 && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
                     <= -active_threshold
             {
-                categorize_fitness = 0.33f32;
+                categorize_fitness = 1f32;
                 agent.genotype_mut().add_found_component(
                     Position::from(bndbox.clone()),
                     ComponentType::VoltageSourceDc,
@@ -56,25 +56,26 @@ pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, imag
                 && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
                     <= -active_threshold
             {
-                categorize_fitness = 0.33f32;
+                categorize_fitness = 1f32;
                 agent
                     .genotype_mut()
                     .add_found_component(Position::from(bndbox.clone()), ComponentType::Capacitor);
-            } else {
-                // nothing in the retina! They should gain fitness when every neuron is inactive
-                if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
-                    <= -active_threshold
-                    && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
-                        .output()
-                        <= -active_threshold
-                    && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
-                        .output()
-                        <= -active_threshold
-                {
-                    // half as much fitness as if there was something found
-                    categorize_fitness = 0.1f32;
-                }
             }
+            // else {
+            //     // nothing in the retina! They should gain fitness when every neuron is inactive
+            //     if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+            //         <= -active_threshold
+            //         && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+            //             .output()
+            //             <= -active_threshold
+            //         && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+            //             .output()
+            //             <= -active_threshold
+            //     {
+            //         // half as much fitness as if there was something found
+            //         categorize_fitness = 0.1f32;
+            //     }
+            // }
         }
     });
 
