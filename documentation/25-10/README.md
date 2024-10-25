@@ -1,0 +1,2 @@
+# Kritischer bug fix
+Die bewegung der Retina ist jetzt korrekt dargstellt am ende des trainings, weil die util funktion dazu kam "recreate_movement" aus all den aufgezeichneten Positionen der retina und dem original Image.
