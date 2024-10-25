@@ -329,6 +329,8 @@ pub struct Agent {
     pub fitness: f32,
     pub genotype: Genotype,
     pub retina_start_pos: Position,
+    /// used to visualize the retina movement on an upscaled image (Position, size of retina, label)
+    pub retina_positions: Vec<(Position, usize, String)>,
     // pub images: Vec<Image>,
     // netlist: String,
     // String -> netlist string
@@ -342,6 +344,7 @@ impl Agent {
             fitness: f32::default(),
             genotype: Genotype::default(),
             retina_start_pos: Position::default(),
+            retina_positions: vec![],
         }
     }
 
@@ -350,10 +353,14 @@ impl Agent {
         path: PathBuf,
         adaptive_config: &Res<AdaptiveConfig>,
     ) -> std::result::Result<Self, Error> {
+        if !path.is_dir() {
+            return Err("No agent dir".into());
+        }
         let mut networks = vec![];
         let path_binding = path.clone();
         let agent_folder_name = path_binding.file_name().unwrap().to_str().unwrap();
-        let agent_id_str = agent_folder_name.split("_").collect::<Vec<&str>>()[1];
+        let agent_id_vec = agent_folder_name.split("_").collect::<Vec<&str>>();
+        let agent_id_str = agent_id_vec[1];
         let agent_id = agent_id_str.parse::<u64>().unwrap();
         std::fs::read_dir(path.clone()).unwrap().for_each(|entry| {
             let network_path = entry.unwrap().path();
@@ -402,6 +409,7 @@ impl Agent {
                 adaptive_config.retina_size as i32,
                 adaptive_config.retina_size as i32,
             ) / 2,
+            retina_positions: vec![],
             // images: vec![],
             // netlist: String::new(),
             // statistics: HashMap::new(),
@@ -509,6 +517,8 @@ impl Agent {
             // calculate the fitness of the genotype
             local_fitness += training::fitness(self, annotation, &retina, image);
         }
+        // save all the positions the retina visited on the control network to save it in json format
+        self.genotype_mut().control_network_mut().retina_positions = image.retina_positions.clone();
 
         let fitness = local_fitness / adaptive_config.number_of_network_updates as f32;
         Ok(fitness)

@@ -196,14 +196,58 @@ impl Generate for Netlist {
 }
 
 impl Netlist {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Netlist {
             components: HashMap::new(),
         }
     }
 
-    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.components.is_empty()
+    }
+
+    /// Compares with an other netlist.
+    /// Returns a percentage of similiarity between 0 and 1
+    pub fn compare(&self, with: &Netlist) -> f32 {
+        // save the maximum count of components that can be compared against (self ist the optimal netlist)
+        let max_components = self.components.iter().len();
+
+        let mut found_components = with
+            .components
+            .values()
+            .cloned()
+            .collect::<Vec<EComponent>>();
+        let optimal_components = self
+            .components
+            .values()
+            .cloned()
+            .collect::<Vec<EComponent>>();
+        let mut correct_component_count = 0usize;
+        // go through all components that should be present and count the correct ones.
+        for optimal_comp in optimal_components {
+            // this component of the optimal ones is found in the other component list
+            if let Some(index) = found_components.iter().position(|c| c == &optimal_comp) {
+                // increase the count of correct components
+                correct_component_count += 1;
+                // delete the component to prevent duplicate counting
+                found_components.remove(index);
+            }
+        }
+        if max_components > 0 {
+            // normal calculation of similiarity
+            return correct_component_count as f32 / max_components as f32;
+        } else if max_components == 0 {
+            // return 1.0 only when the found components are also zero, else return 0.0
+            if found_components.iter().len() == 0 {
+                return 1.;
+            } else {
+                return 0.;
+            }
+        } else {
+            return 0.;
+        }
+    }
+
     pub fn add_component(&mut self, component: EComponent, label: String) -> Result {
         if self.components.contains_key(&label) {
             return Err(Box::new(std::io::Error::new(
@@ -216,7 +260,7 @@ impl Netlist {
     }
 
     /// adds a node to a component with the specified label
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn add_node_to_component(
         &mut self,
         node: Node,
@@ -233,7 +277,7 @@ impl Netlist {
         Ok(())
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn get_component_with_label(&self, label: String) -> Option<&EComponent> {
         self.components.get(&label)
     }
@@ -325,6 +369,47 @@ mod tests {
                 .value(9.0, None)
                 .build();
         assert_eq!(voltage_source_dc, voltage_source_dc_from_builder);
+    }
+
+    #[test]
+    fn compare() {
+        let r0 = ComponentBuilder::new(ComponentType::Resistor, "r0".into()).build();
+        let r1 = ComponentBuilder::new(ComponentType::Resistor, "r1".into()).build();
+        let r2 = ComponentBuilder::new(ComponentType::Resistor, "r2".into()).build();
+        let c0 = ComponentBuilder::new(ComponentType::Capacitor, "c0".into()).build();
+        let c1 = ComponentBuilder::new(ComponentType::Capacitor, "c1".into()).build();
+        let c2 = ComponentBuilder::new(ComponentType::Capacitor, "c2".into()).build();
+
+        let mut optimal = Netlist::new();
+        optimal.add_component(r0.clone(), "r0".into()).unwrap();
+        optimal.add_component(r2, "r2".into()).unwrap();
+        optimal.add_component(c1, "c1".into()).unwrap();
+        optimal.add_component(c2.clone(), "c2".into()).unwrap();
+
+        let mut with = Netlist::new();
+        with.add_component(r0.clone(), "r0".into()).unwrap();
+        assert_eq!(optimal.compare(&with), 0.25);
+
+        with.add_component(r1, "r1".into()).unwrap();
+        assert_eq!(optimal.compare(&with), 0.25);
+
+        with.add_component(c2.clone(), "c2".into()).unwrap();
+        assert_eq!(optimal.compare(&with), 0.5);
+
+        // testing when the optimal netlist has less components than with
+        let mut optimal = Netlist::new();
+        optimal.add_component(r0.clone(), "r0".into()).unwrap();
+        assert_eq!(optimal.compare(&with), 1.0);
+
+        optimal.add_component(c0.clone(), "c0".into()).unwrap();
+        assert_eq!(optimal.compare(&with), 0.5);
+
+        // testing when the optimal netlist has no components(optional: does not occur)
+        let optimal = Netlist::new();
+        assert_eq!(optimal.compare(&with), 0.0);
+
+        let with = Netlist::new();
+        assert_eq!(optimal.compare(&with), 1.0);
     }
 
     // #[test]

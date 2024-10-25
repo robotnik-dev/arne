@@ -184,6 +184,8 @@ pub struct Rnn {
     /// lower variance when later in the genetic algorithm
     mutation_variance: f32,
     mean: f32,
+    /// used to visualize the retina movement on an upscaled image (Position, size of retina, label)
+    pub retina_positions: Vec<(Position, usize, String)>,
 }
 
 impl PartialEq for Rnn {
@@ -236,6 +238,7 @@ impl From<Graph<(usize, f32), f32>> for Rnn {
             statistics: Statistics::new(),
             mutation_variance: 0.2,
             mean: 0.0,
+            retina_positions: vec![],
         }
     }
 }
@@ -271,6 +274,7 @@ impl Rnn {
             statistics: Statistics::new(),
             mutation_variance: adaptive_config.variance,
             mean: adaptive_config.mean,
+            retina_positions: vec![],
         }
     }
 

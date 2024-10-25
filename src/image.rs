@@ -3,6 +3,7 @@ use image::imageops::{resize, rotate90};
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
 use nalgebra::clamp;
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, Div, Sub};
 use std::path::PathBuf;
 use std::{fmt::Debug, ops::AddAssign};
@@ -22,7 +23,7 @@ impl std::fmt::Display for ImageLabel {
 }
 
 /// Counted with one more than image idx. Image index 0 -> Position index 1.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Hash, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, PartialOrd, Hash, Default)]
 pub struct Position {
     x: i32,
     y: i32,

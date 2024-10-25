@@ -1,3 +1,6 @@
+use crate::{image::Image, AdaptiveConfig, Rnn};
+use bevy::prelude::*;
+
 pub fn round_to_decimal_places(value: f32, decimal_places: u32) -> f32 {
     let multiplier = 10_f32.powi(decimal_places as i32);
     (value * multiplier).round() / multiplier
@@ -23,32 +26,24 @@ pub fn amount_of_components(netlist: &str) -> usize {
     netlist.lines().count() - 3
 }
 
-// /// gives the last bit of the path as the label e.g. "path/to/file.png" -> "file"
-// #[allow(dead_code)]
-// pub fn get_label_from_path(path: PathBuf) -> Option<String> {
-//     let path = std::path::Path::new(&path);
-//     let file_name = path.file_stem()?.to_str()?.to_string();
-//     Some(file_name)
-// }
-
-// #[allow(dead_code)]
-// pub fn binarize_image(image: Image) -> std::result::Result<Image, Error> {
-//     let mut image = image.clone();
-//     image
-//         .resize_all(
-//             CONFIG.image_processing.goal_image_width as u32,
-//             CONFIG.image_processing.goal_image_height as u32,
-//         )
-//         .map(|i| i.clone())?
-//         .edged(Some(CONFIG.image_processing.sobel_threshold as f32))
-//         .map(|i| i.clone())?
-//         .erode(
-//             imageproc::distance_transform::Norm::L1,
-//             CONFIG.image_processing.erode_pixels as u8,
-//         )
-//         .map(|i| i.clone())?;
-//     Ok(image)
-// }
+pub fn recreate_retina_movement(
+    adaptive_config: &Res<AdaptiveConfig>,
+    network: &Rnn,
+    orignal_image: &Image,
+    save_path: &str,
+) {
+    let mut image = orignal_image.clone();
+    image.retina_positions = network.retina_positions.clone();
+    image
+        .save_with_retina(format!("{}/retina_orig.png", save_path).into())
+        .unwrap();
+    image
+        .save_with_retina_upscaled(
+            format!("{}/retina_upscaled.png", save_path).into(),
+            adaptive_config,
+        )
+        .unwrap();
+}
 
 #[cfg(test)]
 mod tests {
