@@ -9,6 +9,7 @@ use crate::netlist::{Build, ComponentBuilder, ComponentType, Netlist};
 use crate::neural_network::Rnn;
 use crate::{training, AdaptiveConfig, Error};
 use bevy::prelude::*;
+use bevy::utils::hashbrown::HashMap;
 use bevy_prng::WyRand;
 use bevy_rand::prelude::EntropyComponent;
 use bevy_rand::traits::ForkableRng;
@@ -215,8 +216,9 @@ pub enum SelectionMethod {
 pub struct Genotype {
     /// the first is the control network and second the categorize network
     networks: Vec<Rnn>,
+    /// image_id hashmap : (Retina position, bndbox position)
     #[serde(skip)]
-    found_components: Vec<(Position, ComponentType)>,
+    pub found_components: HashMap<u64, Vec<((Position, Position), ComponentType)>>,
 }
 
 impl Genotype {
@@ -233,7 +235,7 @@ impl Genotype {
         );
         Genotype {
             networks: vec![control_network, categorize_network],
-            found_components: vec![],
+            found_components: HashMap::new(),
         }
     }
 
@@ -265,8 +267,27 @@ impl Genotype {
     //     &self.found_components
     // }
 
-    pub fn add_found_component(&mut self, position: Position, component_type: ComponentType) {
-        self.found_components.push((position, component_type));
+    pub fn add_found_component(
+        &mut self,
+        image_id: u64,
+        retina_position: Position,
+        bndbox_position: Position,
+        component_type: ComponentType,
+    ) {
+        if let Some(positions) = self.found_components.get_mut(&image_id) {
+            if !positions
+                .iter()
+                .any(|((_, bndbox_pos), _)| bndbox_pos == &bndbox_position)
+            {
+                positions.push(((retina_position, bndbox_position), component_type));
+            }
+        } else {
+            // insert first entry
+            self.found_components.insert(
+                image_id,
+                vec![((retina_position, bndbox_position), component_type)],
+            );
+        }
     }
 
     pub fn crossover_uniform(
@@ -282,7 +303,7 @@ impl Genotype {
             .crossover_uniform(rng.fork_rng(), with.categorize_network());
         Genotype {
             networks: vec![control_network, categorize_network],
-            found_components: vec![],
+            found_components: HashMap::new(),
         }
     }
 
@@ -300,24 +321,25 @@ impl Genotype {
 }
 
 impl Build for Genotype {
-    fn build(&self) -> Netlist {
+    fn build(&self, image_id: u64) -> Netlist {
         // we have a list of found components with the boundingbox position saved (Position, ComponentType)
         // there a already only unique positions listed
         let mut netlist = Netlist::new();
 
-        self.found_components
-            .iter()
-            .cloned()
-            .unique()
-            .enumerate()
-            .for_each(|(idx, (_, component_type))| {
-                let component = ComponentBuilder::new(component_type, idx.to_string()).build();
-                // adding components
-                let _ = netlist.add_component(
-                    component.clone(),
-                    format!("{}{}", component.symbol, component.name),
-                );
-            });
+        if let Some(components) = self.found_components.get(&image_id) {
+            components
+                .iter()
+                .enumerate()
+                .for_each(|(idx, (_, component_type))| {
+                    let component =
+                        ComponentBuilder::new(component_type.clone(), idx.to_string()).build();
+                    // adding components
+                    let _ = netlist.add_component(
+                        component.clone(),
+                        format!("{}{}", component.symbol, component.name),
+                    );
+                });
+        }
 
         netlist
     }
@@ -398,7 +420,7 @@ impl Agent {
         });
         let genotype = Genotype {
             networks: vec![networks[0].clone(), networks[1].clone()],
-            found_components: vec![],
+            found_components: HashMap::new(),
         };
         Ok(Agent {
             id: agent_id,
@@ -421,6 +443,7 @@ impl Agent {
         adaptive_config: &Res<AdaptiveConfig>,
         image: &mut Image,
         annotation: &Annotation,
+        optimal_netlist: &Netlist,
     ) -> std::result::Result<f32, Error> {
         let retina_size = adaptive_config.retina_size;
         let top_left = Position::new(retina_size as i32, retina_size as i32);
@@ -431,6 +454,7 @@ impl Agent {
             "".to_string(),
         )?;
 
+        // clear data before a fresh start of evaulation
         self.clear_short_term_memories();
 
         // initial network update and snapshot
@@ -462,7 +486,7 @@ impl Agent {
         self.genotype_mut()
             .categorize_network_mut()
             .add_snapshot(categorize_outputs, time_step);
-        let mut local_fitness = 0.0;
+        let mut control_fitness = 0.0;
         for i in 0..adaptive_config.number_of_network_updates {
             // first location of the retina
             image.update_retina_movement(&retina);
@@ -515,12 +539,17 @@ impl Agent {
                 .add_snapshot(categorize_outputs, time_step);
 
             // calculate the fitness of the genotype
-            local_fitness += training::fitness(self, annotation, &retina, image);
+            control_fitness += training::control_fitness(self, annotation, &retina, image);
         }
         // save all the positions the retina visited on the control network to save it in json format
         self.genotype_mut().control_network_mut().retina_positions = image.retina_positions.clone();
 
-        let fitness = local_fitness / adaptive_config.number_of_network_updates as f32;
+        // normalize control fitness over number of updates
+        control_fitness /= adaptive_config.number_of_network_updates as f32;
+
+        // calculate the categorize fitness
+        let categorize_fitness = training::categorize_fitness(self, image.id, optimal_netlist);
+        let fitness = (control_fitness + categorize_fitness) / 2.0f32;
         Ok(fitness)
     }
 

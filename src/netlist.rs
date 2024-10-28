@@ -21,10 +21,10 @@
 use bevy::prelude::Component;
 
 use crate::Result;
-use std::{collections::HashMap, io::ErrorKind::NotFound};
+use std::{collections::HashMap, fmt::Display, io::ErrorKind::NotFound};
 
 pub trait Build {
-    fn build(&self) -> Netlist;
+    fn build(&self, image_id: u64) -> Netlist;
 }
 
 pub trait Generate {
@@ -35,10 +35,18 @@ pub trait Generate {
 pub enum ComponentType {
     #[default]
     Resistor,
-    #[allow(dead_code)]
     Capacitor,
-    #[allow(dead_code)]
     VoltageSourceDc,
+}
+
+impl Display for ComponentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ComponentType::Resistor => write!(f, "R"),
+            ComponentType::Capacitor => write!(f, "C"),
+            ComponentType::VoltageSourceDc => write!(f, "V"),
+        }
+    }
 }
 
 pub enum NodeType {

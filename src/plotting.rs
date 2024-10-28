@@ -4,6 +4,7 @@ use plotters::style::Color;
 pub fn netlists_over_time(
     data: &Vec<f32>,
     path: &str,
+    title: &str,
     population_size: usize,
     max_generations: u64,
 ) {
@@ -11,7 +12,7 @@ pub fn netlists_over_time(
     root.fill(&WHITE).unwrap();
     let x_max = max_generations as f32;
     let mut chart = ChartBuilder::on(&root)
-        .caption("Netlists per generation", ("sans-serif", 50).into_font())
+        .caption(title, ("sans-serif", 50).into_font())
         .margin(5)
         .x_label_area_size(60)
         .y_label_area_size(60)

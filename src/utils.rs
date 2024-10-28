@@ -1,5 +1,5 @@
-use crate::{image::Image, AdaptiveConfig, Rnn};
-use bevy::prelude::*;
+use crate::{annotations::Annotation, genetic_algorithm::Agent, image::Image, AdaptiveConfig};
+use bevy::{prelude::*, utils::info};
 
 pub fn round_to_decimal_places(value: f32, decimal_places: u32) -> f32 {
     let multiplier = 10_f32.powi(decimal_places as i32);
@@ -28,19 +28,65 @@ pub fn amount_of_components(netlist: &str) -> usize {
 
 pub fn recreate_retina_movement(
     adaptive_config: &Res<AdaptiveConfig>,
-    network: &Rnn,
+    annotation: &Annotation,
+    agent: &Agent,
     orignal_image: &Image,
     save_path: &str,
 ) {
     let mut image = orignal_image.clone();
+    let network = agent.genotype().control_network();
     image.retina_positions = network.retina_positions.clone();
+    info(agent.genotype().found_components.clone());
     image
         .save_with_retina(format!("{}/retina_orig.png", save_path).into())
         .unwrap();
+
     image
         .save_with_retina_upscaled(
             format!("{}/retina_upscaled.png", save_path).into(),
             adaptive_config,
+        )
+        .unwrap();
+
+    image
+        .save_with_bndboxes_with_text(
+            format!("{}/bndboxes_with_text.png", save_path).as_str(),
+            &adaptive_config,
+            annotation,
+        )
+        .unwrap();
+
+    image
+        .save_with_bndboxes(
+            format!("{}/bndboxes.png", save_path).as_str(),
+            &adaptive_config,
+            annotation,
+        )
+        .unwrap();
+
+    image
+        .save_with_found_components(
+            format!("{}/retina_and_components.png", save_path).as_str(),
+            &adaptive_config,
+            agent,
+        )
+        .unwrap();
+
+    image
+        .save_with_found_components_and_bndboxes(
+            format!("{}/components_and_bndboxes.png", save_path).as_str(),
+            &adaptive_config,
+            annotation,
+            agent,
+        )
+        .unwrap();
+
+    image
+        .save_with_all(
+            format!("{}/all.png", save_path).as_str(),
+            &adaptive_config,
+            agent,
+            annotation,
         )
         .unwrap();
 }

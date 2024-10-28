@@ -1,12 +1,19 @@
+use bevy::utils::info;
+
 use crate::{
     annotations::Annotation,
     genetic_algorithm::Agent,
     image::{Image, Position},
-    netlist::ComponentType,
+    netlist::{Build, ComponentType, Netlist},
     Retina,
 };
 
-pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, image: &Image) -> f32 {
+pub fn control_fitness(
+    agent: &mut Agent,
+    annotation: &Annotation,
+    retina: &Retina,
+    image: &Image,
+) -> f32 {
     // the output of one neuron needs to exceed this value to count as active
     let active_threshold = 0.95;
 
@@ -14,7 +21,7 @@ pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, imag
     let resistor_neuron_idx = 1usize;
     let capacitor_neuron_idx = 2usize;
 
-    let mut categorize_fitness = 0f32;
+    // let mut categorize_fitness = 0f32;
     annotation.objects.iter().for_each(|obj| {
         let bndbox = image.translate_bndbox_to_size(annotation, obj);
         // we need to check if any bndbox specified in the annotation is currently inside the retina rectangle
@@ -22,44 +29,53 @@ pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, imag
             // If anyone is, then we check we check what kind of component is specified in this object
             let full_component = obj.name.clone();
             let component = full_component.split(".").take(1).collect::<String>();
+
             // And lastly we check if the corresponding neuron is active for this component and every other neuron is inactive
-            if component == *"resistor"
-                && agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
-                    >= active_threshold
-                && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
-                    <= -active_threshold
-                && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
-                    <= -active_threshold
+            if component == "resistor"
+            // && agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+            //     >= active_threshold
+            // && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
+            //     <= -active_threshold
+            // && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
+            //     <= -active_threshold
             {
-                categorize_fitness = 1f32;
-                agent
-                    .genotype_mut()
-                    .add_found_component(Position::from(bndbox.clone()), ComponentType::Resistor);
-            } else if component == *"voltage"
-                && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
-                    >= active_threshold
-                && agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
-                    <= -active_threshold
-                && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
-                    <= -active_threshold
-            {
-                categorize_fitness = 1f32;
+                // categorize_fitness = 1f32;
                 agent.genotype_mut().add_found_component(
+                    image.id,
+                    retina.get_center_position(),
+                    Position::from(bndbox.clone()),
+                    ComponentType::Resistor,
+                );
+            } else if component == "voltage"
+            // && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
+            //     >= active_threshold
+            // && agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+            //     <= -active_threshold
+            // && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
+            //     <= -active_threshold
+            {
+                // categorize_fitness = 1f32;
+                agent.genotype_mut().add_found_component(
+                    image.id,
+                    retina.get_center_position(),
                     Position::from(bndbox.clone()),
                     ComponentType::VoltageSourceDc,
                 );
-            } else if component == *"capacitor"
-                && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
-                    >= active_threshold
-                && agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
-                    <= -active_threshold
-                && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
-                    <= -active_threshold
+            } else if component == "capacitor"
+            // && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
+            //     >= active_threshold
+            // && agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+            //     <= -active_threshold
+            // && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
+            //     <= -active_threshold
             {
-                categorize_fitness = 1f32;
-                agent
-                    .genotype_mut()
-                    .add_found_component(Position::from(bndbox.clone()), ComponentType::Capacitor);
+                // categorize_fitness = 1f32;
+                agent.genotype_mut().add_found_component(
+                    image.id,
+                    retina.get_center_position(),
+                    Position::from(bndbox.clone()),
+                    ComponentType::Capacitor,
+                );
             }
             // else {
             //     // nothing in the retina! They should gain fitness when every neuron is inactive
@@ -79,7 +95,13 @@ pub fn fitness(agent: &mut Agent, annotation: &Annotation, retina: &Retina, imag
         }
     });
 
-    (categorize_fitness + retina.percentage_visited()) / 2.0f32
+    // (categorize_fitness + retina.percentage_visited()) / 2.0f32
+    retina.percentage_visited()
+}
+
+pub fn categorize_fitness(agent: &Agent, image_id: u64, optimal_netlist: &Netlist) -> f32 {
+    let netlist = agent.genotype().build(image_id);
+    optimal_netlist.compare(&netlist)
 }
 
 // pub fn test_agents(path: String, adaptive_config: Res<AdaptiveConfig>) -> Result {

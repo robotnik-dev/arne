@@ -9,13 +9,11 @@ use crate::{
     AdaptiveConfig, Error,
 };
 
-#[derive(Resource)]
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct XMLParser {
     pub data: Vec<(Annotation, Image, Netlist)>,
     pub loaded: usize,
 }
-
 
 impl XMLParser {
     /// loads the images from the specified folder
@@ -186,6 +184,14 @@ impl Bndbox {
         let x = self.xmax.parse::<i32>().unwrap();
         let y = self.ymax.parse::<i32>().unwrap();
         Position::new(x, y)
+    }
+
+    pub fn size(&self) -> (u32, u32) {
+        let top_left = self.top_left();
+        let bottom_right = self.bottom_right();
+        let width = bottom_right.x() - top_left.x();
+        let height = top_left.y() - bottom_right.y();
+        (width as u32, height as u32)
     }
 }
 
