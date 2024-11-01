@@ -1,5 +1,6 @@
 use annotations::{Annotation, XMLParser};
 use bevy::prelude::*;
+use bevy::utils::hashbrown::HashMap;
 use bevy::{
     log::{Level, LogPlugin},
     state::app::StatesPlugin,
@@ -796,39 +797,39 @@ fn cleanup(
         adaptive_config.population_size
     );
 
-    // sort to ensure the best agents are first in the list
-    let mut stats = q_stats
-        .iter()
-        .map(|(s, _)| {
-            (
-                s.evaluated_agent.clone(),
-                s.evaluated_image.clone(),
-                s.annotation.clone(),
-                s.original_image_id,
-                s.netlist.clone(),
-            )
-        })
-        .collect::<Vec<(Agent, Image, Annotation, u64, Netlist)>>();
-    stats.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
-
-    stats = q_stats
-        .iter()
-        .unique_by(|(stat, _)| stat.original_agent.id)
-        .map(|(s, _)| {
-            (
-                s.evaluated_agent.clone(),
-                s.evaluated_image.clone(),
-                s.annotation.clone(),
-                s.original_image_id,
-                s.netlist.clone(),
-            )
-        })
-        .collect::<Vec<(Agent, Image, Annotation, u64, Netlist)>>();
-    assert_eq!(stats.iter().len(), adaptive_config.population_size);
-
-    // take the best agent and put all images in the list
-    // 1. find out the agent id of the best agent
-    stats.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
+    // in this example below we have e.g. 600 stats and take the unique agents per id so 150 e.g. but the problem is
+    // that each of the unique agents have only seen 1 image, so the image creation is only correct for one image.
+    // What we need is
+    // 1. a list with all visited agent id to get only 150 entries
+    let mut visited_agent_ids = vec![];
+    // <original agent id, vec<(evaluated agents, original image id)>>
+    let mut agents: HashMap<u64, Vec<(Agent, u64)>> = HashMap::new();
+    q_stats.iter().for_each(|(stats, _)| {
+        let agent_id = stats.original_agent.id;
+        // 2 collect a list with (in this example) 4 evaluated agents, belonging to one agent id
+        let mut evaluated_agents = vec![];
+        // 2.1 if this agent id is NOT already handled
+        if !visited_agent_ids.contains(&agent_id) {
+            // 2.3 search the original list with 600 stats and filter with this agent id
+            q_stats
+                .iter()
+                .filter(|(st, _)| st.original_agent.id == agent_id)
+                // 2.4 push all evaluated agents in the list
+                .for_each(|(s, _)| {
+                    evaluated_agents.push((s.evaluated_agent.clone(), s.original_image_id.clone()))
+                });
+            visited_agent_ids.push(agent_id);
+        }
+        // 2.5 sort the agents by fitness
+        evaluated_agents.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
+        // 2.4 insert the key value pair into the HashMap
+        agents.insert(agent_id, evaluated_agents);
+    });
+    // Then we should have a HashMap with 150 keys (the agent id) and each has a list of evaluated agents (e.g. 4 agents when 4 images where processed)
+    assert_eq!(agents.iter().len(), adaptive_config.population_size);
+    agents
+        .values()
+        .for_each(|v| assert_eq!(v.iter().len(), xml_parser.loaded));
 
     // remove 'agents' directory if it exists
     std::fs::remove_dir_all(&save_path).unwrap_or_default();
@@ -865,8 +866,18 @@ fn cleanup(
     let out = format!("{:#?}", adaptive_config);
     write(format!("{}/config.txt", save_path).as_str(), out).unwrap();
 
+    // generate a list for file creation
+    // Out of the evaluated agent for each image, just pick the best one (the first one because we sorted earlier)
+    let mut file_creation = vec![];
+    agents.values().for_each(|a| {
+        let agent = a.first().unwrap();
+        file_creation.push((agent.clone(),))
+    });
+
+    assert_eq!(agents.iter().len(), adaptive_config.population_size);
+
     info("creating files");
-    stats.par_iter().for_each(|(a, _, _, _, _)| {
+    file_creation.par_iter().for_each(|((a, _),)| {
         let mut agent = a.clone();
 
         // saves the folder name with fitness + entity_index
@@ -931,55 +942,65 @@ fn cleanup(
             .unwrap();
     });
 
-    info("creating images");
-    let (best_agent, netlist, image_id) = stats
-        .iter()
-        .cloned()
-        .take(1)
-        .map(|s| (s.0.clone(), s.4, s.3))
-        .collect::<Vec<(Agent, Netlist, u64)>>()[0]
-        .clone();
+    // 1. get the original agent id from the best agent
+    let mut best_agent_id = 0u64;
+    let mut best_fitness = 0f32;
+    agents.iter().for_each(|(_, v)| {
+        if v[0].0.fitness() > best_fitness {
+            best_fitness = v[0].0.fitness();
+            best_agent_id = v[0].1;
+        }
+    });
 
-    // TODO: find a way to clear the found components. beacause they are their for all images, not only for this one. (maybe hashmap on the agent with image id?)
+    info("creating images");
     q_images
         .par_iter()
+        // 4 times
         .for_each(|(image, annotation, optimal_netlist)| {
-            // if image.id == image_id {
-            let folder_name = format!("best_agent_{}", best_agent.id);
-            std::fs::create_dir_all(format!(
-                "{}/{}/{}",
-                save_path, folder_name, annotation.filename
-            ))
-            .unwrap();
+            // get the best agents
+            if let Some(values) = agents.get(&best_agent_id) {
+                // 4 times
+                values.iter().for_each(|(evaluated_agent, image_id)| {
+                    if &image.id == image_id {
+                        // once
+                        let folder_name = format!("best_agent_{}", best_agent_id);
+                        std::fs::create_dir_all(format!(
+                            "{}/{}/{}",
+                            save_path, folder_name, annotation.filename
+                        ))
+                        .unwrap();
 
-            recreate_retina_movement(
-                &adaptive_config,
-                &annotation,
-                &best_agent,
-                image,
-                format!("{}/{}/{}", save_path, folder_name, annotation.filename).as_str(),
-            );
+                        recreate_retina_movement(
+                            &adaptive_config,
+                            &annotation,
+                            &evaluated_agent,
+                            image,
+                            format!("{}/{}/{}", save_path, folder_name, annotation.filename)
+                                .as_str(),
+                        );
 
-            // save optimal netlist
-            std::fs::write(
-                format!(
-                    "{}/{}/{}/optimal_netlist.net",
-                    save_path, folder_name, annotation.filename
-                ),
-                optimal_netlist.generate(),
-            )
-            .unwrap();
+                        // save optimal netlist
+                        std::fs::write(
+                            format!(
+                                "{}/{}/{}/optimal_netlist.net",
+                                save_path, folder_name, annotation.filename
+                            ),
+                            optimal_netlist.generate(),
+                        )
+                        .unwrap();
 
-            // save netlist
-            std::fs::write(
-                format!(
-                    "{}/{}/{}/netlist.net",
-                    save_path, folder_name, annotation.filename
-                ),
-                netlist.generate(),
-            )
-            .unwrap();
-            // }
+                        // // save netlist
+                        // std::fs::write(
+                        //     format!(
+                        //         "{}/{}/{}/netlist.net",
+                        //         save_path, folder_name, annotation.filename
+                        //     ),
+                        //     netlist.generate(),
+                        // )
+                        // .unwrap();
+                    }
+                });
+            }
         });
     info("Finished training");
     exit.send(AppExit::Success);
