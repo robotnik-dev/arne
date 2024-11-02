@@ -40,8 +40,6 @@ mod annotations;
 mod netlist;
 mod plotting;
 
-mod training;
-
 type Error = Box<dyn std::error::Error>;
 type Result = std::result::Result<(), Error>;
 
@@ -802,9 +800,10 @@ fn cleanup(
     // What we need is
     // 1. a list with all visited agent id to get only 150 entries
     let mut visited_agent_ids = vec![];
-    // <original agent id, vec<(evaluated agents, original image id)>>
-    let mut agents: HashMap<u64, Vec<(Agent, u64)>> = HashMap::new();
+    // <original agent id, vec<(evaluated agents, original image id, Netlist)>>
+    let mut agents: HashMap<u64, Vec<(Agent, u64, Netlist)>> = HashMap::new();
     q_stats.iter().for_each(|(stats, _)| {
+        // for each of the 600 stats
         let agent_id = stats.original_agent.id;
         // 2 collect a list with (in this example) 4 evaluated agents, belonging to one agent id
         let mut evaluated_agents = vec![];
@@ -816,14 +815,18 @@ fn cleanup(
                 .filter(|(st, _)| st.original_agent.id == agent_id)
                 // 2.4 push all evaluated agents in the list
                 .for_each(|(s, _)| {
-                    evaluated_agents.push((s.evaluated_agent.clone(), s.original_image_id.clone()))
+                    evaluated_agents.push((
+                        s.evaluated_agent.clone(),
+                        s.original_image_id.clone(),
+                        s.netlist.clone(),
+                    ))
                 });
             visited_agent_ids.push(agent_id);
+            // 2.5 sort the agents by fitness
+            evaluated_agents.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
+            // 2.4 insert the key value pair into the HashMap
+            agents.insert(agent_id, evaluated_agents);
         }
-        // 2.5 sort the agents by fitness
-        evaluated_agents.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
-        // 2.4 insert the key value pair into the HashMap
-        agents.insert(agent_id, evaluated_agents);
     });
     // Then we should have a HashMap with 150 keys (the agent id) and each has a list of evaluated agents (e.g. 4 agents when 4 images where processed)
     assert_eq!(agents.iter().len(), adaptive_config.population_size);
@@ -877,7 +880,7 @@ fn cleanup(
     assert_eq!(agents.iter().len(), adaptive_config.population_size);
 
     info("creating files");
-    file_creation.par_iter().for_each(|((a, _),)| {
+    file_creation.par_iter().for_each(|((a, _, _),)| {
         let mut agent = a.clone();
 
         // saves the folder name with fitness + entity_index
@@ -945,61 +948,60 @@ fn cleanup(
     // 1. get the original agent id from the best agent
     let mut best_agent_id = 0u64;
     let mut best_fitness = 0f32;
-    agents.iter().for_each(|(_, v)| {
+    agents.iter().for_each(|(k, v)| {
         if v[0].0.fitness() > best_fitness {
             best_fitness = v[0].0.fitness();
-            best_agent_id = v[0].1;
+            best_agent_id = k.clone();
         }
     });
 
     info("creating images");
     q_images
         .par_iter()
-        // 4 times
         .for_each(|(image, annotation, optimal_netlist)| {
-            // get the best agents
+            // get the best agent
             if let Some(values) = agents.get(&best_agent_id) {
-                // 4 times
-                values.iter().for_each(|(evaluated_agent, image_id)| {
-                    if &image.id == image_id {
-                        // once
-                        let folder_name = format!("best_agent_{}", best_agent_id);
-                        std::fs::create_dir_all(format!(
-                            "{}/{}/{}",
-                            save_path, folder_name, annotation.filename
-                        ))
-                        .unwrap();
-
-                        recreate_retina_movement(
-                            &adaptive_config,
-                            &annotation,
-                            &evaluated_agent,
-                            image,
-                            format!("{}/{}/{}", save_path, folder_name, annotation.filename)
-                                .as_str(),
-                        );
-
-                        // save optimal netlist
-                        std::fs::write(
-                            format!(
-                                "{}/{}/{}/optimal_netlist.net",
+                values
+                    .iter()
+                    .for_each(|(evaluated_agent, image_id, netlist)| {
+                        if &image.id == image_id {
+                            let folder_name = format!("best_agent_{}", best_agent_id);
+                            std::fs::create_dir_all(format!(
+                                "{}/{}/{}",
                                 save_path, folder_name, annotation.filename
-                            ),
-                            optimal_netlist.generate(),
-                        )
-                        .unwrap();
+                            ))
+                            .unwrap();
 
-                        // // save netlist
-                        // std::fs::write(
-                        //     format!(
-                        //         "{}/{}/{}/netlist.net",
-                        //         save_path, folder_name, annotation.filename
-                        //     ),
-                        //     netlist.generate(),
-                        // )
-                        // .unwrap();
-                    }
-                });
+                            recreate_retina_movement(
+                                &adaptive_config,
+                                &annotation,
+                                &evaluated_agent,
+                                image,
+                                format!("{}/{}/{}", save_path, folder_name, annotation.filename)
+                                    .as_str(),
+                            );
+
+                            // save optimal netlist
+                            std::fs::write(
+                                format!(
+                                    "{}/{}/{}/optimal_netlist.net",
+                                    save_path, folder_name, annotation.filename
+                                ),
+                                optimal_netlist.generate(),
+                            )
+                            .unwrap();
+
+                            // save netlist
+                            std::fs::write(
+                                format!(
+                                    "{}/{}/{}/netlist.net",
+                                    save_path, folder_name, annotation.filename
+                                ),
+                                netlist.generate(),
+                            )
+                            .unwrap();
+                        }
+                    });
             }
         });
     info("Finished training");

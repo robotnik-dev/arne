@@ -7,21 +7,15 @@ use crate::annotations::Annotation;
 use crate::image::{Image, Position};
 use crate::netlist::{Build, ComponentBuilder, ComponentType, Netlist};
 use crate::neural_network::Rnn;
-use crate::{training, AdaptiveConfig, Error};
+use crate::{AdaptiveConfig, Error, Retina};
 use bevy::prelude::*;
 use bevy::utils::hashbrown::HashMap;
 use bevy_prng::WyRand;
 use bevy_rand::prelude::EntropyComponent;
 use bevy_rand::traits::ForkableRng;
-use itertools::Itertools;
 
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-// use std::ffi::OsStr;
-// use std::fs::{self, OpenOptions};
-
-// use std::io::Read;
-// use std::path::PathBuf;
 
 /// statisteics per Agent to store some data relevant for human statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,157 +54,99 @@ pub enum SelectionMethod {
     Weighted,
 }
 
-// impl AgentEvaluation for Agent {
-//     fn evaluate(
-//         &mut self,
-//         fitness_function: fn(
-//             agent: &mut Agent,
-//             annotation: &Annotation,
-//             retina: &Retina,
-//             image: &Image,
-//         ) -> f32,
-//         rng: EntropyComponent<WyRand>,
-//         image: &mut Image,
-//         annotation: &Annotation,
-//         number_of_updates: usize,
-//     ) -> std::result::Result<f32, Error> {
-//         // initialize retina
-//         let retina_size = CONFIG.image_processing.retina_size as usize;
-//         // create a retina at a random position
-//         let top_left = Position::new(retina_size as i32, retina_size as i32);
-//         let bottom_right = Position::new(
-//             image.width() as i32 - retina_size as i32,
-//             image.height() as i32 - retina_size as i32,
-//         );
+pub fn control_fitness(
+    agent: &mut Agent,
+    annotation: &Annotation,
+    retina: &Retina,
+    image: &Image,
+) -> f32 {
+    // the output of one neuron needs to exceed this value to count as active
+    let active_threshold = 0.95;
 
-//         let _random_position = Position::random(rng, top_left.clone(), bottom_right);
-//         let _image_center_position =
-//             Position::new((image.width() / 2) as i32, (image.height() / 2) as i32);
+    let source_dc_neuron_idx = 0usize;
+    let resistor_neuron_idx = 1usize;
+    let capacitor_neuron_idx = 2usize;
 
-//         let mut retina = image.create_retina_at(
-//             self.retina_start_pos.clone(),
-//             retina_size,
-//             CONFIG.image_processing.superpixel_size as usize,
-//             "".to_string(),
-//         )?;
+    annotation.objects.iter().for_each(|obj| {
+        let bndbox = image.translate_bndbox_to_size(annotation, obj);
+        // we need to check if any bndbox specified in the annotation is currently inside the retina rectangle
+        if image.wraps_bndbox(&bndbox, retina) {
+            // If anyone is, then we check we check what kind of component is specified in this object
+            let full_component = obj.name.clone();
+            let component = full_component.split(".").take(1).collect::<String>();
 
-//         self.clear_short_term_memories();
+            // And lastly we check if the corresponding neuron is active for this component and every other neuron is inactive
+            if component == "resistor"
+                && agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+                    >= active_threshold
+                && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
+                    <= -active_threshold
+                && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
+                    <= -active_threshold
+            {
+                // categorize_fitness = 1f32;
+                agent.genotype_mut().add_found_component(
+                    image.id,
+                    retina.get_center_position(),
+                    Position::from(bndbox.clone()),
+                    ComponentType::Resistor,
+                );
+            } else if component == "voltage"
+                && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
+                    >= active_threshold
+                && agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+                    <= -active_threshold
+                && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
+                    <= -active_threshold
+            {
+                // categorize_fitness = 1f32;
+                agent.genotype_mut().add_found_component(
+                    image.id,
+                    retina.get_center_position(),
+                    Position::from(bndbox.clone()),
+                    ComponentType::VoltageSourceDc,
+                );
+            } else if component == "capacitor"
+                && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx].output()
+                    >= active_threshold
+                && agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+                    <= -active_threshold
+                && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx].output()
+                    <= -active_threshold
+            {
+                // categorize_fitness = 1f32;
+                agent.genotype_mut().add_found_component(
+                    image.id,
+                    retina.get_center_position(),
+                    Position::from(bndbox.clone()),
+                    ComponentType::Capacitor,
+                );
+            }
+        }
+        // else {
+        //     // nothing in the retina! They should gain fitness when every neuron is inactive
+        //     if agent.genotype().categorize_network().neurons()[resistor_neuron_idx].output()
+        //         <= -active_threshold
+        //         && agent.genotype().categorize_network().neurons()[source_dc_neuron_idx]
+        //             .output()
+        //             <= -active_threshold
+        //         && agent.genotype().categorize_network().neurons()[capacitor_neuron_idx]
+        //             .output()
+        //             <= -active_threshold
+        //     {
+        //         // half as much fitness as if there was something found
+        //         categorize_fitness = 0.1f32;
+        //     }
+        // }
+    });
 
-//         // initial network update and snapshot
-//         self.genotype_mut()
-//             .networks_mut()
-//             .iter_mut()
-//             .for_each(|network| {
-//                 network.update_inputs_from_retina(&retina);
-//                 network.update();
-//             });
-//         let control_outputs = self
-//             .genotype()
-//             .control_network()
-//             .neurons()
-//             .iter()
-//             .map(|neuron| neuron.output())
-//             .collect::<Vec<f32>>();
-//         let categorize_outputs = self
-//             .genotype()
-//             .categorize_network()
-//             .neurons()
-//             .iter()
-//             .map(|neuron| neuron.output())
-//             .collect::<Vec<f32>>();
-//         let time_step = (0) as u32;
-//         self.genotype_mut()
-//             .control_network_mut()
-//             .add_snapshot(control_outputs, time_step);
-//         self.genotype_mut()
-//             .categorize_network_mut()
-//             .add_snapshot(categorize_outputs, time_step);
-//         let mut local_fitness = 0.0;
-//         for i in 0..number_of_updates {
-//             // first location of the retina
-//             image.update_retina_movement(&retina);
+    retina.percentage_visited()
+}
 
-//             // update the list of visited dark pixels
-//             retina.update_positions_visited();
-
-//             // calculate the next delta position of the retina, encoded in the neurons
-//             let delta = self.genotype().control_network().next_delta_position();
-
-//             // move the retina to the next position
-//             // here gets the data updated the retina sees
-//             retina.move_mut(&delta, image);
-
-//             self.genotype_mut()
-//                 .networks_mut()
-//                 .iter_mut()
-//                 .for_each(|network| {
-//                     // update all super pixel input connections to each neuron
-//                     network.update_inputs_from_retina(&retina);
-//                     // let sum = network
-//                     //     .neurons()
-//                     //     .iter()
-//                     //     .fold(0.0, |acc, n| acc + n.output());
-//                     // info(format!("sum before: {}", sum));
-//                     // do one update step
-//                     network.update();
-//                     // let sum = network
-//                     //     .neurons()
-//                     //     .iter()
-//                     //     .fold(0.0, |acc, n| acc + n.output());
-//                     // info(format!("sum after: {}", sum));
-//                 });
-
-//             // self.genotype_mut()
-//             //     .control_network_mut()
-//             //     .update_inputs_from_retina(&retina);
-//             // self.genotype_mut().control_network_mut().update();
-
-//             // self.genotype_mut()
-//             //     .categorize_network_mut()
-//             //     .update_inputs_from_retina(&retina);
-//             // self.genotype_mut().categorize_network_mut().update();
-
-//             // save retina movement in buffer
-//             image.update_retina_movement(&retina);
-
-//             // creating snapshot of the network at the current time step
-//             let control_outputs = self
-//                 .genotype()
-//                 .control_network()
-//                 .neurons()
-//                 .iter()
-//                 .map(|neuron| neuron.output())
-//                 .collect::<Vec<f32>>();
-//             let categorize_outputs = self
-//                 .genotype()
-//                 .categorize_network()
-//                 .neurons()
-//                 .iter()
-//                 .map(|neuron| neuron.output())
-//                 .collect::<Vec<f32>>();
-//             let time_step = (i + 1) as u32;
-//             self.genotype_mut()
-//                 .control_network_mut()
-//                 .add_snapshot(control_outputs, time_step);
-//             self.genotype_mut()
-//                 .categorize_network_mut()
-//                 .add_snapshot(categorize_outputs, time_step);
-
-//             // calculate the fitness of the genotype
-//             local_fitness += fitness_function(self, annotation, &retina, &image);
-//         }
-//         // save the image in the hashmap of the agent with label
-//         let image = image.clone();
-//         let genotype = self.genotype().clone();
-//         self.statistics_mut().insert(
-//             ImageLabel(annotation.filename.replace(".jpg", "").clone()),
-//             (image, genotype, String::new()),
-//         );
-
-//         let fitness = local_fitness / number_of_updates as f32;
-//         Ok(fitness)
-//     }
-// }
+pub fn categorize_fitness(agent: &Agent, image_id: u64, optimal_netlist: &Netlist) -> f32 {
+    let netlist = agent.genotype().build(image_id);
+    optimal_netlist.compare(&netlist)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Genotype {
@@ -239,10 +175,6 @@ impl Genotype {
         }
     }
 
-    // pub fn networks(&self) -> &Vec<Rnn> {
-    //     &self.networks
-    // }
-
     pub fn networks_mut(&mut self) -> &mut Vec<Rnn> {
         &mut self.networks
     }
@@ -262,10 +194,6 @@ impl Genotype {
     pub fn categorize_network_mut(&mut self) -> &mut Rnn {
         &mut self.networks[1]
     }
-
-    // pub fn found_components(&self) -> &Vec<(Position, ComponentType)> {
-    //     &self.found_components
-    // }
 
     pub fn add_found_component(
         &mut self,
@@ -353,10 +281,6 @@ pub struct Agent {
     pub retina_start_pos: Position,
     /// used to visualize the retina movement on an upscaled image (Position, size of retina, label)
     pub retina_positions: Vec<(Position, usize, String)>,
-    // pub images: Vec<Image>,
-    // netlist: String,
-    // String -> netlist string
-    // pub statistics: HashMap<ImageLabel, (Image, String)>,
 }
 
 impl Agent {
@@ -432,9 +356,6 @@ impl Agent {
                 adaptive_config.retina_size as i32,
             ) / 2,
             retina_positions: vec![],
-            // images: vec![],
-            // netlist: String::new(),
-            // statistics: HashMap::new(),
         })
     }
 
@@ -446,7 +367,7 @@ impl Agent {
         optimal_netlist: &Netlist,
     ) -> std::result::Result<f32, Error> {
         let retina_size = adaptive_config.retina_size;
-        let top_left = Position::new(retina_size as i32, retina_size as i32);
+        let top_left = Position::new(retina_size as i32, retina_size as i32) / 2;
         let mut retina = image.create_retina_at(
             top_left,
             retina_size,
@@ -486,7 +407,7 @@ impl Agent {
         self.genotype_mut()
             .categorize_network_mut()
             .add_snapshot(categorize_outputs, time_step);
-        let mut control_fitness = 0.0;
+        let mut control_fitness_v = 0.0;
         for i in 0..adaptive_config.number_of_network_updates {
             // first location of the retina
             image.update_retina_movement(&retina);
@@ -539,17 +460,17 @@ impl Agent {
                 .add_snapshot(categorize_outputs, time_step);
 
             // calculate the fitness of the genotype
-            control_fitness += training::control_fitness(self, annotation, &retina, image);
+            control_fitness_v += control_fitness(self, annotation, &retina, image);
         }
         // save all the positions the retina visited on the control network to save it in json format
         self.genotype_mut().control_network_mut().retina_positions = image.retina_positions.clone();
 
         // normalize control fitness over number of updates
-        control_fitness /= adaptive_config.number_of_network_updates as f32;
+        control_fitness_v /= adaptive_config.number_of_network_updates as f32;
 
         // calculate the categorize fitness
-        let categorize_fitness = training::categorize_fitness(self, image.id, optimal_netlist);
-        let fitness = (control_fitness + categorize_fitness) / 2.0f32;
+        let categorize_fitness = categorize_fitness(self, image.id, optimal_netlist);
+        let fitness = (control_fitness_v + categorize_fitness) / 2.0f32;
         Ok(fitness)
     }
 
@@ -574,14 +495,6 @@ impl Agent {
         &mut self.genotype
     }
 
-    // pub fn statistics(&self) -> &HashMap<ImageLabel, (Image, String)> {
-    //     &self.statistics
-    // }
-
-    // pub fn statistics_mut(&mut self) -> &mut HashMap<ImageLabel, (Image, String)> {
-    //     &mut self.statistics
-    // }
-
     pub fn crossover(&self, rng: EntropyComponent<WyRand>, with: &Agent) -> Agent {
         let mut new_agent = self.clone();
         let offspring_genotype = self.genotype.crossover_uniform(rng, &with.genotype);
@@ -592,37 +505,6 @@ impl Agent {
     pub fn mutate(&mut self, rng: EntropyComponent<WyRand>, adaptive_config: &AdaptiveConfig) {
         self.genotype.mutate(rng, adaptive_config);
     }
-
-    // pub fn get_current_variance(&self) -> f32 {
-    //     self.genotype
-    //         .networks()
-    //         .iter()
-    //         .map(|network| network.variance())
-    //         .sum::<f32>()
-    //         / self.genotype.networks().len() as f32
-    // }
-
-    // pub fn update_variance(&mut self, variance: f32) {
-    //     self.genotype_mut()
-    //         .networks_mut()
-    //         .iter_mut()
-    //         .for_each(|network| {
-    //             network.update_variance(variance);
-    //         });
-    // }
-
-    // pub fn get_starting_position(
-    //     &self,
-    //     mut rng: EntropyComponent<WyRand>,
-    //     low_x: i32,
-    //     high_x: i32,
-    //     low_y: i32,
-    //     high_y: i32,
-    // ) -> Position {
-    //     let random_x = rng.gen_range(low_x..=high_x);
-    //     let random_y = rng.gen_range(low_y..=high_y);
-    //     Position::new(random_x, random_y)
-    // }
 
     pub fn clear_short_term_memories(&mut self) -> &mut Self {
         self.genotype.clear_short_term_memories();

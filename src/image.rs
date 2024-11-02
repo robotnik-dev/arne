@@ -737,7 +737,7 @@ impl Image {
         );
         // add components
         if let Some(components) = agent.genotype().found_components.get(&self.id) {
-            for ((ret_pos, _), comp) in components.iter() {
+            for ((ret_pos, _), _) in components.iter() {
                 let scaled_size = adaptive_config.retina_size as f32 * scaling_factor_x;
                 let scaled_x = (ret_pos.x as f32 - 0.5) * scaling_factor_x;
                 let scaled_y = (ret_pos.y as f32 - 0.5) * scaling_factor_y;
@@ -752,27 +752,6 @@ impl Image {
                     .of_size(scaled_size as u32, scaled_size as u32),
                     Rgba([0, 255, 0, 255]),
                 );
-
-                // add a label to the retina
-                let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
-                let Some(font) = Font::try_from_bytes(font_data) else {
-                    return Err("Could not load font".into());
-                };
-                let scale = Scale {
-                    x: adaptive_config.retina_label_scale as f32,
-                    y: adaptive_config.retina_label_scale as f32,
-                };
-                let color = Rgba([0, 255, 0, 255]);
-                let label = comp.to_string();
-                draw_text_mut(
-                    &mut canvas,
-                    color,
-                    scaled_x as i32,
-                    scaled_y as i32,
-                    scale,
-                    &font,
-                    label.as_str(),
-                );
             }
         }
 
@@ -783,8 +762,6 @@ impl Image {
             let pos = Position::from(bndbox);
             let scaled_x = (pos.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (pos.y as f32 - 0.5) * scaling_factor_y;
-            let full_component = obj.name.clone();
-            let component = full_component.split(".").take(1).collect::<String>();
             // draw border of the box
             draw_hollow_rect_mut(
                 &mut canvas,
@@ -794,27 +771,6 @@ impl Image {
                 )
                 .of_size(scaled_size as u32, scaled_size as u32),
                 Rgba([0, 0, 255, 255]),
-            );
-
-            // add a label to the box
-            let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
-            let Some(font) = Font::try_from_bytes(font_data) else {
-                return Err("Could not load font".into());
-            };
-            let scale = Scale {
-                x: adaptive_config.retina_label_scale as f32,
-                y: adaptive_config.retina_label_scale as f32,
-            };
-            let color = Rgba([0, 0, 255, 255]);
-            let label = component.clone();
-            draw_text_mut(
-                &mut canvas,
-                color,
-                scaled_x as i32,
-                scaled_y as i32,
-                scale,
-                &font,
-                label.as_str(),
             );
         }
 
@@ -934,8 +890,6 @@ impl Image {
             let pos = Position::from(bndbox);
             let scaled_x = (pos.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (pos.y as f32 - 0.5) * scaling_factor_y;
-            let full_component = obj.name.clone();
-            let component = full_component.split(".").take(1).collect::<String>();
             // draw border of the box
             draw_hollow_rect_mut(
                 &mut canvas,
@@ -945,27 +899,6 @@ impl Image {
                 )
                 .of_size(scaled_size as u32, scaled_size as u32),
                 Rgba([0, 0, 255, 255]),
-            );
-
-            // add a label to the box
-            let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
-            let Some(font) = Font::try_from_bytes(font_data) else {
-                return Err("Could not load font".into());
-            };
-            let scale = Scale {
-                x: adaptive_config.retina_label_scale as f32,
-                y: adaptive_config.retina_label_scale as f32,
-            };
-            let color = Rgba([0, 0, 255, 255]);
-            let label = component.clone();
-            draw_text_mut(
-                &mut canvas,
-                color,
-                scaled_x as i32,
-                scaled_y as i32,
-                scale,
-                &font,
-                label.as_str(),
             );
         }
 

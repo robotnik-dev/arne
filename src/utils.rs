@@ -1,5 +1,5 @@
 use crate::{annotations::Annotation, genetic_algorithm::Agent, image::Image, AdaptiveConfig};
-use bevy::{prelude::*, utils::info};
+use bevy::prelude::*;
 
 pub fn round_to_decimal_places(value: f32, decimal_places: u32) -> f32 {
     let multiplier = 10_f32.powi(decimal_places as i32);
@@ -36,7 +36,6 @@ pub fn recreate_retina_movement(
     let mut image = orignal_image.clone();
     let network = agent.genotype().control_network();
     image.retina_positions = network.retina_positions.clone();
-    info(agent.genotype().found_components.clone());
     image
         .save_with_retina(format!("{}/retina_orig.png", save_path).into())
         .unwrap();
