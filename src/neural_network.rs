@@ -708,8 +708,8 @@ impl Neuron {
         _neuron_count: usize,
         adaptive_config: &AdaptiveConfig,
     ) -> Self {
-        let superpixel_size = adaptive_config.superpixel_size;
-        let retina_size = adaptive_config.retina_size;
+        let retina_size = adaptive_config.retina_size_medium;
+        let superpixel_size = retina_size / 9;
         let retina_weights = (0..(retina_size / superpixel_size).pow(2))
             // set 90 % of retina weights to 0
             .map(|_| {

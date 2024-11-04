@@ -88,6 +88,7 @@ pub fn control_fitness(
                 agent.genotype_mut().add_found_component(
                     image.id,
                     retina.get_center_position(),
+                    retina.size(),
                     Position::from(bndbox.clone()),
                     ComponentType::Resistor,
                 );
@@ -103,6 +104,7 @@ pub fn control_fitness(
                 agent.genotype_mut().add_found_component(
                     image.id,
                     retina.get_center_position(),
+                    retina.size(),
                     Position::from(bndbox.clone()),
                     ComponentType::VoltageSourceDc,
                 );
@@ -118,6 +120,7 @@ pub fn control_fitness(
                 agent.genotype_mut().add_found_component(
                     image.id,
                     retina.get_center_position(),
+                    retina.size(),
                     Position::from(bndbox.clone()),
                     ComponentType::Capacitor,
                 );
@@ -152,9 +155,9 @@ pub fn categorize_fitness(agent: &Agent, image_id: u64, optimal_netlist: &Netlis
 pub struct Genotype {
     /// the first is the control network and second the categorize network
     networks: Vec<Rnn>,
-    /// image_id hashmap : (Retina position, bndbox position)
+    /// image_id hashmap : (Retina position, retina_size, bndbox position)
     #[serde(skip)]
-    pub found_components: HashMap<u64, Vec<((Position, Position), ComponentType)>>,
+    pub found_components: HashMap<u64, Vec<((Position, usize, Position), ComponentType)>>,
 }
 
 impl Genotype {
@@ -199,21 +202,28 @@ impl Genotype {
         &mut self,
         image_id: u64,
         retina_position: Position,
+        retina_size: usize,
         bndbox_position: Position,
         component_type: ComponentType,
     ) {
         if let Some(positions) = self.found_components.get_mut(&image_id) {
             if !positions
                 .iter()
-                .any(|((_, bndbox_pos), _)| bndbox_pos == &bndbox_position)
+                .any(|((_, _, bndbox_pos), _)| bndbox_pos == &bndbox_position)
             {
-                positions.push(((retina_position, bndbox_position), component_type));
+                positions.push((
+                    (retina_position, retina_size, bndbox_position),
+                    component_type,
+                ));
             }
         } else {
             // insert first entry
             self.found_components.insert(
                 image_id,
-                vec![((retina_position, bndbox_position), component_type)],
+                vec![(
+                    (retina_position, retina_size, bndbox_position),
+                    component_type,
+                )],
             );
         }
     }
@@ -352,8 +362,8 @@ impl Agent {
             genotype,
             // top left
             retina_start_pos: Position::new(
-                adaptive_config.retina_size as i32,
-                adaptive_config.retina_size as i32,
+                adaptive_config.retina_size_medium as i32,
+                adaptive_config.retina_size_medium as i32,
             ) / 2,
             retina_positions: vec![],
         })
@@ -366,14 +376,10 @@ impl Agent {
         annotation: &Annotation,
         optimal_netlist: &Netlist,
     ) -> std::result::Result<f32, Error> {
-        let retina_size = adaptive_config.retina_size;
+        let retina_size = adaptive_config.retina_size_medium;
         let top_left = Position::new(retina_size as i32, retina_size as i32) / 2;
-        let mut retina = image.create_retina_at(
-            top_left,
-            retina_size,
-            adaptive_config.superpixel_size,
-            "".to_string(),
-        )?;
+        let mut retina =
+            image.create_retina_at(top_left, retina_size, retina_size / 9, "".to_string())?;
 
         // clear data before a fresh start of evaulation
         self.clear_short_term_memories();

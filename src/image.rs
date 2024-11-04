@@ -50,13 +50,6 @@ impl Position {
         }
     }
 
-    // /// length of the vector normalized between 0 and 1
-    // pub fn normalized_len(&self) -> f32 {
-    //     let move_speed = CONFIG.neural_network.retina_movement_speed as i32;
-    //     let max_len = ((move_speed.pow(2) + move_speed.pow(2)) as f32).sqrt();
-    //     self.len() / max_len
-    // }
-
     pub fn x(&self) -> i32 {
         self.x
     }
@@ -71,12 +64,6 @@ impl Position {
             y: -self.y,
         }
     }
-
-    // pub fn random(rng: &mut dyn RngCore, top_left: Position, bottom_right: Position) -> Position {
-    //     let x = rng.gen_range(top_left.x..bottom_right.x);
-    //     let y = rng.gen_range(top_left.y..bottom_right.y);
-    //     Position { x, y }
-    // }
 }
 
 impl From<Bndbox> for Position {
@@ -164,25 +151,6 @@ pub struct Image {
 }
 
 impl Image {
-    // /// Empty image with the default size
-    // pub fn empty() -> Self {
-    //     Image {
-    //         rgba: RgbaImage::new(
-    //             CONFIG.image_processing.goal_image_width as u32,
-    //             CONFIG.image_processing.goal_image_height as u32,
-    //         ),
-    //         grey: GrayImage::new(
-    //             CONFIG.image_processing.goal_image_width as u32,
-    //             CONFIG.image_processing.goal_image_height as u32,
-    //         ),
-    //         width: CONFIG.image_processing.goal_image_width as u32,
-    //         height: CONFIG.image_processing.goal_image_height as u32,
-    //         format: ImageFormat::Landscape,
-    //         retina_positions: vec![],
-    //         dark_pixel_positions: vec![],
-    //     }
-    // }
-
     /// create an image from a vector of f32 values. Must be a square length
     pub fn from_vec(vec: Vec<f32>) -> std::result::Result<Self, Error> {
         // figure out if the vector length can be squared
@@ -216,36 +184,6 @@ impl Image {
         image.generate_dark_pixel_positions(0.5)?;
         Ok(image)
     }
-
-    // /// load from a path and return an image(preprocessed)
-    // pub fn from_path(path: PathBuf) -> std::result::Result<Self, Error> {
-    //     let rgba = image::io::Reader::open(path.clone())?
-    //         .decode()?
-    //         .into_rgba8();
-    //     let grey = image::io::Reader::open(path)?.decode()?.into_luma8();
-    //     let width = rgba.width();
-    //     let height = rgba.height();
-    //     let mut image = Image {
-    //         rgba,
-    //         grey,
-    //         width,
-    //         height,
-    //         format: if width >= height {
-    //             ImageFormat::Landscape
-    //         } else {
-    //             ImageFormat::Portrait
-    //         },
-    //         retina_positions: vec![],
-    //         dark_pixel_positions: vec![],
-    //     };
-
-    //     // preprocess the image
-    //     image.preprocess()?;
-
-    //     // TODO: maybe threshold
-    //     image.generate_dark_pixel_positions(0.5)?;
-    //     Ok(image)
-    // }
 
     /// load from a path and return an image without preprocessing
     pub fn from_path_raw(path: PathBuf) -> std::result::Result<Self, Error> {
@@ -471,7 +409,7 @@ impl Image {
 
         Ok(Retina {
             data,
-            size,
+            size: RetinaSize::Medium(size),
             label,
             superpixels,
             superpixel_size,
@@ -560,7 +498,7 @@ impl Image {
             image::imageops::FilterType::Nearest,
         );
         for (index, (retina_position, retina_size, _)) in self.retina_positions.iter().enumerate() {
-            let scaled_size = *retina_size as f32 * scaling_factor_x;
+            let scaled_size_x = *retina_size as f32 * scaling_factor_x;
             let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;
 
@@ -568,10 +506,10 @@ impl Image {
             draw_hollow_rect_mut(
                 &mut canvas,
                 imageproc::rect::Rect::at(
-                    scaled_x as i32 - scaled_size as i32 / 2,
-                    scaled_y as i32 - scaled_size as i32 / 2,
+                    scaled_x as i32 - scaled_size_x as i32 / 2,
+                    scaled_y as i32 - scaled_size_x as i32 / 2,
                 )
-                .of_size(scaled_size as u32, scaled_size as u32),
+                .of_size(scaled_size_x as u32, scaled_size_x as u32),
                 Rgba([255, 0, 0, 255]),
             );
 
@@ -627,8 +565,8 @@ impl Image {
             upscaled_height,
             image::imageops::FilterType::Nearest,
         );
-        let scaled_size = adaptive_config.retina_size as f32 * scaling_factor_x;
-        for (index, (retina_position, _, _)) in self.retina_positions.iter().enumerate() {
+        for (index, (retina_position, size, _)) in self.retina_positions.iter().enumerate() {
+            let scaled_size_x = *size as f32 * scaling_factor_x;
             let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;
 
@@ -636,10 +574,10 @@ impl Image {
             draw_hollow_rect_mut(
                 &mut canvas,
                 imageproc::rect::Rect::at(
-                    scaled_x as i32 - scaled_size as i32 / 2,
-                    scaled_y as i32 - scaled_size as i32 / 2,
+                    scaled_x as i32 - scaled_size_x as i32 / 2,
+                    scaled_y as i32 - scaled_size_x as i32 / 2,
                 )
-                .of_size(scaled_size as u32, scaled_size as u32),
+                .of_size(scaled_size_x as u32, scaled_size_x as u32),
                 Rgba([255, 0, 0, 255]),
             );
 
@@ -673,7 +611,8 @@ impl Image {
 
         // add components
         if let Some(components) = agent.genotype().found_components.get(&self.id) {
-            for ((ret_pos, _), comp) in components.iter() {
+            for ((ret_pos, size, _), comp) in components.iter() {
+                let scaled_size_x = *size as f32 * scaling_factor_x;
                 let scaled_x = (ret_pos.x as f32 - 0.5) * scaling_factor_x;
                 let scaled_y = (ret_pos.y as f32 - 0.5) * scaling_factor_y;
 
@@ -681,10 +620,10 @@ impl Image {
                 draw_hollow_rect_mut(
                     &mut canvas,
                     imageproc::rect::Rect::at(
-                        scaled_x as i32 - scaled_size as i32 / 2,
-                        scaled_y as i32 - scaled_size as i32 / 2,
+                        scaled_x as i32 - scaled_size_x as i32 / 2,
+                        scaled_y as i32 - scaled_size_x as i32 / 2,
                     )
-                    .of_size(scaled_size as u32, scaled_size as u32),
+                    .of_size(scaled_size_x as u32, scaled_size_x as u32),
                     Rgba([0, 255, 0, 255]),
                 );
 
@@ -737,8 +676,8 @@ impl Image {
         );
         // add components
         if let Some(components) = agent.genotype().found_components.get(&self.id) {
-            for ((ret_pos, _), _) in components.iter() {
-                let scaled_size = adaptive_config.retina_size as f32 * scaling_factor_x;
+            for ((ret_pos, size, _), _) in components.iter() {
+                let scaled_size_x = *size as f32 * scaling_factor_x;
                 let scaled_x = (ret_pos.x as f32 - 0.5) * scaling_factor_x;
                 let scaled_y = (ret_pos.y as f32 - 0.5) * scaling_factor_y;
 
@@ -746,10 +685,10 @@ impl Image {
                 draw_hollow_rect_mut(
                     &mut canvas,
                     imageproc::rect::Rect::at(
-                        scaled_x as i32 - scaled_size as i32 / 2,
-                        scaled_y as i32 - scaled_size as i32 / 2,
+                        scaled_x as i32 - scaled_size_x as i32 / 2,
+                        scaled_y as i32 - scaled_size_x as i32 / 2,
                     )
-                    .of_size(scaled_size as u32, scaled_size as u32),
+                    .of_size(scaled_size_x as u32, scaled_size_x as u32),
                     Rgba([0, 255, 0, 255]),
                 );
             }
@@ -799,8 +738,8 @@ impl Image {
             upscaled_height,
             image::imageops::FilterType::Nearest,
         );
-        let scaled_size = adaptive_config.retina_size as f32 * scaling_factor_x;
-        for (index, (retina_position, _, _)) in self.retina_positions.iter().enumerate() {
+        for (index, (retina_position, size, _)) in self.retina_positions.iter().enumerate() {
+            let scaled_size_x = *size as f32 * scaling_factor_x;
             let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;
 
@@ -808,10 +747,10 @@ impl Image {
             draw_hollow_rect_mut(
                 &mut canvas,
                 imageproc::rect::Rect::at(
-                    scaled_x as i32 - scaled_size as i32 / 2,
-                    scaled_y as i32 - scaled_size as i32 / 2,
+                    scaled_x as i32 - scaled_size_x as i32 / 2,
+                    scaled_y as i32 - scaled_size_x as i32 / 2,
                 )
-                .of_size(scaled_size as u32, scaled_size as u32),
+                .of_size(scaled_size_x as u32, scaled_size_x as u32),
                 Rgba([255, 0, 0, 255]),
             );
 
@@ -845,7 +784,8 @@ impl Image {
 
         // add components
         if let Some(components) = agent.genotype().found_components.get(&self.id) {
-            for ((ret_pos, _), comp) in components.iter() {
+            for ((ret_pos, size, _), comp) in components.iter() {
+                let scaled_size_x = *size as f32 * scaling_factor_x;
                 let scaled_x = (ret_pos.x as f32 - 0.5) * scaling_factor_x;
                 let scaled_y = (ret_pos.y as f32 - 0.5) * scaling_factor_y;
 
@@ -853,10 +793,10 @@ impl Image {
                 draw_hollow_rect_mut(
                     &mut canvas,
                     imageproc::rect::Rect::at(
-                        scaled_x as i32 - scaled_size as i32 / 2,
-                        scaled_y as i32 - scaled_size as i32 / 2,
+                        scaled_x as i32 - scaled_size_x as i32 / 2,
+                        scaled_y as i32 - scaled_size_x as i32 / 2,
                     )
-                    .of_size(scaled_size as u32, scaled_size as u32),
+                    .of_size(scaled_size_x as u32, scaled_size_x as u32),
                     Rgba([0, 255, 0, 255]),
                 );
 
@@ -991,20 +931,20 @@ impl Image {
             image::imageops::FilterType::Nearest,
         );
         // add bndboxes
+        // TODO: EVERYWHERE like this (scaling of bnd boxes)
+        // FIXME: in SOME images, the bndboxes are shifted to the right.
         for obj in annotation.objects.iter() {
             let bndbox = self.translate_bndbox_to_size(annotation, obj);
-            let scaled_size = bndbox.size().0 as f32 * scaling_factor_x;
-            let pos = Position::from(bndbox);
-            let scaled_x = (pos.x as f32 - 0.5) * scaling_factor_x;
-            let scaled_y = (pos.y as f32 - 0.5) * scaling_factor_y;
+            // let scaled_size = bndbox.size().0 as f32 * scaling_factor_x;
+            // let pos = Position::from(bndbox);
+            // let scaled_x = (pos.x as f32 - 0.5) * scaling_factor_x;
+            // let scaled_y = (pos.y as f32 - 0.5) * scaling_factor_y;
             // draw border of the box
+            let (w, h) = bndbox.size();
             draw_hollow_rect_mut(
                 &mut canvas,
-                imageproc::rect::Rect::at(
-                    scaled_x as i32 - scaled_size as i32 / 2,
-                    scaled_y as i32 - scaled_size as i32 / 2,
-                )
-                .of_size(scaled_size as u32, scaled_size as u32),
+                imageproc::rect::Rect::at(bndbox.top_left().x(), bndbox.top_left().y())
+                    .of_size(w, h),
                 Rgba([0, 0, 255, 255]),
             );
         }
@@ -1048,7 +988,7 @@ impl Image {
 pub struct Retina {
     // color data stored in a vector
     data: Vec<f32>,
-    size: usize,
+    size: RetinaSize,
     label: String,
     superpixels: Vec<Superpixel>,
     superpixel_size: usize,
@@ -1083,7 +1023,11 @@ impl Retina {
     }
 
     pub fn size(&self) -> usize {
-        self.size
+        match self.size {
+            RetinaSize::Small(size) => size,
+            RetinaSize::Medium(size) => size,
+            RetinaSize::Large(size) => size,
+        }
     }
 
     pub fn superpixel_size(&self) -> usize {
@@ -1156,25 +1100,23 @@ impl Retina {
     /// global position inside the image
     pub fn get_top_left_position(&self) -> Position {
         Position::new(
-            self.center_position.x - (self.size / 2) as i32,
-            self.center_position.y - (self.size / 2) as i32,
+            self.center_position.x - (self.size() / 2) as i32,
+            self.center_position.y - (self.size() / 2) as i32,
         )
     }
 
     /// global position inside the image
     pub fn get_bottom_right_position(&self) -> Position {
         Position::new(
-            self.center_position.x + (self.size / 2) as i32,
-            self.center_position.y + (self.size / 2) as i32,
+            self.center_position.x + (self.size() / 2) as i32,
+            self.center_position.y + (self.size() / 2) as i32,
         )
     }
     pub fn get_last_delta_position(&self) -> Position {
-        // FIXME: why clone here
         self.last_delta_position.clone()
     }
 
     pub fn get_current_delta_position(&self) -> Position {
-        // FIXME: why clone here
         self.current_delta_position.clone()
     }
 
@@ -1225,6 +1167,13 @@ impl Retina {
         }
         self.set_data(new_data);
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum RetinaSize {
+    Small(usize),
+    Medium(usize),
+    Large(usize),
 }
 
 #[derive(Debug, Clone)]

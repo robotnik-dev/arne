@@ -146,8 +146,9 @@ pub struct AdaptiveConfig {
     pub mutate_self_activation: f32,
     pub goal_image_width: usize,
     pub goal_image_height: usize,
-    pub retina_size: usize,
-    pub superpixel_size: usize,
+    pub retina_size_small: usize,
+    pub retina_size_medium: usize,
+    pub retina_size_large: usize,
     pub retina_circle_radius: f32,
     pub retina_label_scale: f32,
     pub sobel_threshold: f32,
@@ -252,8 +253,9 @@ fn load_config(mut adaptive_config: ResMut<AdaptiveConfig>) {
     adaptive_config.mutate_self_activation = loaded_adaptive_config.mutate_self_activation;
     adaptive_config.goal_image_width = loaded_adaptive_config.goal_image_width;
     adaptive_config.goal_image_height = loaded_adaptive_config.goal_image_height;
-    adaptive_config.retina_size = loaded_adaptive_config.retina_size;
-    adaptive_config.superpixel_size = loaded_adaptive_config.superpixel_size;
+    adaptive_config.retina_size_small = loaded_adaptive_config.retina_size_small;
+    adaptive_config.retina_size_medium = loaded_adaptive_config.retina_size_medium;
+    adaptive_config.retina_size_large = loaded_adaptive_config.retina_size_large;
     adaptive_config.retina_circle_radius = loaded_adaptive_config.retina_circle_radius;
     adaptive_config.retina_label_scale = loaded_adaptive_config.retina_label_scale;
     adaptive_config.sobel_threshold = loaded_adaptive_config.sobel_threshold;

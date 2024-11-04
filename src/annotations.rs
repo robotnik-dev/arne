@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::info};
 use serde_json::Value;
 use std::{io::Read, path::PathBuf};
 use xml2json_rs::JsonBuilder;
@@ -37,7 +37,7 @@ impl XMLParser {
                     if count == amount && !all {
                         break 'outer;
                     };
-                    let annotation = Annotation::from_path(annotation_file?.path())?;
+                    let mut annotation = Annotation::from_path(annotation_file?.path())?;
                     let folder_name = "resized";
                     let path = PathBuf::from(format!(
                         "{}/{}/{}",
@@ -46,7 +46,7 @@ impl XMLParser {
                         annotation.filename.clone()
                     ));
                     // skip all annotations that have not a segmented images
-                    if let Ok(image) = Image::from_path_raw(path) {
+                    if let Ok(mut image) = Image::from_path_raw(path) {
                         // generate once the optimal netlist for this image
                         let mut netlist = Netlist::new();
                         let mut r_idx = 0;
@@ -96,6 +96,16 @@ impl XMLParser {
                                 v_idx += 1;
                             }
                         });
+
+                        // rotate the image and annotations
+                        if image.format == ImageFormat::Portrait {
+                            image.rotate90();
+                            image.width = image.grey.width();
+                            image.height = image.grey.height();
+                            image.format = ImageFormat::Landscape;
+                            annotation.rotate90();
+                        };
+
                         self.data.push((annotation, image, netlist));
                         self.loaded += 1;
                         count += 1;
@@ -134,12 +144,6 @@ impl XMLParser {
                     };
                     image.resize_all(width, height).unwrap();
 
-                    // rotate all the images that are in Portait format to get all images in the landscape format
-                    if image.format == ImageFormat::Portrait {
-                        image.rotate90();
-                        image.format = ImageFormat::Landscape;
-                    };
-
                     image
                         .save_grey(PathBuf::from(format!(
                             "{}/{}",
@@ -165,7 +169,7 @@ pub struct Size {
     pub depth: String,
 }
 
-#[derive(Debug, PartialEq, Hash, Eq, Clone)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Default)]
 pub struct Bndbox {
     pub xmin: String,
     pub ymin: String,
@@ -174,6 +178,10 @@ pub struct Bndbox {
 }
 
 impl Bndbox {
+    pub fn new() -> Self {
+        Bndbox::default()
+    }
+
     pub fn top_left(&self) -> Position {
         let x = self.xmin.parse::<i32>().unwrap();
         let y = self.ymin.parse::<i32>().unwrap();
@@ -190,7 +198,7 @@ impl Bndbox {
         let top_left = self.top_left();
         let bottom_right = self.bottom_right();
         let width = bottom_right.x() - top_left.x();
-        let height = top_left.y() - bottom_right.y();
+        let height = bottom_right.y() - top_left.y();
         (width as u32, height as u32)
     }
 }
@@ -228,6 +236,49 @@ impl Annotation {
         let json = json_builder.build_from_xml(&buf).unwrap();
         let annotation = Annotation::from(json);
         Ok(annotation)
+    }
+
+    /// Rotates all bndboxes to the correct places
+    pub fn rotate90(&mut self) {
+        self.objects.iter_mut().for_each(|obj| {
+            // position
+            let bndbox = obj.bndbox.clone();
+            let (h, w) = (
+                self.size.height.parse::<i32>().unwrap(),
+                self.size.width.parse::<i32>().unwrap(),
+            );
+
+            let mut out_bndbox = Bndbox::new();
+            let top_left = bndbox.top_left();
+            let bot_right = bndbox.bottom_right();
+            for y in 0..h {
+                for x in 0..w {
+                    let pos = Position::new(x, y);
+                    let rotated = Position::new(h - y, x);
+                    if pos == top_left {
+                        out_bndbox.xmax = rotated.x().to_string();
+                        out_bndbox.ymin = rotated.y().to_string();
+                    } else if pos == bot_right {
+                        out_bndbox.xmin = rotated.x().to_string();
+                        out_bndbox.ymax = rotated.y().to_string();
+                    }
+                }
+            }
+
+            // info(format!(
+            //     "path: {:?} - image name: {:?} - img size: {:?} - name: {} - old bndbox: {:?} - new bndbox: {:?}",
+            //     self.path.clone(),
+            //     self.filename.clone(),
+            //     self.size.clone(),
+            //     obj.name.clone(),
+            //     bndbox.clone(),
+            //     out_bndbox.clone()
+            // ));
+
+            // rotation
+
+            obj.bndbox = out_bndbox;
+        });
     }
 }
 
@@ -312,106 +363,3 @@ impl From<Value> for Annotation {
         }
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use xml2json_rs::JsonBuilder;
-
-//     use super::*;
-
-//     fn test_annotation() -> &'static str {
-//         r#"
-// <annotation>
-//     <folder>images</folder>
-//     <filename>C-1_D1_P1.jpeg</filename>
-//     <path>./drafter_-1/images/C-1_D1_P1.jpeg</path>
-//     <source>
-//         <database>CGHD</database>
-//     </source>
-//     <size>
-//         <width>1000</width>
-//         <height>1000</height>
-//         <depth>3</depth>
-//     </size>
-//     <segmented>0</segmented>
-//     <object>
-//         <name>text</name>
-//         <pose>Unspecified</pose>
-//         <truncated>0</truncated>
-//         <difficult>0</difficult>
-//         <bndbox>
-//             <xmin>410</xmin>
-//             <ymin>504</ymin>
-//             <xmax>460</xmax>
-//             <ymax>558</ymax>
-//         </bndbox>
-//     </object>
-//     <object>
-//         <name>text</name>
-//         <pose>Unspecified</pose>
-//         <truncated>0</truncated>
-//         <difficult>0</difficult>
-//         <bndbox>
-//             <xmin>418</xmin>
-//             <ymin>749</ymin>
-//             <xmax>462</xmax>
-//             <ymax>803</ymax>
-//         </bndbox>
-//         <text>RE</text>
-//     </object>
-//     <object>
-//         <name>text</name>
-//         <pose>Unspecified</pose>
-//         <truncated>0</truncated>
-//         <difficult>0</difficult>
-//         <bndbox>
-//             <xmin>1048</xmin>
-//             <ymin>472</ymin>
-//             <xmax>1104</xmax>
-//             <ymax>530</ymax>
-//         </bndbox>
-//         <text>R3</text>
-//     </object>
-// </annotation>
-//         "#
-//     }
-
-//     #[test]
-//     fn deserialize() {
-//         let buf = test_annotation();
-//         let json_builder = JsonBuilder::default();
-//         let json = json_builder.build_from_xml(&buf).unwrap();
-//         let should = Annotation::from(json);
-//         assert_eq!(should.objects.len(), 3);
-//         assert_eq!(should.objects[0].bndbox.xmin, String::from("410"));
-//         assert_eq!(should.objects[1].bndbox.ymin, String::from("749"));
-//     }
-
-//     #[test]
-//     fn from_path() {
-//         let buf = test_annotation();
-//         let json_builder = JsonBuilder::default();
-//         let json = json_builder.build_from_xml(&buf).unwrap();
-//         let should = Annotation::from(json);
-//         let loaded =
-//             Annotation::from_path(PathBuf::from("images/unit_tests/annotation.xml")).unwrap();
-//         assert_eq!(should, loaded);
-//     }
-
-//     #[test]
-//     fn parse_amount() {
-//         let mut parser = XMLParser::new();
-//         parser
-//             .load(
-//                 PathBuf::from(format!(
-//                     "{}/drafter_1",
-//                     CONFIG.image_processing.training.path as &str
-//                 )),
-//                 LoadFolder::Segmentation,
-//                 false,
-//                 1,
-//             )
-//             .unwrap();
-//         assert_eq!(parser.data.len(), 1);
-//     }
-// }
