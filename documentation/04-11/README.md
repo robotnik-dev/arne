@@ -1,0 +1,2 @@
+# problems
+Die Bilder wurden teilweise gedreht damit die Retina immer die selben Dimensionen bekommt aber die Annnotations wurden nicht mitgedreht sodass die bndboxes und das Bild selbst nicht mehr in sync sind
