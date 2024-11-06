@@ -193,6 +193,12 @@ struct NetlistsOverGenerations(Vec<f32>);
 #[derive(Component, Default)]
 struct CorrectNetlistsOverGenerations(Vec<f32>);
 
+#[derive(Component, Default)]
+struct MeanOverGenerations(Vec<f32>);
+
+#[derive(Component, Default)]
+struct StandardDeviationOverGenerations(Vec<f32>);
+
 fn setup_source(mut commands: Commands, adaptive_config: Res<AdaptiveConfig>) {
     if adaptive_config.with_seed {
         commands.spawn((
@@ -385,6 +391,8 @@ fn initialize_singletons(mut commands: Commands) {
     commands.spawn(AverageFitness::default());
     commands.spawn(NetlistsOverGenerations::default());
     commands.spawn(CorrectNetlistsOverGenerations::default());
+    commands.spawn(MeanOverGenerations::default());
+    commands.spawn(StandardDeviationOverGenerations::default());
 }
 
 fn decide_which_algorithm(
@@ -684,6 +692,8 @@ fn genetic_algorithm_step(
     q_agents: Query<Entity, With<Agent>>,
     mut q_source: Query<&mut EntropyComponent<WyRand>, With<Source>>,
     mut q_average_fitness: Query<&mut AverageFitness>,
+    mut q_mean: Query<&mut MeanOverGenerations>,
+    mut q_standard_deviation: Query<&mut StandardDeviationOverGenerations>,
     mut q_netlists_over_generations: Query<&mut NetlistsOverGenerations>,
     mut q_correct_netlists_over_generations: Query<&mut CorrectNetlistsOverGenerations>,
     q_images: Query<(&Image, &Netlist)>,
@@ -748,6 +758,35 @@ fn genetic_algorithm_step(
     correct_netlists_over_generations
         .0
         .push(correct_netlists_in_this_generation);
+
+    // calculate the mean and standard deviation of all the weights in the population
+    let mut mean_comp = q_mean.single_mut();
+    let mut weights = vec![];
+    stats.iter().for_each(|s| {
+        s.0.genotype().networks().iter().for_each(|rnn| {
+            rnn.neurons().iter().for_each(|neuron| {
+                neuron.input_connections().iter().for_each(|(_, w)| {
+                    weights.push(*w);
+                });
+                neuron.retina_weights().iter().for_each(|r_w| {
+                    weights.push(*r_w);
+                });
+            });
+        });
+    });
+
+    let mean = weights.iter().sum::<f32>() / weights.iter().len() as f32;
+    mean_comp.0.push(mean);
+
+    // calculate standard deviation
+    let mut standard_deviation_comp = q_standard_deviation.single_mut();
+    let mut sd = 0f32;
+    weights.iter().for_each(|w| {
+        sd += (w - mean).powf(2.);
+    });
+    sd /= weights.iter().len() as f32;
+    sd = sd.sqrt();
+    standard_deviation_comp.0.push(sd);
 
     // return and skip the next steps when max generations reached
     if generation.0 >= adaptive_config.max_generations {
@@ -854,6 +893,8 @@ fn cleanup(
     adaptive_config: Res<AdaptiveConfig>,
     q_images: Query<(&Image, &Annotation, &Netlist)>,
     q_average_fitness: Query<&AverageFitness>,
+    q_mean: Query<&MeanOverGenerations>,
+    q_standard_deviation: Query<&StandardDeviationOverGenerations>,
     q_netlists_over_generations: Query<&NetlistsOverGenerations>,
     q_correct_netlists_over_generations: Query<&CorrectNetlistsOverGenerations>,
     q_stats: Query<(&mut Stats, &EntropyComponent<WyRand>), Without<Source>>,
@@ -938,6 +979,17 @@ fn cleanup(
         "Correct netlists per generation",
         adaptive_config.population_size,
         adaptive_config.max_generations,
+    );
+
+    // save mean of weights
+    let mean_of_weights = q_mean.single();
+    let standard_deviation = q_standard_deviation.single();
+    plotting::mean_and_standard_deviation_over_time(
+        &mean_of_weights.0,
+        &standard_deviation.0,
+        format!("{}/mean_and_sd_of_weights.png", save_path).as_str(),
+        "Weights over generations",
+        &adaptive_config,
     );
 
     let out = format!("{:#?}", adaptive_config);

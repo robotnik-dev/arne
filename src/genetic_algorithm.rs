@@ -178,6 +178,10 @@ impl Genotype {
         }
     }
 
+    pub fn networks(&self) -> &Vec<Rnn> {
+        &self.networks
+    }
+
     pub fn networks_mut(&mut self) -> &mut Vec<Rnn> {
         &mut self.networks
     }

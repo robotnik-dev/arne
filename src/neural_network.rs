@@ -11,6 +11,7 @@ use petgraph::{dot::Dot, Graph};
 use plotters::prelude::*;
 use rand::seq::IteratorRandom;
 use rand::Rng;
+use rand_distr::num_traits::ToPrimitive;
 use rand_distr::{Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -95,7 +96,8 @@ impl ShortTermMemory {
             chart_builder
                 // .caption(format!("N{}", i), ("sans-serif", 16).into_font())
                 .margin(5)
-                .set_all_label_area_size(20);
+                .x_label_area_size(20)
+                .y_label_area_size(50);
 
             let mut chart_context = chart_builder
                 .build_cartesian_2d(0u32..nr_of_network_updates as u32, -1.0f32..1.0f32)?;
@@ -104,8 +106,14 @@ impl ShortTermMemory {
                 .configure_mesh()
                 .disable_x_mesh()
                 .max_light_lines(1)
+                .y_label_formatter(&|y| format!("{}", y.to_i32().unwrap()))
                 .y_labels(3)
                 .x_labels(1)
+                .y_desc(format!("n{}", i))
+                .axis_desc_style(
+                    TextStyle::from(("sans-serif", 20).into_font())
+                        .transform(FontTransform::Rotate180),
+                )
                 .draw()?;
 
             let color = Palette99::pick(i);
