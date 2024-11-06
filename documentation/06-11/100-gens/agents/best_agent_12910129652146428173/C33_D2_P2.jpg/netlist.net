@@ -1,0 +1,10 @@
+.SUBCKT main
+r5 0 0 0
+r6 0 0 0
+r2 0 0 0
+r1 0 0 0
+r0 0 0 0
+r4 0 0 0
+r3 0 0 0
+.ENDS
+.END
