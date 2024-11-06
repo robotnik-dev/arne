@@ -676,7 +676,7 @@ impl Image {
         );
         // add components
         if let Some(components) = agent.genotype().found_components.get(&self.id) {
-            for ((ret_pos, size, _), _) in components.iter() {
+            for ((ret_pos, size, _), comp) in components.iter() {
                 let scaled_size_x = *size as f32 * scaling_factor_x;
                 let scaled_x = (ret_pos.x as f32 - 0.5) * scaling_factor_x;
                 let scaled_y = (ret_pos.y as f32 - 0.5) * scaling_factor_y;
@@ -690,6 +690,27 @@ impl Image {
                     )
                     .of_size(scaled_size_x as u32, scaled_size_x as u32),
                     Rgba([0, 255, 0, 255]),
+                );
+
+                // add a label to the retina
+                let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
+                let Some(font) = Font::try_from_bytes(font_data) else {
+                    return Err("Could not load font".into());
+                };
+                let scale = Scale {
+                    x: adaptive_config.retina_label_scale as f32,
+                    y: adaptive_config.retina_label_scale as f32,
+                };
+                let color = Rgba([0, 255, 0, 255]);
+                let label = comp.to_string();
+                draw_text_mut(
+                    &mut canvas,
+                    color,
+                    scaled_x as i32,
+                    scaled_y as i32,
+                    scale,
+                    &font,
+                    label.as_str(),
                 );
             }
         }
@@ -826,18 +847,11 @@ impl Image {
         // add bndboxes
         for obj in annotation.objects.iter() {
             let bndbox = self.translate_bndbox_to_size(annotation, obj);
-            let scaled_size = bndbox.size().0 as f32 * scaling_factor_x;
-            let pos = Position::from(bndbox);
-            let scaled_x = (pos.x as f32 - 0.5) * scaling_factor_x;
-            let scaled_y = (pos.y as f32 - 0.5) * scaling_factor_y;
-            // draw border of the box
+            let (w, h) = bndbox.size();
             draw_hollow_rect_mut(
                 &mut canvas,
-                imageproc::rect::Rect::at(
-                    scaled_x as i32 - scaled_size as i32 / 2,
-                    scaled_y as i32 - scaled_size as i32 / 2,
-                )
-                .of_size(scaled_size as u32, scaled_size as u32),
+                imageproc::rect::Rect::at(bndbox.top_left().x(), bndbox.top_left().y())
+                    .of_size(w, h),
                 Rgba([0, 0, 255, 255]),
             );
         }
@@ -868,20 +882,17 @@ impl Image {
         // add bndboxes
         for obj in annotation.objects.iter() {
             let bndbox = self.translate_bndbox_to_size(annotation, obj);
-            let scaled_size = bndbox.size().0 as f32 * scaling_factor_x;
-            let pos = Position::from(bndbox);
+            let pos = Position::from(bndbox.clone());
             let scaled_x = (pos.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (pos.y as f32 - 0.5) * scaling_factor_y;
             let full_component = obj.name.clone();
             let component = full_component.split(".").take(1).collect::<String>();
             // draw border of the box
+            let (w, h) = bndbox.size();
             draw_hollow_rect_mut(
                 &mut canvas,
-                imageproc::rect::Rect::at(
-                    scaled_x as i32 - scaled_size as i32 / 2,
-                    scaled_y as i32 - scaled_size as i32 / 2,
-                )
-                .of_size(scaled_size as u32, scaled_size as u32),
+                imageproc::rect::Rect::at(bndbox.top_left().x(), bndbox.top_left().y())
+                    .of_size(w, h),
                 Rgba([0, 0, 255, 255]),
             );
 
@@ -921,9 +932,6 @@ impl Image {
         let upscaled_width = adaptive_config.goal_image_width as u32;
         let upscaled_height = adaptive_config.goal_image_height as u32;
 
-        let scaling_factor_x = upscaled_width as f32 / self.width() as f32;
-        let scaling_factor_y = upscaled_height as f32 / self.height() as f32;
-
         let mut canvas = resize(
             &self.rgba().clone(),
             upscaled_width,
@@ -931,14 +939,8 @@ impl Image {
             image::imageops::FilterType::Nearest,
         );
         // add bndboxes
-        // TODO: EVERYWHERE like this (scaling of bnd boxes)
-        // FIXME: in SOME images, the bndboxes are shifted to the right.
         for obj in annotation.objects.iter() {
             let bndbox = self.translate_bndbox_to_size(annotation, obj);
-            // let scaled_size = bndbox.size().0 as f32 * scaling_factor_x;
-            // let pos = Position::from(bndbox);
-            // let scaled_x = (pos.x as f32 - 0.5) * scaling_factor_x;
-            // let scaled_y = (pos.y as f32 - 0.5) * scaling_factor_y;
             // draw border of the box
             let (w, h) = bndbox.size();
             draw_hollow_rect_mut(
@@ -1171,8 +1173,10 @@ impl Retina {
 
 #[derive(Debug, Clone)]
 pub enum RetinaSize {
+    #[allow(dead_code)]
     Small(usize),
     Medium(usize),
+    #[allow(dead_code)]
     Large(usize),
 }
 

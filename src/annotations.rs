@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::info};
+use bevy::prelude::*;
 use serde_json::Value;
 use std::{io::Read, path::PathBuf};
 use xml2json_rs::JsonBuilder;
@@ -32,12 +32,12 @@ impl XMLParser {
                 .into_string()
                 .map_err(|_| "Could not convert to String".to_string())?;
             if folder_name == *"annotations" {
-                for annotation_file in std::fs::read_dir(subdir_entry.path())? {
+                'inner: for annotation_file in std::fs::read_dir(subdir_entry.path())? {
                     // check stop condition
                     if count == amount && !all {
                         break 'outer;
                     };
-                    let mut annotation = Annotation::from_path(annotation_file?.path())?;
+                    let annotation = Annotation::from_path(annotation_file?.path())?;
                     let folder_name = "resized";
                     let path = PathBuf::from(format!(
                         "{}/{}/{}",
@@ -46,7 +46,7 @@ impl XMLParser {
                         annotation.filename.clone()
                     ));
                     // skip all annotations that have not a segmented images
-                    if let Ok(mut image) = Image::from_path_raw(path) {
+                    if let Ok(image) = Image::from_path_raw(path) {
                         // generate once the optimal netlist for this image
                         let mut netlist = Netlist::new();
                         let mut r_idx = 0;
@@ -97,13 +97,9 @@ impl XMLParser {
                             }
                         });
 
-                        // rotate the image and annotations
+                        // ignore all images in Portrait format
                         if image.format == ImageFormat::Portrait {
-                            image.rotate90();
-                            image.width = image.grey.width();
-                            image.height = image.grey.height();
-                            image.format = ImageFormat::Landscape;
-                            annotation.rotate90();
+                            continue 'inner;
                         };
 
                         self.data.push((annotation, image, netlist));

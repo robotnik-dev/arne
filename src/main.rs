@@ -276,7 +276,6 @@ fn load_config(mut adaptive_config: ResMut<AdaptiveConfig>) {
     adaptive_config.agent_save_path = loaded_adaptive_config.agent_save_path;
     adaptive_config.tested_agent_save_path = loaded_adaptive_config.tested_agent_save_path;
     adaptive_config.testing_stage = loaded_adaptive_config.testing_stage;
-    println!("{:#?}", adaptive_config);
 }
 
 fn load_images(
@@ -332,6 +331,7 @@ fn load_images(
             })
             .insert(netlist.clone());
     }
+    info(format!("Loaded {} images", xml_parser.loaded));
 }
 
 fn initialize_population(
@@ -357,6 +357,7 @@ fn initialize_population(
                 }
             }
         });
+        info("Testing stage");
     } else {
         // training stage -> generate new agents
         for _ in 0..adaptive_config.population_size {
@@ -366,6 +367,7 @@ fn initialize_population(
             agent.genotype = Genotype::init(rng.fork_rng(), &adaptive_config);
             agents.push(agent);
         }
+        info("Training stage");
     }
     for agent in agents {
         commands
@@ -446,114 +448,184 @@ fn create_ranking(
     q_stats: Query<(&mut Stats, &EntropyComponent<WyRand>), Without<Source>>,
     mut next: ResMut<NextState<AppState>>,
     adaptive_config: Res<AdaptiveConfig>,
-    q_images: Query<(&Image, &Netlist)>,
+    q_images: Query<(&Image, &Annotation, &Netlist)>,
+    xml_parser: Res<XMLParser>,
 ) {
-    let mut pre_sorted_stats = q_stats
-        .iter()
-        .map(|(s, _)| s.clone())
-        .collect::<Vec<Stats>>();
-    pre_sorted_stats.sort_by(|a, b| {
-        b.evaluated_agent
-            .fitness()
-            .partial_cmp(&a.evaluated_agent.fitness())
-            .unwrap()
+    let mut visited_agent_ids = vec![];
+    // <original agent id, vec<(evaluated agents, original image id, Netlist)>>
+    let mut agents: HashMap<u64, Vec<(Agent, u64, Netlist)>> = HashMap::new();
+    q_stats.iter().for_each(|(stats, _)| {
+        // for each of the 600 stats
+        let agent_id = stats.original_agent.id;
+        // 2 collect a list with (in this example) 4 evaluated agents, belonging to one agent id
+        let mut evaluated_agents = vec![];
+        // 2.1 if this agent id is NOT already handled
+        if !visited_agent_ids.contains(&agent_id) {
+            // 2.3 search the original list with 600 stats and filter with this agent id
+            q_stats
+                .iter()
+                .filter(|(st, _)| st.original_agent.id == agent_id)
+                // 2.4 push all evaluated agents in the list
+                .for_each(|(s, _)| {
+                    evaluated_agents.push((
+                        s.evaluated_agent.clone(),
+                        s.original_image_id.clone(),
+                        s.netlist.clone(),
+                    ))
+                });
+            visited_agent_ids.push(agent_id);
+            // 2.5 sort the agents by fitness
+            evaluated_agents.sort_by(|a, b| b.0.fitness().partial_cmp(&a.0.fitness()).unwrap());
+            // 2.4 insert the key value pair into the HashMap
+            agents.insert(agent_id, evaluated_agents);
+        }
     });
-
-    let stats = q_stats
-        .iter()
-        .unique_by(|(stat, _)| stat.original_agent.id)
-        .map(|(s, _)| {
-            (
-                s.evaluated_agent.clone(),
-                s.evaluated_image.clone(),
-                s.annotation.clone(),
-                s.netlist.clone(),
-            )
-        })
-        .collect::<Vec<(Agent, Image, Annotation, Netlist)>>();
-    assert_eq!(stats.iter().len(), adaptive_config.population_size);
+    // Then we should have a HashMap with 150 keys (the agent id) and each has a list of evaluated agents (e.g. 4 agents when 4 images where processed)
+    assert_eq!(agents.iter().len(), adaptive_config.population_size);
+    agents
+        .values()
+        .for_each(|v| assert_eq!(v.iter().len(), xml_parser.loaded));
 
     // rank all the agents regarding their generated netlists
-    // For each image, take all 150 Agents which got selected above and compare their netlist for this specific image
     let mut ranking = vec![];
-    for (image, optimal_netlist) in q_images.iter() {
-        for (a, i, _, net) in stats.iter() {
-            // compare only the netlists of the same image
-            if image.id == i.id {
-                let percentage_correct = optimal_netlist.compare(net);
-                ranking.push((a.clone(), percentage_correct));
-            }
-        }
-    }
+    agents.iter().for_each(|(k, v)| {
+        // each original agent has X (=images) evaluated agents attached with their netlist.
+        // we can store the accumulated ranking over all the X images and normalize it to get an avarage ranking per agent
+        let mut acc_ranking = 0f32;
+        v.iter().for_each(|(_, image_id, netlist)| {
+            // compare the netlists of the original image and the created one
+            acc_ranking += q_images
+                .iter()
+                // take only the ones with the same image
+                .filter(|(img, _, _)| &img.id == image_id)
+                .map(|(_, _, opt_net)| opt_net.compare(netlist))
+                .collect::<Vec<f32>>()[0];
+        });
+        let average_ranking = acc_ranking / xml_parser.loaded as f32;
+        ranking.push((k, average_ranking));
+    });
     assert_eq!(ranking.iter().len(), adaptive_config.population_size);
+
+    // sort the ranking
+    ranking.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
     info("creating files after testing");
     let save_path = adaptive_config.tested_agent_save_path.clone();
-    ranking.par_iter().for_each(|(a, rank)| {
-        let mut agent = a.clone();
+    std::fs::remove_dir_all(&save_path).unwrap_or_default();
+    ranking.par_iter().for_each(|(k, rank)| {
+        // let mut agent = a.clone();
 
         // saves the folder name with fitness + entity_index
-        let agent_folder = format!("{}_{}", round2(*rank), agent.id);
+        let agent_folder = format!("{}_{}", round2(*rank), k);
         std::fs::create_dir_all(format!("{}/{}", save_path, agent_folder)).unwrap();
-        // save control network
-        let folder_name = "control";
-        std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name)).unwrap();
-        agent
-            .genotype()
-            .control_network()
-            .short_term_memory()
-            .visualize(
-                format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name),
-                adaptive_config.number_of_network_updates,
-            )
-            .unwrap();
-        agent
-            .genotype_mut()
-            .control_network_mut()
-            .to_json(format!(
-                "{}/{}/{}/network.json",
-                save_path, agent_folder, folder_name
-            ))
-            .unwrap();
-        agent
-            .genotype()
-            .control_network()
-            .to_dot(format!(
-                "{}/{}/{}/network.dot",
-                save_path, agent_folder, folder_name
-            ))
-            .unwrap();
+        // // save control network
+        // let folder_name = "control";
+        // std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name)).unwrap();
+        // agent
+        //     .genotype()
+        //     .control_network()
+        //     .short_term_memory()
+        //     .visualize(
+        //         format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name),
+        //         adaptive_config.number_of_network_updates,
+        //     )
+        //     .unwrap();
+        // agent
+        //     .genotype_mut()
+        //     .control_network_mut()
+        //     .to_json(format!(
+        //         "{}/{}/{}/network.json",
+        //         save_path, agent_folder, folder_name
+        //     ))
+        //     .unwrap();
+        // agent
+        //     .genotype()
+        //     .control_network()
+        //     .to_dot(format!(
+        //         "{}/{}/{}/network.dot",
+        //         save_path, agent_folder, folder_name
+        //     ))
+        //     .unwrap();
 
-        // save categorize network
-        let folder_name = "categorize";
-        std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name)).unwrap();
-        agent
-            .genotype()
-            .categorize_network()
-            .short_term_memory()
-            .visualize(
-                format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name,),
-                adaptive_config.number_of_network_updates,
-            )
-            .unwrap();
-        agent
-            .genotype_mut()
-            .categorize_network_mut()
-            .to_json(format!(
-                "{}/{}/{}/network.json",
-                save_path, agent_folder, folder_name
-            ))
-            .unwrap();
-        agent
-            .genotype()
-            .categorize_network()
-            .to_dot(format!(
-                "{}/{}/{}/network.dot",
-                save_path, agent_folder, folder_name
-            ))
-            .unwrap();
+        // // save categorize network
+        // let folder_name = "categorize";
+        // std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name)).unwrap();
+        // agent
+        //     .genotype()
+        //     .categorize_network()
+        //     .short_term_memory()
+        //     .visualize(
+        //         format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name,),
+        //         adaptive_config.number_of_network_updates,
+        //     )
+        //     .unwrap();
+        // agent
+        //     .genotype_mut()
+        //     .categorize_network_mut()
+        //     .to_json(format!(
+        //         "{}/{}/{}/network.json",
+        //         save_path, agent_folder, folder_name
+        //     ))
+        //     .unwrap();
+        // agent
+        //     .genotype()
+        //     .categorize_network()
+        //     .to_dot(format!(
+        //         "{}/{}/{}/network.dot",
+        //         save_path, agent_folder, folder_name
+        //     ))
+        //     .unwrap();
     });
+    info("creating images");
+    let best_agent_id = ranking[0].0;
+    q_images
+        .par_iter()
+        .for_each(|(image, annotation, optimal_netlist)| {
+            // get the best agent
+            if let Some(values) = agents.get(best_agent_id) {
+                values
+                    .iter()
+                    .for_each(|(evaluated_agent, image_id, netlist)| {
+                        if &image.id == image_id {
+                            let folder_name = format!("best_agent_{}", best_agent_id);
+                            std::fs::create_dir_all(format!(
+                                "{}/{}/{}",
+                                save_path, folder_name, annotation.filename
+                            ))
+                            .unwrap();
 
+                            recreate_retina_movement(
+                                &adaptive_config,
+                                &annotation,
+                                &evaluated_agent,
+                                image,
+                                format!("{}/{}/{}", save_path, folder_name, annotation.filename)
+                                    .as_str(),
+                            );
+
+                            // save optimal netlist
+                            std::fs::write(
+                                format!(
+                                    "{}/{}/{}/optimal_netlist.net",
+                                    save_path, folder_name, annotation.filename
+                                ),
+                                optimal_netlist.generate(),
+                            )
+                            .unwrap();
+
+                            // save netlist
+                            std::fs::write(
+                                format!(
+                                    "{}/{}/{}/netlist.net",
+                                    save_path, folder_name, annotation.filename
+                                ),
+                                netlist.generate(),
+                            )
+                            .unwrap();
+                        }
+                    });
+            }
+        });
     next.set(AppState::AlgorithmDoneTesting);
 }
 
