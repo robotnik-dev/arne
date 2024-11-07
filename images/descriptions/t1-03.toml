@@ -1,7 +1,0 @@
-[components]
-resistor = 1
-diode = 1
-
-[nodes]
-resistor = [ [2, 0] ]
-diode = [ [1, 2] ]

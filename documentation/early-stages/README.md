@@ -1,0 +1,1 @@
+In the early stages of the programm, this folder here was important so it will stay in the documentation. I forgot the date this was changed.
