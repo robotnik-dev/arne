@@ -1,6 +1,5 @@
-use std::path::PathBuf;
-
-use crate::{image::Image, Error, CONFIG};
+use crate::{annotations::Annotation, genetic_algorithm::Agent, image::Image, AdaptiveConfig};
+use bevy::prelude::*;
 
 pub fn round_to_decimal_places(value: f32, decimal_places: u32) -> f32 {
     let multiplier = 10_f32.powi(decimal_places as i32);
@@ -15,7 +14,7 @@ pub fn round3(value: f32) -> f32 {
     round_to_decimal_places(value, 3)
 }
 
-pub fn netlist_empty(netlist: &String) -> bool {
+pub fn netlist_empty(netlist: &str) -> bool {
     netlist.split('\n').count() <= 3
 }
 
@@ -23,47 +22,76 @@ pub fn dot_product(v1: &[f32], v2: &[f32]) -> f32 {
     v1.iter().zip(v2.iter()).map(|(x, y)| x * y).sum()
 }
 
-pub fn amount_of_components(netlist: &String) -> usize {
+pub fn amount_of_components(netlist: &str) -> usize {
     netlist.lines().count() - 3
 }
 
-/// gives the last bit of the path as the label e.g. "path/to/file.png" -> "file"
-#[allow(dead_code)]
-pub fn get_label_from_path(path: PathBuf) -> Option<String> {
-    let path = std::path::Path::new(&path);
-    let file_name = path.file_stem()?.to_str()?.to_string();
-    Some(file_name)
-}
-
-#[allow(dead_code)]
-pub fn binarize_image(image: Image) -> std::result::Result<Image, Error> {
-    let mut image = image.clone();
+pub fn recreate_retina_movement(
+    adaptive_config: &Res<AdaptiveConfig>,
+    annotation: &Annotation,
+    agent: &Agent,
+    orignal_image: &Image,
+    save_path: &str,
+) {
+    let mut image = orignal_image.clone();
+    let network = agent.genotype().control_network();
+    image.retina_positions = network.retina_positions.clone();
     image
-        .resize_all(
-            CONFIG.image_processing.goal_image_width as u32,
-            CONFIG.image_processing.goal_image_height as u32,
+        .save_with_retina(format!("{}/retina_orig.png", save_path).into())
+        .unwrap();
+
+    image
+        .save_with_retina_upscaled(
+            format!("{}/retina_upscaled.png", save_path).into(),
+            adaptive_config,
         )
-        .map(|i| i.clone())?
-        .edged(Some(CONFIG.image_processing.sobel_threshold as f32))
-        .map(|i| i.clone())?
-        .erode(
-            imageproc::distance_transform::Norm::L1,
-            CONFIG.image_processing.erode_pixels as u8,
+        .unwrap();
+
+    image
+        .save_with_bndboxes_with_text(
+            format!("{}/bndboxes_with_text.png", save_path).as_str(),
+            &adaptive_config,
+            annotation,
         )
-        .map(|i| i.clone())?;
-    Ok(image)
+        .unwrap();
+
+    image
+        .save_with_bndboxes(
+            format!("{}/bndboxes.png", save_path).as_str(),
+            &adaptive_config,
+            annotation,
+        )
+        .unwrap();
+
+    image
+        .save_with_found_components(
+            format!("{}/retina_and_components.png", save_path).as_str(),
+            &adaptive_config,
+            agent,
+        )
+        .unwrap();
+
+    image
+        .save_with_found_components_and_bndboxes(
+            format!("{}/components_and_bndboxes.png", save_path).as_str(),
+            &adaptive_config,
+            annotation,
+            agent,
+        )
+        .unwrap();
+
+    image
+        .save_with_all(
+            format!("{}/all.png", save_path).as_str(),
+            &adaptive_config,
+            agent,
+            annotation,
+        )
+        .unwrap();
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_label() {
-        let path = PathBuf::from("path/to/file.png");
-        let label = get_label_from_path(path).unwrap();
-        assert_eq!(label, "file");
-    }
 
     #[test]
     fn netlist_empty() {

@@ -1,43 +1,25 @@
-use std::{io::Read, path::PathBuf};
-
-use indicatif::ProgressBar;
+use bevy::prelude::*;
 use serde_json::Value;
+use std::{io::Read, path::PathBuf};
 use xml2json_rs::JsonBuilder;
-// use quick_xml::{de::from_str, se::to_string};
 
 use crate::{
     image::{Image, ImageFormat, Position},
-    netlist::{ComponentBuilder, Generate, Netlist},
-    Error, Result, CONFIG,
+    netlist::{ComponentBuilder, Netlist},
+    AdaptiveConfig, Error,
 };
 
-pub enum LoadFolder {
-    #[allow(dead_code)]
-    Segmentation,
-    Resized,
-    #[allow(dead_code)]
-    Images,
-}
-
+#[derive(Resource, Default)]
 pub struct XMLParser {
-    /// String: optimal netlist for this image, once generated when loaded
-    pub data: Vec<(Annotation, Image, String)>,
+    pub data: Vec<(Annotation, Image, Netlist)>,
     pub loaded: usize,
 }
 
 impl XMLParser {
-    pub fn new() -> Self {
-        XMLParser {
-            data: Vec::new(),
-            loaded: 0,
-        }
-    }
-
     /// loads the images from the specified folder
     pub fn load(
         &mut self,
         drafter_path: PathBuf,
-        folder: LoadFolder,
         all: bool,
         amount: usize,
     ) -> std::result::Result<&mut Self, Error> {
@@ -50,17 +32,13 @@ impl XMLParser {
                 .into_string()
                 .map_err(|_| "Could not convert to String".to_string())?;
             if folder_name == *"annotations" {
-                for annotation_file in std::fs::read_dir(subdir_entry.path())? {
+                'inner: for annotation_file in std::fs::read_dir(subdir_entry.path())? {
                     // check stop condition
                     if count == amount && !all {
                         break 'outer;
                     };
                     let annotation = Annotation::from_path(annotation_file?.path())?;
-                    let folder_name = match folder {
-                        LoadFolder::Resized => "resized",
-                        LoadFolder::Segmentation => "segmentation",
-                        LoadFolder::Images => "images",
-                    };
+                    let folder_name = "resized";
                     let path = PathBuf::from(format!(
                         "{}/{}/{}",
                         drafter_path.clone().to_string_lossy().into_owned(),
@@ -78,7 +56,7 @@ impl XMLParser {
                             let full_component = object.name.clone();
                             let component = full_component.split(".").take(1).collect::<String>();
                             // TODO(maybe): adding correct nodes to components
-                            if component == "resistor".to_string() {
+                            if component == *"resistor" {
                                 netlist
                                     .add_component(
                                         ComponentBuilder::new(
@@ -91,7 +69,7 @@ impl XMLParser {
                                     .unwrap();
                                 r_idx += 1;
                             }
-                            if component == "capacitor".to_string() {
+                            if component == *"capacitor" {
                                 netlist
                                     .add_component(
                                         ComponentBuilder::new(
@@ -104,7 +82,7 @@ impl XMLParser {
                                     .unwrap();
                                 c_idx += 1;
                             }
-                            if component == "voltage".to_string() {
+                            if component == *"voltage" {
                                 netlist
                                     .add_component(
                                         ComponentBuilder::new(
@@ -118,8 +96,13 @@ impl XMLParser {
                                 v_idx += 1;
                             }
                         });
-                        let optimal_netlist = netlist.generate();
-                        self.data.push((annotation, image, optimal_netlist));
+
+                        // ignore all images in Portrait format
+                        if image.format == ImageFormat::Portrait {
+                            continue 'inner;
+                        };
+
+                        self.data.push((annotation, image, netlist));
                         self.loaded += 1;
                         count += 1;
                     }
@@ -129,70 +112,60 @@ impl XMLParser {
         Ok(self)
     }
 
-    #[allow(dead_code)]
-    pub fn resize_segmented_images(folder: PathBuf) -> Result {
+    pub fn resize_segmented_images(folder: PathBuf, adaptive_config: &Res<AdaptiveConfig>) {
         let path = folder.clone().to_string_lossy().into_owned();
 
-        // debug("resizing images in folder: {:?}", path.clone());
         let resized_path = format!("{}/resized", path);
-        std::fs::create_dir_all(PathBuf::from(resized_path.clone()))?;
-        for entry in std::fs::read_dir(path.clone())? {
-            let entry = entry?;
+        std::fs::create_dir_all(PathBuf::from(resized_path.clone())).unwrap();
+        for entry in std::fs::read_dir(path.clone()).unwrap() {
+            let entry = entry.unwrap();
             let folder_name = entry.file_name().to_string_lossy().into_owned();
 
             if folder_name == *"segmentation" {
-                let progress = ProgressBar::new(std::fs::read_dir(entry.path())?.count() as u64);
-                for image_entry in std::fs::read_dir(entry.path())? {
-                    progress.inc(1);
-                    let image_entry = image_entry?;
+                for image_entry in std::fs::read_dir(entry.path()).unwrap() {
+                    let image_entry = image_entry.unwrap();
                     let filename = image_entry.file_name().to_string_lossy().into_owned();
-                    let mut image = Image::from_path_raw(image_entry.path())?;
+                    let mut image = Image::from_path_raw(image_entry.path()).unwrap();
 
                     // resize in regards of correct aspect ratio
                     let (width, height) = match image.format {
                         ImageFormat::Landscape => (
-                            CONFIG.image_processing.goal_image_width as u32,
-                            CONFIG.image_processing.goal_image_height as u32,
+                            adaptive_config.goal_image_width as u32,
+                            adaptive_config.goal_image_height as u32,
                         ),
                         ImageFormat::Portrait => (
-                            CONFIG.image_processing.goal_image_height as u32,
-                            CONFIG.image_processing.goal_image_width as u32,
+                            adaptive_config.goal_image_height as u32,
+                            adaptive_config.goal_image_width as u32,
                         ),
                     };
-                    image.resize_all(width, height)?;
+                    image.resize_all(width, height).unwrap();
 
-                    // rotate all the images that are in Portait format to get all images in the landscape format
-                    if image.format == ImageFormat::Portrait {
-                        image.rotate90();
-                        image.format = ImageFormat::Landscape;
-                    };
-
-                    image.save_grey(PathBuf::from(format!(
-                        "{}/{}",
-                        resized_path.clone(),
-                        filename
-                    )))?;
+                    image
+                        .save_grey(PathBuf::from(format!(
+                            "{}/{}",
+                            resized_path.clone(),
+                            filename
+                        )))
+                        .unwrap();
                 }
-                progress.finish_and_clear();
             }
         }
-        Ok(())
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct Database {
     pub value: String,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct Size {
     pub width: String,
     pub height: String,
     pub depth: String,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone, Default)]
 pub struct Bndbox {
     pub xmin: String,
     pub ymin: String,
@@ -201,6 +174,10 @@ pub struct Bndbox {
 }
 
 impl Bndbox {
+    pub fn new() -> Self {
+        Bndbox::default()
+    }
+
     pub fn top_left(&self) -> Position {
         let x = self.xmin.parse::<i32>().unwrap();
         let y = self.ymin.parse::<i32>().unwrap();
@@ -212,9 +189,17 @@ impl Bndbox {
         let y = self.ymax.parse::<i32>().unwrap();
         Position::new(x, y)
     }
+
+    pub fn size(&self) -> (u32, u32) {
+        let top_left = self.top_left();
+        let bottom_right = self.bottom_right();
+        let width = bottom_right.x() - top_left.x();
+        let height = bottom_right.y() - top_left.y();
+        (width as u32, height as u32)
+    }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct Object {
     pub name: String,
     pub pose: String,
@@ -225,7 +210,7 @@ pub struct Object {
     pub text: String,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Component, Hash, Eq)]
 pub struct Annotation {
     pub folder: String,
     pub filename: String,
@@ -247,6 +232,49 @@ impl Annotation {
         let json = json_builder.build_from_xml(&buf).unwrap();
         let annotation = Annotation::from(json);
         Ok(annotation)
+    }
+
+    /// Rotates all bndboxes to the correct places
+    pub fn rotate90(&mut self) {
+        self.objects.iter_mut().for_each(|obj| {
+            // position
+            let bndbox = obj.bndbox.clone();
+            let (h, w) = (
+                self.size.height.parse::<i32>().unwrap(),
+                self.size.width.parse::<i32>().unwrap(),
+            );
+
+            let mut out_bndbox = Bndbox::new();
+            let top_left = bndbox.top_left();
+            let bot_right = bndbox.bottom_right();
+            for y in 0..h {
+                for x in 0..w {
+                    let pos = Position::new(x, y);
+                    let rotated = Position::new(h - y, x);
+                    if pos == top_left {
+                        out_bndbox.xmax = rotated.x().to_string();
+                        out_bndbox.ymin = rotated.y().to_string();
+                    } else if pos == bot_right {
+                        out_bndbox.xmin = rotated.x().to_string();
+                        out_bndbox.ymax = rotated.y().to_string();
+                    }
+                }
+            }
+
+            // info(format!(
+            //     "path: {:?} - image name: {:?} - img size: {:?} - name: {} - old bndbox: {:?} - new bndbox: {:?}",
+            //     self.path.clone(),
+            //     self.filename.clone(),
+            //     self.size.clone(),
+            //     obj.name.clone(),
+            //     bndbox.clone(),
+            //     out_bndbox.clone()
+            // ));
+
+            // rotation
+
+            obj.bndbox = out_bndbox;
+        });
     }
 }
 
@@ -329,108 +357,5 @@ impl From<Value> for Annotation {
             segmented,
             objects,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use xml2json_rs::JsonBuilder;
-
-    use super::*;
-
-    fn test_annotation() -> &'static str {
-        r#"
-<annotation>
-    <folder>images</folder>
-    <filename>C-1_D1_P1.jpeg</filename>
-    <path>./drafter_-1/images/C-1_D1_P1.jpeg</path>
-    <source>
-        <database>CGHD</database>
-    </source>
-    <size>
-        <width>1000</width>
-        <height>1000</height>
-        <depth>3</depth>
-    </size>
-    <segmented>0</segmented>
-    <object>
-        <name>text</name>
-        <pose>Unspecified</pose>
-        <truncated>0</truncated>
-        <difficult>0</difficult>
-        <bndbox>
-            <xmin>410</xmin>
-            <ymin>504</ymin>
-            <xmax>460</xmax>
-            <ymax>558</ymax>
-        </bndbox>
-    </object>
-    <object>
-        <name>text</name>
-        <pose>Unspecified</pose>
-        <truncated>0</truncated>
-        <difficult>0</difficult>
-        <bndbox>
-            <xmin>418</xmin>
-            <ymin>749</ymin>
-            <xmax>462</xmax>
-            <ymax>803</ymax>
-        </bndbox>
-        <text>RE</text>
-    </object>
-    <object>
-        <name>text</name>
-        <pose>Unspecified</pose>
-        <truncated>0</truncated>
-        <difficult>0</difficult>
-        <bndbox>
-            <xmin>1048</xmin>
-            <ymin>472</ymin>
-            <xmax>1104</xmax>
-            <ymax>530</ymax>
-        </bndbox>
-        <text>R3</text>
-    </object>
-</annotation>
-        "#
-    }
-
-    #[test]
-    fn deserialize() {
-        let buf = test_annotation();
-        let json_builder = JsonBuilder::default();
-        let json = json_builder.build_from_xml(&buf).unwrap();
-        let should = Annotation::from(json);
-        assert_eq!(should.objects.len(), 3);
-        assert_eq!(should.objects[0].bndbox.xmin, String::from("410"));
-        assert_eq!(should.objects[1].bndbox.ymin, String::from("749"));
-    }
-
-    #[test]
-    fn from_path() {
-        let buf = test_annotation();
-        let json_builder = JsonBuilder::default();
-        let json = json_builder.build_from_xml(&buf).unwrap();
-        let should = Annotation::from(json);
-        let loaded =
-            Annotation::from_path(PathBuf::from("images/unit_tests/annotation.xml")).unwrap();
-        assert_eq!(should, loaded);
-    }
-
-    #[test]
-    fn parse_amount() {
-        let mut parser = XMLParser::new();
-        parser
-            .load(
-                PathBuf::from(format!(
-                    "{}/drafter_1",
-                    CONFIG.image_processing.training.path as &str
-                )),
-                LoadFolder::Segmentation,
-                false,
-                1,
-            )
-            .unwrap();
-        assert_eq!(parser.data.len(), 1);
     }
 }

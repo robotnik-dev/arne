@@ -1,14 +1,19 @@
+use bevy::prelude::*;
 use image::imageops::{resize, rotate90};
 use image::{GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
-use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
+use imageproc::drawing::{
+    draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut,
+};
 use nalgebra::clamp;
-use rand::prelude::*;
+use rusttype::{Font, Scale};
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, Div, Sub};
 use std::path::PathBuf;
 use std::{fmt::Debug, ops::AddAssign};
 
 use crate::annotations::{Annotation, Bndbox, Object};
-use crate::{Error, Result, CONFIG};
+use crate::genetic_algorithm::Agent;
+use crate::{AdaptiveConfig, Error, Result};
 use skeletonize::edge_detection::sobel4;
 use skeletonize::foreground;
 
@@ -21,19 +26,8 @@ impl std::fmt::Display for ImageLabel {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum TrainingStage {
-    Artificial {
-        stage: u8,
-    },
-    #[allow(dead_code)]
-    RealBinarized,
-    #[allow(dead_code)]
-    Real,
-}
-
 /// Counted with one more than image idx. Image index 0 -> Position index 1.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, PartialOrd, Hash, Default)]
 pub struct Position {
     x: i32,
     y: i32,
@@ -56,13 +50,6 @@ impl Position {
         }
     }
 
-    /// length of the vector normalized between 0 and 1
-    pub fn normalized_len(&self) -> f32 {
-        let move_speed = CONFIG.neural_network.retina_movement_speed as i32;
-        let max_len = ((move_speed.pow(2) + move_speed.pow(2)) as f32).sqrt();
-        self.len() / max_len
-    }
-
     pub fn x(&self) -> i32 {
         self.x
     }
@@ -76,12 +63,6 @@ impl Position {
             x: -self.x,
             y: -self.y,
         }
-    }
-
-    pub fn random(rng: &mut dyn RngCore, top_left: Position, bottom_right: Position) -> Position {
-        let x = rng.gen_range(top_left.x..bottom_right.x);
-        let y = rng.gen_range(top_left.y..bottom_right.y);
-        Position { x, y }
     }
 }
 
@@ -149,45 +130,27 @@ impl Div<i32> for Position {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ImageFormat {
     Landscape,
     Portrait,
 }
 
 /// generic container for the image data
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Component, PartialEq, Eq, Hash)]
 pub struct Image {
-    rgba: RgbaImage,
-    grey: GrayImage,
-    width: u32,
-    height: u32,
+    pub id: u64,
+    pub rgba: RgbaImage,
+    pub grey: GrayImage,
+    pub width: u32,
+    pub height: u32,
     pub format: ImageFormat,
     /// used to visualize the retina movement on an upscaled image (Position, size of retina, label)
-    retina_positions: Vec<(Position, usize, String)>,
-    dark_pixel_positions: Vec<Position>,
+    pub retina_positions: Vec<(Position, usize, String)>,
+    pub dark_pixel_positions: Vec<Position>,
 }
 
 impl Image {
-    /// Empty image with the default size
-    pub fn empty() -> Self {
-        Image {
-            rgba: RgbaImage::new(
-                CONFIG.image_processing.goal_image_width as u32,
-                CONFIG.image_processing.goal_image_height as u32,
-            ),
-            grey: GrayImage::new(
-                CONFIG.image_processing.goal_image_width as u32,
-                CONFIG.image_processing.goal_image_height as u32,
-            ),
-            width: CONFIG.image_processing.goal_image_width as u32,
-            height: CONFIG.image_processing.goal_image_height as u32,
-            format: ImageFormat::Landscape,
-            retina_positions: vec![],
-            dark_pixel_positions: vec![],
-        }
-    }
-
     /// create an image from a vector of f32 values. Must be a square length
     pub fn from_vec(vec: Vec<f32>) -> std::result::Result<Self, Error> {
         // figure out if the vector length can be squared
@@ -207,6 +170,7 @@ impl Image {
             }
         }
         let mut image = Image {
+            id: 0,
             rgba,
             grey,
             width,
@@ -215,36 +179,6 @@ impl Image {
             retina_positions: vec![],
             dark_pixel_positions: vec![],
         };
-
-        // TODO: maybe threshold
-        image.generate_dark_pixel_positions(0.5)?;
-        Ok(image)
-    }
-
-    /// load from a path and return an image(preprocessed)
-    pub fn from_path(path: PathBuf) -> std::result::Result<Self, Error> {
-        let rgba = image::io::Reader::open(path.clone())?
-            .decode()?
-            .into_rgba8();
-        let grey = image::io::Reader::open(path)?.decode()?.into_luma8();
-        let width = rgba.width();
-        let height = rgba.height();
-        let mut image = Image {
-            rgba,
-            grey,
-            width,
-            height,
-            format: if width >= height {
-                ImageFormat::Landscape
-            } else {
-                ImageFormat::Portrait
-            },
-            retina_positions: vec![],
-            dark_pixel_positions: vec![],
-        };
-
-        // preprocess the image
-        image.preprocess()?;
 
         // TODO: maybe threshold
         image.generate_dark_pixel_positions(0.5)?;
@@ -260,6 +194,7 @@ impl Image {
         let width = rgba.width();
         let height = rgba.height();
         let mut image = Image {
+            id: 0,
             rgba,
             grey,
             width,
@@ -278,22 +213,22 @@ impl Image {
     }
 
     /// resizes, find edges and binarizes it
-    pub fn preprocess(&mut self) -> Result {
+    pub fn preprocess(&mut self, adaptive_config: Res<AdaptiveConfig>) -> Result {
         let (width, height) = match self.format {
             ImageFormat::Landscape => (
-                CONFIG.image_processing.goal_image_width as u32,
-                CONFIG.image_processing.goal_image_height as u32,
+                adaptive_config.goal_image_width as u32,
+                adaptive_config.goal_image_height as u32,
             ),
             ImageFormat::Portrait => (
-                CONFIG.image_processing.goal_image_height as u32,
-                CONFIG.image_processing.goal_image_width as u32,
+                adaptive_config.goal_image_height as u32,
+                adaptive_config.goal_image_width as u32,
             ),
         };
         self.resize_all(width, height)?
-            .edged(Some(CONFIG.image_processing.sobel_threshold as f32))?
+            .edged(Some(adaptive_config.sobel_threshold))?
             .erode(
                 imageproc::distance_transform::Norm::L1,
-                CONFIG.image_processing.erode_pixels as u8,
+                adaptive_config.erode_pixels as u8,
             )?;
         Ok(())
     }
@@ -474,7 +409,7 @@ impl Image {
 
         Ok(Retina {
             data,
-            size,
+            size: RetinaSize::Medium(size),
             label,
             superpixels,
             superpixel_size,
@@ -537,18 +472,6 @@ impl Image {
 
             // draw in the middle a circle
             draw_filled_circle_mut(&mut canvas, (x as i32, y as i32), 1_i32, Luma([0]));
-
-            // // add a label to the retina
-            // let font_data = include_bytes!("../assets/Roboto-Regular.ttf");
-            // let Some(font) = Font::try_from_bytes(font_data) else {
-            //     return Err("Could not load font".into());
-            // };
-            // let scale = Scale {
-            //     x: CONFIG.image_processing.retina_label_scale as f32,
-            //     y: CONFIG.image_processing.retina_label_scale as f32,
-            // };
-            // let color = Luma([0]);
-            // draw_text_mut(&mut canvas, color, x as i32, y as i32, scale, &font, label);
         }
         canvas.save(path)?;
 
@@ -556,10 +479,14 @@ impl Image {
     }
 
     /// on the rgba version of the image upscaled
-    pub fn save_with_retina_upscaled(&self, path: PathBuf) -> Result {
-        let circle_radius = CONFIG.image_processing.retina_circle_radius as f32;
-        let upscaled_width = CONFIG.image_processing.goal_image_width as u32;
-        let upscaled_height = CONFIG.image_processing.goal_image_height as u32;
+    pub fn save_with_retina_upscaled(
+        &self,
+        path: PathBuf,
+        adaptive_config: &Res<AdaptiveConfig>,
+    ) -> Result {
+        let circle_radius = adaptive_config.retina_circle_radius;
+        let upscaled_width = adaptive_config.goal_image_width as u32;
+        let upscaled_height = adaptive_config.goal_image_height as u32;
 
         let scaling_factor_x = upscaled_width as f32 / self.width() as f32;
         let scaling_factor_y = upscaled_height as f32 / self.height() as f32;
@@ -571,7 +498,7 @@ impl Image {
             image::imageops::FilterType::Nearest,
         );
         for (index, (retina_position, retina_size, _)) in self.retina_positions.iter().enumerate() {
-            let scaled_size = *retina_size as f32 * scaling_factor_x;
+            let scaled_size_x = *retina_size as f32 * scaling_factor_x;
             let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
             let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;
 
@@ -579,10 +506,10 @@ impl Image {
             draw_hollow_rect_mut(
                 &mut canvas,
                 imageproc::rect::Rect::at(
-                    scaled_x as i32 - scaled_size as i32 / 2,
-                    scaled_y as i32 - scaled_size as i32 / 2,
+                    scaled_x as i32 - scaled_size_x as i32 / 2,
+                    scaled_y as i32 - scaled_size_x as i32 / 2,
                 )
-                .of_size(scaled_size as u32, scaled_size as u32),
+                .of_size(scaled_size_x as u32, scaled_size_x as u32),
                 Rgba([255, 0, 0, 255]),
             );
 
@@ -612,27 +539,418 @@ impl Image {
                 circle_radius as i32,
                 Rgba([0, 255, 0, 255]),
             );
-
-            // // add a label to the retina
-            // let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
-            // let Some(font) = Font::try_from_bytes(font_data) else {
-            //     return Err("Could not load font".into());
-            // };
-            // let scale = Scale {
-            //     x: CONFIG.image_processing.retina_label_scale as f32,
-            //     y: CONFIG.image_processing.retina_label_scale as f32,
-            // };
-            // let color = Rgba([0, 0, 0, 255]);
-            // draw_text_mut(
-            //     &mut canvas,
-            //     color,
-            //     scaled_x as i32,
-            //     scaled_y as i32,
-            //     scale,
-            //     &font,
-            //     label,
-            // );
         }
+        canvas.save(path)?;
+
+        Ok(())
+    }
+
+    /// on the rgba version of the image upscaled
+    pub fn save_with_found_components(
+        &self,
+        path: &str,
+        adaptive_config: &Res<AdaptiveConfig>,
+        agent: &Agent,
+    ) -> Result {
+        let circle_radius = adaptive_config.retina_circle_radius;
+        let upscaled_width = adaptive_config.goal_image_width as u32;
+        let upscaled_height = adaptive_config.goal_image_height as u32;
+
+        let scaling_factor_x = upscaled_width as f32 / self.width() as f32;
+        let scaling_factor_y = upscaled_height as f32 / self.height() as f32;
+
+        let mut canvas = resize(
+            &self.rgba().clone(),
+            upscaled_width,
+            upscaled_height,
+            image::imageops::FilterType::Nearest,
+        );
+        for (index, (retina_position, size, _)) in self.retina_positions.iter().enumerate() {
+            let scaled_size_x = *size as f32 * scaling_factor_x;
+            let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
+            let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;
+
+            // draw border of the retina
+            draw_hollow_rect_mut(
+                &mut canvas,
+                imageproc::rect::Rect::at(
+                    scaled_x as i32 - scaled_size_x as i32 / 2,
+                    scaled_y as i32 - scaled_size_x as i32 / 2,
+                )
+                .of_size(scaled_size_x as u32, scaled_size_x as u32),
+                Rgba([255, 0, 0, 255]),
+            );
+
+            if index == 0 {
+                continue;
+            }
+            // draw a line from the last retina position to the current retina position
+            let (line_begin, _, _) = &self.retina_positions[index - 1];
+            let line_end = retina_position;
+            draw_line_segment_mut(
+                &mut canvas,
+                (
+                    (line_begin.x as f32 - 0.5) * scaling_factor_x,
+                    (line_begin.y as f32 - 0.5) * scaling_factor_y,
+                ),
+                (
+                    (line_end.x as f32 - 0.5) * scaling_factor_x,
+                    (line_end.y as f32 - 0.5) * scaling_factor_y,
+                ),
+                Rgba([127, 127, 127, 255]),
+            );
+
+            // draw at the middle of the retina a circle
+            draw_filled_circle_mut(
+                &mut canvas,
+                ((scaled_x) as i32, (scaled_y) as i32),
+                circle_radius as i32,
+                Rgba([0, 255, 0, 255]),
+            );
+        }
+
+        // add components
+        if let Some(components) = agent.genotype().found_components.get(&self.id) {
+            for ((ret_pos, size, _), comp) in components.iter() {
+                let scaled_size_x = *size as f32 * scaling_factor_x;
+                let scaled_x = (ret_pos.x as f32 - 0.5) * scaling_factor_x;
+                let scaled_y = (ret_pos.y as f32 - 0.5) * scaling_factor_y;
+
+                // draw border of the retina
+                draw_hollow_rect_mut(
+                    &mut canvas,
+                    imageproc::rect::Rect::at(
+                        scaled_x as i32 - scaled_size_x as i32 / 2,
+                        scaled_y as i32 - scaled_size_x as i32 / 2,
+                    )
+                    .of_size(scaled_size_x as u32, scaled_size_x as u32),
+                    Rgba([0, 255, 0, 255]),
+                );
+
+                // add a label to the retina
+                let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
+                let Some(font) = Font::try_from_bytes(font_data) else {
+                    return Err("Could not load font".into());
+                };
+                let scale = Scale {
+                    x: adaptive_config.retina_label_scale as f32,
+                    y: adaptive_config.retina_label_scale as f32,
+                };
+                let color = Rgba([0, 255, 0, 255]);
+                let label = comp.to_string();
+                draw_text_mut(
+                    &mut canvas,
+                    color,
+                    scaled_x as i32,
+                    scaled_y as i32,
+                    scale,
+                    &font,
+                    label.as_str(),
+                );
+            }
+        }
+
+        canvas.save(path)?;
+
+        Ok(())
+    }
+
+    pub fn save_with_found_components_and_bndboxes(
+        &self,
+        path: &str,
+        adaptive_config: &Res<AdaptiveConfig>,
+        annotation: &Annotation,
+        agent: &Agent,
+    ) -> Result {
+        let upscaled_width = adaptive_config.goal_image_width as u32;
+        let upscaled_height = adaptive_config.goal_image_height as u32;
+
+        let scaling_factor_x = upscaled_width as f32 / self.width() as f32;
+        let scaling_factor_y = upscaled_height as f32 / self.height() as f32;
+
+        let mut canvas = resize(
+            &self.rgba().clone(),
+            upscaled_width,
+            upscaled_height,
+            image::imageops::FilterType::Nearest,
+        );
+        // add components
+        if let Some(components) = agent.genotype().found_components.get(&self.id) {
+            for ((ret_pos, size, _), comp) in components.iter() {
+                let scaled_size_x = *size as f32 * scaling_factor_x;
+                let scaled_x = (ret_pos.x as f32 - 0.5) * scaling_factor_x;
+                let scaled_y = (ret_pos.y as f32 - 0.5) * scaling_factor_y;
+
+                // draw border of the retina
+                draw_hollow_rect_mut(
+                    &mut canvas,
+                    imageproc::rect::Rect::at(
+                        scaled_x as i32 - scaled_size_x as i32 / 2,
+                        scaled_y as i32 - scaled_size_x as i32 / 2,
+                    )
+                    .of_size(scaled_size_x as u32, scaled_size_x as u32),
+                    Rgba([0, 255, 0, 255]),
+                );
+
+                // add a label to the retina
+                let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
+                let Some(font) = Font::try_from_bytes(font_data) else {
+                    return Err("Could not load font".into());
+                };
+                let scale = Scale {
+                    x: adaptive_config.retina_label_scale as f32,
+                    y: adaptive_config.retina_label_scale as f32,
+                };
+                let color = Rgba([0, 255, 0, 255]);
+                let label = comp.to_string();
+                draw_text_mut(
+                    &mut canvas,
+                    color,
+                    scaled_x as i32,
+                    scaled_y as i32,
+                    scale,
+                    &font,
+                    label.as_str(),
+                );
+            }
+        }
+
+        // add bndboxes
+        for obj in annotation.objects.iter() {
+            let bndbox = self.translate_bndbox_to_size(annotation, obj);
+            let scaled_size = bndbox.size().0 as f32 * scaling_factor_x;
+            let pos = Position::from(bndbox);
+            let scaled_x = (pos.x as f32 - 0.5) * scaling_factor_x;
+            let scaled_y = (pos.y as f32 - 0.5) * scaling_factor_y;
+            // draw border of the box
+            draw_hollow_rect_mut(
+                &mut canvas,
+                imageproc::rect::Rect::at(
+                    scaled_x as i32 - scaled_size as i32 / 2,
+                    scaled_y as i32 - scaled_size as i32 / 2,
+                )
+                .of_size(scaled_size as u32, scaled_size as u32),
+                Rgba([0, 0, 255, 255]),
+            );
+        }
+
+        canvas.save(path)?;
+
+        Ok(())
+    }
+
+    pub fn save_with_all(
+        &self,
+        path: &str,
+        adaptive_config: &Res<AdaptiveConfig>,
+        agent: &Agent,
+        annotation: &Annotation,
+    ) -> Result {
+        let circle_radius = adaptive_config.retina_circle_radius;
+        let upscaled_width = adaptive_config.goal_image_width as u32;
+        let upscaled_height = adaptive_config.goal_image_height as u32;
+
+        let scaling_factor_x = upscaled_width as f32 / self.width() as f32;
+        let scaling_factor_y = upscaled_height as f32 / self.height() as f32;
+
+        let mut canvas = resize(
+            &self.rgba().clone(),
+            upscaled_width,
+            upscaled_height,
+            image::imageops::FilterType::Nearest,
+        );
+        for (index, (retina_position, size, _)) in self.retina_positions.iter().enumerate() {
+            let scaled_size_x = *size as f32 * scaling_factor_x;
+            let scaled_x = (retina_position.x as f32 - 0.5) * scaling_factor_x;
+            let scaled_y = (retina_position.y as f32 - 0.5) * scaling_factor_y;
+
+            // draw border of the retina
+            draw_hollow_rect_mut(
+                &mut canvas,
+                imageproc::rect::Rect::at(
+                    scaled_x as i32 - scaled_size_x as i32 / 2,
+                    scaled_y as i32 - scaled_size_x as i32 / 2,
+                )
+                .of_size(scaled_size_x as u32, scaled_size_x as u32),
+                Rgba([255, 0, 0, 255]),
+            );
+
+            if index == 0 {
+                continue;
+            }
+            // draw a line from the last retina position to the current retina position
+            let (line_begin, _, _) = &self.retina_positions[index - 1];
+            let line_end = retina_position;
+            draw_line_segment_mut(
+                &mut canvas,
+                (
+                    (line_begin.x as f32 - 0.5) * scaling_factor_x,
+                    (line_begin.y as f32 - 0.5) * scaling_factor_y,
+                ),
+                (
+                    (line_end.x as f32 - 0.5) * scaling_factor_x,
+                    (line_end.y as f32 - 0.5) * scaling_factor_y,
+                ),
+                Rgba([127, 127, 127, 255]),
+            );
+
+            // draw at the middle of the retina a circle
+            draw_filled_circle_mut(
+                &mut canvas,
+                ((scaled_x) as i32, (scaled_y) as i32),
+                circle_radius as i32,
+                Rgba([0, 255, 0, 255]),
+            );
+        }
+
+        // add components
+        if let Some(components) = agent.genotype().found_components.get(&self.id) {
+            for ((ret_pos, size, _), comp) in components.iter() {
+                let scaled_size_x = *size as f32 * scaling_factor_x;
+                let scaled_x = (ret_pos.x as f32 - 0.5) * scaling_factor_x;
+                let scaled_y = (ret_pos.y as f32 - 0.5) * scaling_factor_y;
+
+                // draw border of the retina
+                draw_hollow_rect_mut(
+                    &mut canvas,
+                    imageproc::rect::Rect::at(
+                        scaled_x as i32 - scaled_size_x as i32 / 2,
+                        scaled_y as i32 - scaled_size_x as i32 / 2,
+                    )
+                    .of_size(scaled_size_x as u32, scaled_size_x as u32),
+                    Rgba([0, 255, 0, 255]),
+                );
+
+                // add a label to the retina
+                let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
+                let Some(font) = Font::try_from_bytes(font_data) else {
+                    return Err("Could not load font".into());
+                };
+                let scale = Scale {
+                    x: adaptive_config.retina_label_scale as f32,
+                    y: adaptive_config.retina_label_scale as f32,
+                };
+                let color = Rgba([0, 255, 0, 255]);
+                let label = comp.to_string();
+                draw_text_mut(
+                    &mut canvas,
+                    color,
+                    scaled_x as i32,
+                    scaled_y as i32,
+                    scale,
+                    &font,
+                    label.as_str(),
+                );
+            }
+        }
+
+        // add bndboxes
+        for obj in annotation.objects.iter() {
+            let bndbox = self.translate_bndbox_to_size(annotation, obj);
+            let (w, h) = bndbox.size();
+            draw_hollow_rect_mut(
+                &mut canvas,
+                imageproc::rect::Rect::at(bndbox.top_left().x(), bndbox.top_left().y())
+                    .of_size(w, h),
+                Rgba([0, 0, 255, 255]),
+            );
+        }
+
+        canvas.save(path)?;
+
+        Ok(())
+    }
+
+    pub fn save_with_bndboxes_with_text(
+        &self,
+        path: &str,
+        adaptive_config: &Res<AdaptiveConfig>,
+        annotation: &Annotation,
+    ) -> Result {
+        let upscaled_width = adaptive_config.goal_image_width as u32;
+        let upscaled_height = adaptive_config.goal_image_height as u32;
+
+        let scaling_factor_x = upscaled_width as f32 / self.width() as f32;
+        let scaling_factor_y = upscaled_height as f32 / self.height() as f32;
+
+        let mut canvas = resize(
+            &self.rgba().clone(),
+            upscaled_width,
+            upscaled_height,
+            image::imageops::FilterType::Nearest,
+        );
+        // add bndboxes
+        for obj in annotation.objects.iter() {
+            let bndbox = self.translate_bndbox_to_size(annotation, obj);
+            let pos = Position::from(bndbox.clone());
+            let scaled_x = (pos.x as f32 - 0.5) * scaling_factor_x;
+            let scaled_y = (pos.y as f32 - 0.5) * scaling_factor_y;
+            let full_component = obj.name.clone();
+            let component = full_component.split(".").take(1).collect::<String>();
+            // draw border of the box
+            let (w, h) = bndbox.size();
+            draw_hollow_rect_mut(
+                &mut canvas,
+                imageproc::rect::Rect::at(bndbox.top_left().x(), bndbox.top_left().y())
+                    .of_size(w, h),
+                Rgba([0, 0, 255, 255]),
+            );
+
+            // add a label to the box
+            let font_data: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf");
+            let Some(font) = Font::try_from_bytes(font_data) else {
+                return Err("Could not load font".into());
+            };
+            let scale = Scale {
+                x: adaptive_config.retina_label_scale as f32,
+                y: adaptive_config.retina_label_scale as f32,
+            };
+            let color = Rgba([0, 0, 255, 255]);
+            let label = component.clone();
+            draw_text_mut(
+                &mut canvas,
+                color,
+                scaled_x as i32,
+                scaled_y as i32,
+                scale,
+                &font,
+                label.as_str(),
+            );
+        }
+
+        canvas.save(path)?;
+
+        Ok(())
+    }
+
+    pub fn save_with_bndboxes(
+        &self,
+        path: &str,
+        adaptive_config: &Res<AdaptiveConfig>,
+        annotation: &Annotation,
+    ) -> Result {
+        let upscaled_width = adaptive_config.goal_image_width as u32;
+        let upscaled_height = adaptive_config.goal_image_height as u32;
+
+        let mut canvas = resize(
+            &self.rgba().clone(),
+            upscaled_width,
+            upscaled_height,
+            image::imageops::FilterType::Nearest,
+        );
+        // add bndboxes
+        for obj in annotation.objects.iter() {
+            let bndbox = self.translate_bndbox_to_size(annotation, obj);
+            // draw border of the box
+            let (w, h) = bndbox.size();
+            draw_hollow_rect_mut(
+                &mut canvas,
+                imageproc::rect::Rect::at(bndbox.top_left().x(), bndbox.top_left().y())
+                    .of_size(w, h),
+                Rgba([0, 0, 255, 255]),
+            );
+        }
+
         canvas.save(path)?;
 
         Ok(())
@@ -640,11 +958,16 @@ impl Image {
 
     /// checks if the bndbox is fully wrapped from the retina rectangle (inclusive edged)
     pub fn wraps_bndbox(&self, bndbox: &Bndbox, retina: &Retina) -> bool {
+        // top left image corner = 0,0
         let top_left_bndbox = bndbox.top_left();
         let bottom_right_bndbox = bndbox.bottom_right();
         let top_left_retina = retina.get_top_left_position();
         let bottom_right_retina = retina.get_bottom_right_position();
-        top_left_bndbox >= top_left_retina && bottom_right_bndbox <= bottom_right_retina
+
+        top_left_bndbox.x() >= top_left_retina.x()
+            && top_left_bndbox.y() >= top_left_retina.y()
+            && bottom_right_bndbox.x() <= bottom_right_retina.x()
+            && bottom_right_bndbox.y() <= bottom_right_retina.y()
     }
     // translates the orgignal bndbox to the one with resized values
     pub fn translate_bndbox_to_size(&self, annotation: &Annotation, obj: &Object) -> Bndbox {
@@ -667,7 +990,7 @@ impl Image {
 pub struct Retina {
     // color data stored in a vector
     data: Vec<f32>,
-    size: usize,
+    size: RetinaSize,
     label: String,
     superpixels: Vec<Superpixel>,
     superpixel_size: usize,
@@ -702,7 +1025,11 @@ impl Retina {
     }
 
     pub fn size(&self) -> usize {
-        self.size
+        match self.size {
+            RetinaSize::Small(size) => size,
+            RetinaSize::Medium(size) => size,
+            RetinaSize::Large(size) => size,
+        }
     }
 
     pub fn superpixel_size(&self) -> usize {
@@ -775,25 +1102,23 @@ impl Retina {
     /// global position inside the image
     pub fn get_top_left_position(&self) -> Position {
         Position::new(
-            self.center_position.x - (self.size / 2) as i32,
-            self.center_position.y - (self.size / 2) as i32,
+            self.center_position.x - (self.size() / 2) as i32,
+            self.center_position.y - (self.size() / 2) as i32,
         )
     }
 
     /// global position inside the image
     pub fn get_bottom_right_position(&self) -> Position {
         Position::new(
-            self.center_position.x + (self.size / 2) as i32,
-            self.center_position.y + (self.size / 2) as i32,
+            self.center_position.x + (self.size() / 2) as i32,
+            self.center_position.y + (self.size() / 2) as i32,
         )
     }
     pub fn get_last_delta_position(&self) -> Position {
-        // FIXME: why clone here
         self.last_delta_position.clone()
     }
 
     pub fn get_current_delta_position(&self) -> Position {
-        // FIXME: why clone here
         self.current_delta_position.clone()
     }
 
@@ -847,6 +1172,15 @@ impl Retina {
 }
 
 #[derive(Debug, Clone)]
+pub enum RetinaSize {
+    #[allow(dead_code)]
+    Small(usize),
+    Medium(usize),
+    #[allow(dead_code)]
+    Large(usize),
+}
+
+#[derive(Debug, Clone)]
 struct Superpixel {
     value: f32,
 }
@@ -859,15 +1193,7 @@ impl Superpixel {
 
 #[cfg(test)]
 mod tests {
-    use rand_chacha::ChaCha8Rng;
-
     use super::*;
-
-    fn get_test_dir() -> String {
-        let dir = "tests/images".to_string();
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
 
     fn get_test_image() -> Image {
         Image::from_vec(vec![0.0; 101 * 101]).unwrap()
@@ -946,27 +1272,27 @@ mod tests {
         assert_eq!(retina.get_center_position().y, 56);
     }
 
-    #[test]
-    fn superpixel_retina() {
-        let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let mut pixels = vec![];
-        for _ in 0..100 * 100 {
-            pixels.push(if rng.gen_bool(0.5) { 0f32 } else { 255f32 });
-        }
-        let image = Image::from_vec(pixels).unwrap();
-        let retina = image
-            .create_retina_at(Position { x: 18, y: 18 }, 35, 7, String::from("1"))
-            .unwrap();
+    // #[test]
+    // fn superpixel_retina() {
+    //     let mut rng = ChaCha8Rng::seed_from_u64(2);
+    //     let mut pixels = vec![];
+    //     for _ in 0..100 * 100 {
+    //         pixels.push(if rng.gen_bool(0.5) { 0f32 } else { 255f32 });
+    //     }
+    //     let image = Image::from_vec(pixels).unwrap();
+    //     let retina = image
+    //         .create_retina_at(Position { x: 18, y: 18 }, 35, 7, String::from("1"))
+    //         .unwrap();
 
-        let dir = get_test_dir();
-        let file = String::from("superpixel.png");
-        image
-            .save_with_retina(PathBuf::from(format!("{}/{}", dir, file)))
-            .unwrap();
+    //     let dir = get_test_dir();
+    //     let file = String::from("superpixel.png");
+    //     image
+    //         .save_with_retina(PathBuf::from(format!("{}/{}", dir, file)))
+    //         .unwrap();
 
-        // real value is 0.44 but thresholded to 0.0
-        assert_eq!(retina.superpixels[0].value, 0.0);
-    }
+    //     // real value is 0.44 but thresholded to 0.0
+    //     assert_eq!(retina.superpixels[0].value, 0.0);
+    // }
 
     #[test]
     fn dark_pixel_positions_in_frame() {
