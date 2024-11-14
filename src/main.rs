@@ -233,7 +233,7 @@ fn preprocess(adaptive_config: Res<AdaptiveConfig>, mut next: ResMut<NextState<A
 }
 
 fn load_config(mut adaptive_config: ResMut<AdaptiveConfig>) {
-    let filepath = String::from("bevy_port_config.json");
+    let filepath = String::from("config.json");
     let loaded_adaptive_config: AdaptiveConfig =
         from_str(read_to_string(filepath).unwrap().as_str()).unwrap();
     adaptive_config.number_of_populations = loaded_adaptive_config.number_of_populations;
@@ -500,17 +500,24 @@ fn create_ranking(
         // each original agent has X (=images) evaluated agents attached with their netlist.
         // we can store the accumulated ranking over all the X images and normalize it to get an avarage ranking per agent
         let mut acc_ranking = 0f32;
-        v.iter().for_each(|(_, image_id, netlist)| {
+        let mut best_agent = v.first().unwrap().0.clone();
+        let mut best_rank = 0f32;
+        v.iter().for_each(|(agent, image_id, netlist)| {
             // compare the netlists of the original image and the created one
-            acc_ranking += q_images
+            let local_rank = q_images
                 .iter()
                 // take only the ones with the same image
                 .filter(|(img, _, _)| &img.id == image_id)
                 .map(|(_, _, opt_net)| opt_net.compare(netlist))
                 .collect::<Vec<f32>>()[0];
+            if local_rank > best_rank {
+                best_agent = agent.clone();
+                best_rank = local_rank;
+            }
+            acc_ranking += local_rank;
         });
-        let average_ranking = acc_ranking / xml_parser.loaded as f32;
-        ranking.push((k, average_ranking));
+        let average_ranking = acc_ranking / v.iter().len() as f32;
+        ranking.push((k, average_ranking, best_agent));
     });
     assert_eq!(ranking.iter().len(), adaptive_config.population_size);
 
@@ -520,77 +527,78 @@ fn create_ranking(
     info("creating files after testing");
     let save_path = adaptive_config.tested_agent_save_path.clone();
     std::fs::remove_dir_all(&save_path).unwrap_or_default();
-    ranking.par_iter().for_each(|(k, rank)| {
-        // let mut agent = a.clone();
+    ranking.par_iter().for_each(|(k, rank, a)| {
+        let mut agent = a.clone();
 
         // saves the folder name with fitness + entity_index
         let agent_folder = format!("{}_{}", round2(*rank), k);
         std::fs::create_dir_all(format!("{}/{}", save_path, agent_folder)).unwrap();
-        // // save control network
-        // let folder_name = "control";
-        // std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name)).unwrap();
-        // agent
-        //     .genotype()
-        //     .control_network()
-        //     .short_term_memory()
-        //     .visualize(
-        //         format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name),
-        //         adaptive_config.number_of_network_updates,
-        //     )
-        //     .unwrap();
-        // agent
-        //     .genotype_mut()
-        //     .control_network_mut()
-        //     .to_json(format!(
-        //         "{}/{}/{}/network.json",
-        //         save_path, agent_folder, folder_name
-        //     ))
-        //     .unwrap();
-        // agent
-        //     .genotype()
-        //     .control_network()
-        //     .to_dot(format!(
-        //         "{}/{}/{}/network.dot",
-        //         save_path, agent_folder, folder_name
-        //     ))
-        //     .unwrap();
+        // save control network
+        let folder_name = "control";
+        std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name)).unwrap();
+        agent
+            .genotype()
+            .control_network()
+            .short_term_memory()
+            .visualize(
+                format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name),
+                adaptive_config.number_of_network_updates,
+            )
+            .unwrap();
+        agent
+            .genotype_mut()
+            .control_network_mut()
+            .to_json(format!(
+                "{}/{}/{}/network.json",
+                save_path, agent_folder, folder_name
+            ))
+            .unwrap();
+        agent
+            .genotype()
+            .control_network()
+            .to_dot(format!(
+                "{}/{}/{}/network.dot",
+                save_path, agent_folder, folder_name
+            ))
+            .unwrap();
 
-        // // save categorize network
-        // let folder_name = "categorize";
-        // std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name)).unwrap();
-        // agent
-        //     .genotype()
-        //     .categorize_network()
-        //     .short_term_memory()
-        //     .visualize(
-        //         format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name,),
-        //         adaptive_config.number_of_network_updates,
-        //     )
-        //     .unwrap();
-        // agent
-        //     .genotype_mut()
-        //     .categorize_network_mut()
-        //     .to_json(format!(
-        //         "{}/{}/{}/network.json",
-        //         save_path, agent_folder, folder_name
-        //     ))
-        //     .unwrap();
-        // agent
-        //     .genotype()
-        //     .categorize_network()
-        //     .to_dot(format!(
-        //         "{}/{}/{}/network.dot",
-        //         save_path, agent_folder, folder_name
-        //     ))
-        //     .unwrap();
+        // save categorize network
+        let folder_name = "categorize";
+        std::fs::create_dir_all(format!("{}/{}/{}", save_path, agent_folder, folder_name)).unwrap();
+        agent
+            .genotype()
+            .categorize_network()
+            .short_term_memory()
+            .visualize(
+                format!("{}/{}/{}/memory.png", save_path, agent_folder, folder_name,),
+                adaptive_config.number_of_network_updates,
+            )
+            .unwrap();
+        agent
+            .genotype_mut()
+            .categorize_network_mut()
+            .to_json(format!(
+                "{}/{}/{}/network.json",
+                save_path, agent_folder, folder_name
+            ))
+            .unwrap();
+        agent
+            .genotype()
+            .categorize_network()
+            .to_dot(format!(
+                "{}/{}/{}/network.dot",
+                save_path, agent_folder, folder_name
+            ))
+            .unwrap();
     });
     info("creating images");
-    let best_agent_id = ranking[0].0;
+    // HACK: hardcoded agent id of the best agent from the training stage
+    let best_agent_id = 14888179529201650900u64;
     q_images
         .par_iter()
         .for_each(|(image, annotation, optimal_netlist)| {
             // get the best agent
-            if let Some(values) = agents.get(best_agent_id) {
+            if let Some(values) = agents.get(&best_agent_id) {
                 values
                     .iter()
                     .for_each(|(evaluated_agent, image_id, netlist)| {

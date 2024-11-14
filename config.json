@@ -44,6 +44,6 @@
   "goal_fitness": 0.95,
   "agent_save_path": "agents",
   "tested_agent_save_path": "agents_tested",
-  "testing_stage": false
+  "testing_stage": true
 }
   
