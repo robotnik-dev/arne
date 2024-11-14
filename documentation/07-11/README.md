@@ -4,6 +4,7 @@ These agents are the base for the test part altough the correct netlists are WEA
 # data folder structure
 
 ## training
+109 images
 drafter folders in training folder:
 - 1
 - 2
@@ -17,6 +18,7 @@ drafter folders in training folder:
 - 17
 
 ## testing
+86 images
 drafter folders in testing folder:
 - 8
 - 9
